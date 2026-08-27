@@ -78,6 +78,19 @@ coût en base, sans la surface d'attaque d'un JWT.
 `@security` de FR-001. Il suppose un compte chez un tiers et un appel sortant vers lui,
 hors du périmètre vitrine. La limitation de débit reste la seule borne d'abus.
 
+## Écart assumé avec le PRD (Story 1.2, FR-001)
+
+Le tableau des endpoints du PRD annonce `GET /api/v1/auth/verify-email?token=…`. Le code
+sert `POST /api/v1/auth/verify-email`. Les passerelles de messagerie d'entreprise visitent
+les liens des courriels avant leur destinataire pour les analyser : un `GET` qui consomme
+le jeton est consommé par l'antivirus, et l'utilisateur trouve un lien déjà utilisé au
+moment où il clique. Le lien pointe donc une page statique de la PWA, qui présente ensuite
+le jeton par un `POST` — qu'un analyseur de liens n'exécute pas.
+
+Le jeton est conservé haché (SHA-256), marqué consommé dans la même transaction que
+l'activation du compte, et la ligne est verrouillée (`FOR UPDATE`) le temps de l'opération :
+deux clics simultanés n'activent qu'une fois.
+
 ## Limites connues de la limitation de débit
 
 Le compteur des cinq inscriptions par heure et par adresse vit **en mémoire du processus**

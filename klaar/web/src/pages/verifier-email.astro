@@ -1,0 +1,19 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import VerificationEmail from "../components/VerificationEmail.svelte";
+---
+
+<AppLayout
+  titre="Klaar — confirmer mon adresse"
+  description="Confirmation de l'adresse email d'un compte Klaar."
+>
+  <h1>Confirmer mon adresse</h1>
+
+  <VerificationEmail client:load />
+
+  <p class="klaar-tempere">
+    Ce lien ne sert qu'une fois et reste valable une heure. Ouvrir cette page ne
+    consomme rien par elle-même : la confirmation est envoyée par votre
+    navigateur, pas par l'analyseur de liens de votre messagerie.
+  </p>
+</AppLayout>

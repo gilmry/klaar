@@ -3,9 +3,12 @@
 use sqlx::Row;
 use uuid::Uuid;
 
+use chrono::{DateTime, Utc};
 use klaar_application::ports::erreurs::RepositoryError;
-use klaar_application::ports::utilisateur_repository::{JetonAConserver, UtilisateurRepository};
-use klaar_identity::{EmpreinteMotDePasse, StatutUtilisateur, Utilisateur};
+use klaar_application::ports::utilisateur_repository::{
+    JetonAConserver, ResultatJeton, UtilisateurRepository,
+};
+use klaar_identity::{EmpreinteJeton, EmpreinteMotDePasse, StatutUtilisateur, Utilisateur};
 use klaar_shared_kernel::{Email, Locale};
 
 use crate::erreur;
@@ -102,6 +105,75 @@ impl UtilisateurRepository for PgUtilisateurRepository {
 
         tx.commit().await.map_err(erreur)?;
         Ok(true)
+    }
+
+    async fn consommer_jeton_verification(
+        &self,
+        empreinte: &EmpreinteJeton,
+        maintenant: DateTime<Utc>,
+    ) -> Result<ResultatJeton, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(erreur)?;
+
+        // FOR UPDATE : deux clics simultanés sur le même lien sérialisent ici.
+        // Sans ce verrou, les deux liraient `consomme_le IS NULL` et
+        // consommeraient le jeton chacun de leur côté, produisant deux entrées
+        // d'audit pour une seule vérification.
+        let ligne = sqlx::query(
+            "SELECT utilisateur_id, expire_le, consomme_le
+             FROM jeton_verification_email WHERE empreinte = $1 FOR UPDATE",
+        )
+        .bind(empreinte.as_str())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(erreur)?;
+
+        let Some(ligne) = ligne else {
+            tx.rollback().await.map_err(erreur)?;
+            return Ok(ResultatJeton::Inconnu);
+        };
+
+        let utilisateur_id: Uuid = ligne.get("utilisateur_id");
+        let consomme_le: Option<DateTime<Utc>> = ligne.get("consomme_le");
+        let expire_le: DateTime<Utc> = ligne.get("expire_le");
+
+        // L'ordre compte : un jeton déjà consommé reste « déjà consommé » même
+        // une fois passée son heure de validité. L'inverse afficherait « lien
+        // expiré » à quelqu'un dont le compte est actif depuis longtemps.
+        if consomme_le.is_some() {
+            tx.rollback().await.map_err(erreur)?;
+            return Ok(ResultatJeton::DejaConsomme { utilisateur_id });
+        }
+        if expire_le <= maintenant {
+            tx.rollback().await.map_err(erreur)?;
+            return Ok(ResultatJeton::Expire);
+        }
+
+        sqlx::query("UPDATE jeton_verification_email SET consomme_le = $1 WHERE empreinte = $2")
+            .bind(maintenant)
+            .bind(empreinte.as_str())
+            .execute(&mut *tx)
+            .await
+            .map_err(erreur)?;
+
+        let touches = sqlx::query("UPDATE utilisateur SET statut = $1 WHERE id = $2")
+            .bind(StatutUtilisateur::Actif.as_str())
+            .bind(utilisateur_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(erreur)?
+            .rows_affected();
+
+        if touches == 0 {
+            // La clé étrangère rend ce cas normalement impossible. S'il
+            // survient, annuler vaut mieux que marquer consommé un jeton dont
+            // le compte n'existe pas : le second laisserait une ligne dont
+            // plus rien ne peut être fait.
+            tx.rollback().await.map_err(erreur)?;
+            return Ok(ResultatJeton::Inconnu);
+        }
+
+        tx.commit().await.map_err(erreur)?;
+        Ok(ResultatJeton::Consomme { utilisateur_id })
     }
 
     async fn par_email(&self, email: &Email) -> Result<Option<Utilisateur>, RepositoryError> {

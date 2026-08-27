@@ -49,6 +49,7 @@ pub struct EtatApplication {
     paths(
         routes::health::health,
         routes::auth::signup,
+        routes::verification::verifier,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -58,6 +59,8 @@ pub struct EtatApplication {
         routes::auth::InscriptionDto,
         routes::auth::InscriptionAccepteeDto,
         routes::auth::ErreurValidationDto,
+        routes::verification::VerificationDto,
+        routes::verification::VerificationFaiteDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -78,6 +81,7 @@ pub struct ApiDoc;
 pub fn configurer(cfg: &mut web::ServiceConfig) {
     cfg.service(routes::health::health)
         .service(routes::auth::signup)
+        .service(routes::verification::verifier)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);

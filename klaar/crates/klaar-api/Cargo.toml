@@ -49,6 +49,9 @@ path = "src/bin/vapid.rs"
 
 [dev-dependencies]
 actix-rt = "2"
+# Pour lancer deux requêtes réellement concurrentes sur le même jeton et
+# vérifier que le verrou tient.
+futures-util = "0.3"
 # Les tests d'intégration lisent la base directement pour vérifier ce que
 # la route a réellement écrit, et non ce qu'elle prétend avoir écrit.
 sqlx = { version = "0.8", default-features = false, features = [

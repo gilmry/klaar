@@ -118,6 +118,27 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   `push_subscription.sujet_id → utilisateur.id` que V2 annonçait sans pouvoir l'écrire,
   en `ON DELETE CASCADE` — un abonnement orphelin continuerait à notifier un compte effacé.
 
+- **1.2** — **Vérification d'adresse** (FR-001) : `POST /api/v1/auth/verify-email`, page `/verifier-email`, jeton consommé une seule fois et compte passé en `ACTIVE` dans la même transaction.
+
+  **`POST` et non le `GET` qu'annonce le PRD.** Les passerelles de messagerie d'entreprise
+  visitent les liens des courriels avant leur destinataire, pour les analyser : un `GET`
+  qui consomme le jeton est consommé par l'antivirus, et l'utilisateur trouve un lien déjà
+  utilisé au moment où il clique. Le lien ouvre donc une page statique de la PWA, qui
+  présente ensuite le jeton par un `POST`. Un test e2e le vérifie **en désactivant
+  JavaScript**, comme le ferait un tel analyseur : la page se charge, aucun appel ne part.
+
+  **Un second clic répond `200 EMAIL_ALREADY_VERIFIED`.** Recharger la page ou rouvrir le
+  courriel est le cas le plus banal du parcours ; y répondre par une erreur ferait croire à
+  un échec à quelqu'un dont le compte vient d'être activé. Le jeton n'est consommé qu'une
+  fois et le journal d'audit ne consigne qu'une vérification, quel que soit le nombre de
+  clics. Le contrôle « déjà consommé » passe avant celui d'expiration, sans quoi rouvrir un
+  vieux courriel afficherait « lien expiré » à un compte actif depuis des semaines.
+
+  `FOR UPDATE` sur la ligne du jeton : deux présentations simultanées n'activent qu'une
+  fois, ce qu'un test vérifie en les lançant réellement en parallèle. Le jeton est retiré de
+  la barre d'adresse dès sa lecture — il resterait sinon dans l'historique, dans les
+  captures d'écran et dans le `Referer` de tout lien suivi depuis cette page.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

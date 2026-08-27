@@ -181,12 +181,29 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > `push_subscription.sujet_id → utilisateur.id` que V2 annonçait sans pouvoir l'écrire,
 > avec `ON DELETE CASCADE` pour que l'effacement d'un compte emporte ses abonnements.
 
-### Story 1.2 — Email vérification par token (FR-001)
+### Story 1.2 — Email vérification par token (FR-001) — *faite*
 - **En tant que** User · **je veux** vérifier mon email · **afin d'** activer mon compte
 - **Critères Gherkin** : PRD FR-001 (scénario vérification)
 - **4×N** : token invalide / expiré / déjà utilisé / valide
-- **Couche(s)** : Domain + Application + Infra + Frontend
+- **Couche(s)** : Application (`verifier_email`, port étendu `consommer_jeton_verification`) + Infra (transaction `FOR UPDATE`) + API (`POST /api/v1/auth/verify-email`) + Frontend (page `/verifier-email`)
 - **Taille** : **S** (0,5 j) · **Tours** : 2
+
+> **`POST` et non `GET`**, contrairement au tableau des endpoints du PRD. Les passerelles
+> de messagerie d'entreprise visitent les liens des courriels avant leur destinataire pour
+> les analyser : un `GET` qui consomme le jeton est consommé par l'antivirus, et
+> l'utilisateur trouve un lien déjà utilisé au moment où il clique. Le lien du courriel
+> ouvre la page `/verifier-email` de la PWA — statique, sans effet — qui présente ensuite
+> le jeton par un `POST`. Un test e2e le vérifie en désactivant JavaScript, comme le ferait
+> un tel analyseur.
+>
+> **Un second clic répond `200 EMAIL_ALREADY_VERIFIED`, pas une erreur.** Recharger la page
+> ou rouvrir le courriel est le cas le plus banal du parcours ; y répondre par un refus
+> ferait croire à un échec à quelqu'un dont le compte vient d'être activé. Le jeton reste
+> consommé une seule fois, et le journal d'audit ne consigne qu'une vérification quel que
+> soit le nombre de clics.
+>
+> Le contrôle « déjà consommé » passe **avant** le contrôle d'expiration : sinon, rouvrir
+> un vieux courriel afficherait « lien expiré » à un compte actif depuis des semaines.
 
 ### Story 1.3 — Login email + password (FR-004)
 - **En tant que** User · **je veux** me login · **afin de** démarrer une session

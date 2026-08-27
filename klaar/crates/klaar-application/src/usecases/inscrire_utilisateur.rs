@@ -238,6 +238,14 @@ mod tests {
             Ok(true)
         }
 
+        async fn consommer_jeton_verification(
+            &self,
+            _: &klaar_identity::EmpreinteJeton,
+            _: DateTime<Utc>,
+        ) -> Result<crate::ports::utilisateur_repository::ResultatJeton, RepositoryError> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
         async fn par_email(&self, email: &Email) -> Result<Option<Utilisateur>, RepositoryError> {
             Ok(self
                 .comptes
