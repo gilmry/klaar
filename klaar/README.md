@@ -139,6 +139,33 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   la barre d'adresse dès sa lecture — il resterait sinon dans l'historique, dans les
   captures d'écran et dans le `Referer` de tout lien suivi depuis cette page.
 
+- **1.3** — **Connexion** (FR-004) : `POST /api/v1/auth/login`, page `/connexion`, jeton d'accès JWT d'une heure et refresh de 30 jours en cookie.
+
+  **Adresse inconnue et mot de passe faux sont indistinguables**, réponse *et* temps de
+  réponse compris. Une adresse inconnue économiserait la vérification argon2 et répondrait
+  en une milliseconde là où un mot de passe faux en prend cinquante : le chronomètre
+  distinguerait ce que la réponse tait. Une empreinte leurre est donc vérifiée dans le
+  vide, avec les paramètres réellement employés — un `sleep` fixe ne suivrait pas les
+  paramètres et sa régularité se repérerait. « Compte non vérifié » est distingué, lui
+  (`403`), parce que l'atteindre suppose déjà de connaître le bon mot de passe.
+
+  **Le jeton d'accès ne quitte pas la mémoire de l'onglet.** Ni `localStorage` ni
+  `sessionStorage` : les deux sont lisibles par tout script de la page, donc par une seule
+  faille XSS. Le refresh, lui, vit en cookie `HttpOnly` `Secure` `SameSite=Lax`, de chemin
+  restreint à `/api/v1/auth` — l'envoyer à chaque appel d'API l'exposerait à toute faille
+  d'une autre route. Deux tests e2e le vérifient dans un vrai navigateur, dont un qui lit
+  `document.cookie` pour confirmer que le refresh n'y apparaît pas.
+
+  L'algorithme de vérification du JWT est fixé explicitement plutôt que lu dans l'en-tête du
+  jeton : un jeton annonçant `alg: none` est refusé, ce qu'un test vérifie avec un jeton
+  forgé à la main. `KLAAR_JWT_SECRET` est obligatoire au démarrage — en générer un à la
+  volée invaliderait toutes les sessions à chaque redémarrage, sans que personne ne
+  comprenne pourquoi.
+
+  **Limite assumée jusqu'à la Story 1.4** : pas encore de rotation du refresh ni de
+  détection de rejeu. Un refresh volé reste utilisable jusqu'à son expiration, et recharger
+  la page déconnecte. Les colonnes `famille_id` et `consomme_le` existent déjà pour cela.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

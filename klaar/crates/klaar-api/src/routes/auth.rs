@@ -50,7 +50,7 @@ pub struct ErreurValidationDto {
 /// proxy de confiance. Le croire par défaut donnerait à n'importe qui le moyen
 /// de contourner la limitation en changeant un en-tête, ce qui reviendrait à
 /// ne pas en avoir.
-fn adresse_source(requete: &HttpRequest, derriere_proxy: bool) -> String {
+pub fn adresse_source(requete: &HttpRequest, derriere_proxy: bool) -> String {
     let info = requete.connection_info();
     let adresse = if derriere_proxy {
         info.realip_remote_addr()
@@ -80,7 +80,9 @@ pub async fn signup(
     corps: web::Json<InscriptionDto>,
 ) -> HttpResponse {
     let maintenant = etat.horloge.maintenant();
-    let source = adresse_source(&requete, etat.derriere_proxy);
+    // Préfixé : inscription et connexion ont chacune leur budget, sinon cinq
+    // inscriptions épuisent les tentatives de connexion de la même adresse.
+    let source = format!("signup:{}", adresse_source(&requete, etat.derriere_proxy));
 
     // Contrôlé avant tout travail : le hachage argon2 coûte de la mémoire et
     // du temps par construction, et les faire dépenser sans limite est

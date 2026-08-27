@@ -1,0 +1,21 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import FormulaireConnexion from "../components/FormulaireConnexion.svelte";
+---
+
+<AppLayout
+  titre="Klaar — me connecter"
+  description="Connexion à votre compte Klaar."
+>
+  <h1>Me connecter</h1>
+
+  <FormulaireConnexion client:load />
+
+  <p><a href="/inscription">Créer un compte</a></p>
+
+  <p class="klaar-tempere">
+    Le jeton de session reste en mémoire de l'onglet, jamais dans le stockage du
+    navigateur : une faille de script ne peut donc pas le recopier. Recharger la
+    page déconnecte, tant que le rafraîchissement automatique n'est pas livré.
+  </p>
+</AppLayout>

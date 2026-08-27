@@ -9,6 +9,7 @@ use tracing_subscriber::{fmt, fmt::format::FmtSpan, prelude::*, EnvFilter};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use klaar_api::jwt::JwtHs256;
 use klaar_api::limitation::LimiteurMemoire;
 use klaar_api::telemetry::SpanSansDonneesPersonnelles;
 use klaar_api::{configurer, ApiDoc, EtatApplication};
@@ -17,7 +18,8 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
-    creer_pool, PgJournalAudit, PgPushSubscriptionRepository, PgUtilisateurRepository,
+    creer_pool, PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository,
+    PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -64,6 +66,37 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // Le secret de signature n'est pas optionnel, contrairement aux clés VAPID :
+    // sans lui, personne ne peut se connecter. Refuser de démarrer vaut mieux
+    // qu'en générer un à la volée, qui invaliderait toutes les sessions à
+    // chaque redémarrage sans que personne ne comprenne pourquoi.
+    let jetons = match std::env::var("KLAAR_JWT_SECRET") {
+        Ok(secret) => match JwtHs256::new(secret.as_bytes()) {
+            Ok(emetteur) => Arc::new(emetteur),
+            Err(e) => {
+                eprintln!("KLAAR_JWT_SECRET invalide : {e}");
+                eprintln!("en générer un : openssl rand -base64 48");
+                std::process::exit(1);
+            }
+        },
+        Err(_) => {
+            eprintln!("KLAAR_JWT_SECRET absente : klaar-api ne peut pas signer de session.");
+            eprintln!("en générer un : openssl rand -base64 48");
+            std::process::exit(1);
+        }
+    };
+
+    // Vrai par défaut : un cookie de session sans `Secure` voyage en clair. Le
+    // désactiver n'a de sens qu'en développement local sur HTTP, où le
+    // navigateur refuserait sinon le cookie sans rien signaler.
+    let cookie_securise = std::env::var("KLAAR_COOKIE_SECURE").as_deref() != Ok("0");
+    if !cookie_securise {
+        tracing::warn!(
+            "KLAAR_COOKIE_SECURE=0 : le cookie de rafraîchissement part sans l'attribut \
+             Secure. Développement local uniquement."
+        );
+    }
+
     // Un seul limiteur pour tout le processus. Le construire dans la fabrique
     // de `App` en donnerait un par fil d'exécution, et la limite annoncée
     // serait silencieusement multipliée par le nombre de coeurs.
@@ -91,11 +124,14 @@ async fn main() -> std::io::Result<()> {
             push: push.clone(),
             utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
             journal: Arc::new(PgJournalAudit::new(pool.clone())),
+            sessions: Arc::new(PgSessionRepository::new(pool.clone())),
+            jetons: jetons.clone(),
             courriel: courriel.clone(),
             horloge: Arc::new(HorlogeSysteme),
             limiteur: limiteur.clone(),
             argon2: ParametresArgon2::production(),
             derriere_proxy,
+            cookie_securise,
         });
         App::new()
             // Span racine expurgé de l'IP et de l'agent utilisateur, cf.

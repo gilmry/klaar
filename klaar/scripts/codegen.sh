@@ -7,7 +7,10 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 cargo build -p klaar-api --bin klaar-api
-./target/debug/klaar-api &
+# Secret jetable : le binaire refuse de démarrer sans (Story 1.3), et la
+# génération du contrat n'ouvre aucune session.
+KLAAR_JWT_SECRET="${KLAAR_JWT_SECRET:-secret-de-codegen-jamais-utilise-ailleurs}" \
+    ./target/debug/klaar-api &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 

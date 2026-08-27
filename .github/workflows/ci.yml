@@ -36,6 +36,10 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
+      # Secret de CI, jeté à la fin du job. klaar-api refuse de démarrer
+      # sans lui (Story 1.3) : en générer un à la volée invaliderait toutes
+      # les sessions à chaque redémarrage sans que personne ne comprenne.
+      KLAAR_JWT_SECRET: secret-de-ci-jamais-utilise-en-production-48o
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -123,6 +127,10 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
+      # Secret de CI, jeté à la fin du job. klaar-api refuse de démarrer
+      # sans lui (Story 1.3) : en générer un à la volée invaliderait toutes
+      # les sessions à chaque redémarrage sans que personne ne comprenne.
+      KLAAR_JWT_SECRET: secret-de-ci-jamais-utilise-en-production-48o
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -173,6 +181,10 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
+      # Secret de CI, jeté à la fin du job. klaar-api refuse de démarrer
+      # sans lui (Story 1.3) : en générer un à la volée invaliderait toutes
+      # les sessions à chaque redémarrage sans que personne ne comprenne.
+      KLAAR_JWT_SECRET: secret-de-ci-jamais-utilise-en-production-48o
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

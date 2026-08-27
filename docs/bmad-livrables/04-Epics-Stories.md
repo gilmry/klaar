@@ -205,11 +205,29 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > Le contrôle « déjà consommé » passe **avant** le contrôle d'expiration : sinon, rouvrir
 > un vieux courriel afficherait « lien expiré » à un compte actif depuis des semaines.
 
-### Story 1.3 — Login email + password (FR-004)
+### Story 1.3 — Login email + password (FR-004) — *faite*
 - **En tant que** User · **je veux** me login · **afin de** démarrer une session
 - **4×N** : PRD FR-004 (rotation refresh, binding UA/IP)
-- **Couche(s)** : Domain + Application + Infra
+- **Couche(s)** : Application (`connecter`, ports `EmetteurJetonAcces` et `SessionRepository`) + Infra (migration V4 `session_refresh`, `PgSessionRepository`, adaptateur `JwtHs256`) + API (`POST /api/v1/auth/login`) + Frontend (page `/connexion`)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Adresse inconnue et mot de passe faux sont indistinguables**, réponse et
+> temps compris. Une adresse inconnue économiserait la vérification argon2 et
+> répondrait en une milliseconde là où un mot de passe faux en prend cinquante :
+> une empreinte leurre est donc vérifiée dans le vide, avec les paramètres réels.
+> « Compte non vérifié » est distingué, lui (`403`), parce que l'atteindre suppose
+> déjà de connaître le bon mot de passe.
+>
+> **Le jeton d'accès reste en mémoire de l'onglet**, jamais dans `localStorage`
+> ni `sessionStorage`, lisibles par tout script donc par une faille XSS. Le
+> refresh vit en cookie `HttpOnly` `Secure` `SameSite=Lax`, de chemin restreint à
+> `/api/v1/auth` : l'envoyer à chaque appel d'API l'exposerait à toute faille
+> d'une autre route.
+>
+> **Reste à la Story 1.4** : la rotation, la détection de rejeu et le *binding*
+> UA/IP que réclame `@security`. La colonne `famille_id` et le `consomme_le`
+> existent déjà pour cela ; recharger la page déconnecte encore, faute de
+> rafraîchissement.
 
 ### Story 1.4 — Refresh token rotatif (FR-004)
 - **En tant que** User · **je veux** un refresh rotatif · **afin de** garder ma session sans re-login

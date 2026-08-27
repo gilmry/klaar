@@ -11,11 +11,15 @@ use actix_web::{web, App};
 use utoipa::OpenApi;
 
 use klaar_application::ports::horloge::HorlogeSysteme;
+use klaar_application::ports::jeton_acces::EmetteurJetonAcces;
 use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
-use klaar_sqlx_repos::{PgJournalAudit, PgPushSubscriptionRepository, PgUtilisateurRepository};
+use klaar_sqlx_repos::{
+    PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository, PgUtilisateurRepository,
+};
 
+pub mod jwt;
 pub mod limitation;
 pub mod routes;
 pub mod telemetry;
@@ -31,6 +35,10 @@ pub struct EtatApplication {
     pub push: Option<Arc<WebPushSender>>,
     pub utilisateurs: Arc<PgUtilisateurRepository>,
     pub journal: Arc<PgJournalAudit>,
+    pub sessions: Arc<PgSessionRepository>,
+    /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
+    /// est remplaçable sans toucher aux cas d'usage.
+    pub jetons: Arc<dyn EmetteurJetonAcces>,
     pub courriel: Arc<CourrielJournalise>,
     pub horloge: Arc<HorlogeSysteme>,
     pub limiteur: Arc<LimiteurMemoire>,
@@ -42,6 +50,10 @@ pub struct EtatApplication {
     /// proxy de confiance devant rend la limitation de débit contournable par
     /// un simple en-tête.
     pub derriere_proxy: bool,
+    /// Poser l'attribut `Secure` sur le cookie de rafraîchissement. Vrai
+    /// partout sauf en développement local sur HTTP, où le navigateur
+    /// refuserait alors le cookie sans rien dire.
+    pub cookie_securise: bool,
 }
 
 #[derive(OpenApi)]
@@ -50,6 +62,7 @@ pub struct EtatApplication {
         routes::health::health,
         routes::auth::signup,
         routes::verification::verifier,
+        routes::session::login,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -61,6 +74,8 @@ pub struct EtatApplication {
         routes::auth::ErreurValidationDto,
         routes::verification::VerificationDto,
         routes::verification::VerificationFaiteDto,
+        routes::session::ConnexionDto,
+        routes::session::SessionOuverteDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -82,6 +97,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
     cfg.service(routes::health::health)
         .service(routes::auth::signup)
         .service(routes::verification::verifier)
+        .service(routes::session::login)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);
@@ -102,12 +118,18 @@ pub fn etat_de_test(
         abonnements: Arc::new(PgPushSubscriptionRepository::new(pool.clone())),
         push,
         utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
-        journal: Arc::new(PgJournalAudit::new(pool)),
+        journal: Arc::new(PgJournalAudit::new(pool.clone())),
+        sessions: Arc::new(PgSessionRepository::new(pool)),
+        jetons: Arc::new(
+            crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
+                .expect("secret de test valide"),
+        ),
         courriel: Arc::new(CourrielJournalise::new("https://klaar.test", false)),
         horloge: Arc::new(HorlogeSysteme),
         limiteur: Arc::new(LimiteurMemoire::new()),
         argon2: ParametresArgon2::tests(),
         derriere_proxy: false,
+        cookie_securise: false,
     })
 }
 

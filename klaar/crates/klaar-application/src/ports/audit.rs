@@ -13,6 +13,8 @@ pub enum CodeAudit {
     UserSignup,
     UserSignupDuplicate,
     UserEmailVerified,
+    UserLogin,
+    UserLoginFailed,
 }
 
 impl CodeAudit {
@@ -21,6 +23,8 @@ impl CodeAudit {
             Self::UserSignup => "USER_SIGNUP",
             Self::UserSignupDuplicate => "USER_SIGNUP_DUPLICATE",
             Self::UserEmailVerified => "USER_EMAIL_VERIFIED",
+            Self::UserLogin => "USER_LOGIN",
+            Self::UserLoginFailed => "USER_LOGIN_FAILED",
         }
     }
 }

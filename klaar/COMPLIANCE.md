@@ -91,6 +91,23 @@ Le jeton est conservé haché (SHA-256), marqué consommé dans la même transac
 l'activation du compte, et la ligne est verrouillée (`FOR UPDATE`) le temps de l'opération :
 deux clics simultanés n'activent qu'une fois.
 
+## Sessions : ce qui est fourni et ce qui manque (Story 1.3, FR-004)
+
+Fourni : jeton d'accès JWT HS256 d'une heure, refresh opaque de 30 jours conservé haché,
+cookie `HttpOnly` `Secure` `SameSite=Lax` restreint au chemin `/api/v1/auth`, algorithme de
+vérification fixé explicitement (un jeton annonçant `alg: none` est refusé, un test le
+vérifie).
+
+**Non fourni à ce stade** : la rotation du refresh, la détection de rejeu et le *binding*
+UA/IP que décrit le scénario `@security` de FR-004. Un refresh volé reste donc utilisable
+jusqu'à son expiration. La table porte déjà `famille_id` et `consomme_le` pour la Story 1.4,
+mais **tant qu'elle n'est pas livrée, la durée de 30 jours est une durée d'exposition**.
+
+`KLAAR_JWT_SECRET` est obligatoire au démarrage : sans elle, `klaar-api` refuse de démarrer
+plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaque redémarrage.
+HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
+un second service, ce serait lui donner le pouvoir d'émettre des jetons.
+
 ## Limites connues de la limitation de débit
 
 Le compteur des cinq inscriptions par heure et par adresse vit **en mémoire du processus**

@@ -3,11 +3,13 @@
 mod journal_audit;
 mod pool;
 mod push_subscription;
+mod session;
 mod utilisateur;
 
 pub use journal_audit::PgJournalAudit;
 pub use pool::{creer_pool, PoolPg};
 pub use push_subscription::PgPushSubscriptionRepository;
+pub use session::PgSessionRepository;
 pub use utilisateur::PgUtilisateurRepository;
 
 use klaar_application::ports::erreurs::RepositoryError;
