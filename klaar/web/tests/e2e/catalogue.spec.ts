@@ -109,3 +109,62 @@ test("@security la réponse d'API n'est pas mise en cache par le service worker"
   });
   expect(enCache).toBe(false);
 });
+
+test("@happy une fourchette est affichée avec sa mention obligatoire", async ({ page }) => {
+  await servir(page, 200, {
+    locale: "fr",
+    secteurs: [
+      {
+        code: "plomberie",
+        libelle: "Plomberie",
+        fourchette: { min_cents: 8000, max_cents: 20000 },
+        skills: [],
+      },
+    ],
+  });
+
+  await page.goto("/catalogue");
+
+  await expect(page.locator('[data-prix="fourchette"]')).toContainText("80");
+  await expect(page.locator('[data-prix="fourchette"]')).toContainText("200");
+  // FR-009 `@happy` : sans la mention, une fourchette indicative se lit comme
+  // un devis, et l'écart avec le prix facturé devient un litige.
+  await expect(page.locator("[data-mention-prix]")).toContainText(/prestataire/i);
+});
+
+test("@negative sans fourchette, la page dit « prix sur devis »", async ({ page }) => {
+  // FR-009 `@negative` : au lancement, il n'y a pas d'historique. Un blanc
+  // laisserait croire à un défaut d'affichage.
+  await servir(page, 200, CATALOGUE);
+  await page.goto("/catalogue");
+
+  await expect(page.locator('[data-prix="sur-devis"]').first()).toContainText(/devis/i);
+  // Pas de mention de prix indicatif quand aucune fourchette n'est affichée :
+  // elle n'aurait rien à qualifier.
+  await expect(page.locator("[data-mention-prix]")).toHaveCount(0);
+});
+
+test("@security aucun prix individuel ne transparaît", async ({ page }) => {
+  // Le scénario `@security` de FR-009 : seules les fourchettes agrégées sont
+  // publiques. La page n'affiche que ce que l'API lui donne, et l'API ne donne
+  // que des bornes.
+  await servir(page, 200, {
+    locale: "fr",
+    secteurs: [
+      {
+        code: "plomberie",
+        libelle: "Plomberie",
+        fourchette: { min_cents: 8000, max_cents: 20000 },
+        skills: [],
+      },
+    ],
+  });
+
+  await page.goto("/catalogue");
+  await expect(page.locator('[data-prix="fourchette"]')).toBeVisible();
+  const contenu = await page.content();
+  // Aucun champ de détail : ni nombre de missions, ni prix unitaires.
+  for (const trace of ["nb_missions", "missions", "prix_unitaire"]) {
+    expect(contenu).not.toContain(trace);
+  }
+});

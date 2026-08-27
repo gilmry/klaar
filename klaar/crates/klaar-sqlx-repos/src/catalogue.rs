@@ -4,7 +4,8 @@ use sqlx::Row;
 
 use klaar_application::ports::catalogue_repository::CatalogueRepository;
 use klaar_application::ports::erreurs::RepositoryError;
-use klaar_catalog::{CodeCatalogue, Libelles, Secteur, Skill};
+use klaar_catalog::{CodeCatalogue, FourchettePrix, Libelles, Secteur, Skill};
+use klaar_shared_kernel::Money;
 
 use crate::erreur;
 use crate::pool::PoolPg;
@@ -42,11 +43,13 @@ impl CatalogueRepository for PgCatalogueRepository {
             "SELECT s.code AS secteur_code,
                     s.libelle_fr AS secteur_fr, s.libelle_nl AS secteur_nl,
                     s.libelle_en AS secteur_en, s.ordre AS secteur_ordre,
+                    f.min_cents AS fourchette_min, f.max_cents AS fourchette_max,
                     k.code AS skill_code,
                     k.libelle_fr AS skill_fr, k.libelle_nl AS skill_nl,
                     k.libelle_en AS skill_en
              FROM secteur s
              LEFT JOIN skill k ON k.secteur_code = s.code
+             LEFT JOIN fourchette_prix f ON f.secteur_code = s.code
              ORDER BY s.ordre, k.ordre",
         )
         .fetch_all(&self.pool)
@@ -60,10 +63,24 @@ impl CatalogueRepository for PgCatalogueRepository {
                 .last()
                 .is_none_or(|s| s.code.as_str() != code_secteur)
             {
+                // `NULL` tant qu'aucune fourchette n'a été calculée pour ce
+                // secteur : c'est l'état attendu au lancement, et il se traduit
+                // par « prix sur devis » plutôt que par une absence de réponse.
+                let fourchette = match (
+                    ligne.get::<Option<i64>, _>("fourchette_min"),
+                    ligne.get::<Option<i64>, _>("fourchette_max"),
+                ) {
+                    (Some(min), Some(max)) => Some(FourchettePrix {
+                        min: Money::from_cents(min),
+                        max: Money::from_cents(max),
+                    }),
+                    _ => None,
+                };
                 secteurs.push(Secteur {
                     code: code(&code_secteur)?,
                     libelles: libelles(ligne, "secteur"),
                     skills: Vec::new(),
+                    fourchette,
                 });
             }
             // `NULL` quand la jointure n'a rien trouvé : le secteur existe,

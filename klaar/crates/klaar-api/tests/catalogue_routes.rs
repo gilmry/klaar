@@ -5,6 +5,24 @@ use klaar_api::routes::catalogue::{CACHE_SECONDES, RETRY_MAINTENANCE_SECONDES};
 use klaar_api::{app_de_test, etat_de_test, EtatApplication};
 use klaar_sqlx_repos::{creer_pool, PoolPg};
 use serde_json::Value;
+use tokio::sync::Mutex;
+
+/// Sérialise les cas qui modifient le contenu du catalogue, et ceux dont le
+/// résultat en dépend.
+///
+/// Les tests d'un même binaire tournent en parallèle sur une base partagée : un
+/// cas qui insère une fourchette change la réponse — donc l'`ETag` — que lit un
+/// cas voisin au même instant. Un verrou de processus vaut mieux qu'un test qui
+/// échoue une fois sur vingt sans qu'on sache pourquoi.
+///
+/// Verrou **asynchrone** et non `std::sync::Mutex` : le garde traverse des
+/// `await`, et un verrou bloquant tenu à travers une attente immobilise le fil
+/// d'exécution qui la porte.
+static CONTENU: Mutex<()> = Mutex::const_new(());
+
+async fn verrou() -> tokio::sync::MutexGuard<'static, ()> {
+    CONTENU.lock().await
+}
 
 async fn pool() -> PoolPg {
     let url = std::env::var("DATABASE_URL")
@@ -134,6 +152,7 @@ async fn edge_l_absence_de_parametre_sert_le_francais_sans_avertir() {
 
 #[actix_web::test]
 async fn edge_un_etag_presente_repond_304_sans_corps() {
+    let _garde = verrou().await;
     let app = test::init_service(app_de_test(etat_de_test(pool().await, None))).await;
 
     let premiere = test::call_service(&app, depuis(Some("fr"), 7).to_request()).await;
@@ -160,6 +179,7 @@ async fn edge_un_etag_presente_repond_304_sans_corps() {
 
 #[actix_web::test]
 async fn edge_deux_langues_ont_deux_etags_distincts() {
+    let _garde = verrou().await;
     // Sinon un cache servirait le catalogue néerlandais à qui demande le
     // français, ce que le même ETag l'autoriserait à croire correct.
     let app = test::init_service(app_de_test(etat_de_test(pool().await, None))).await;
@@ -263,4 +283,95 @@ async fn security_la_reponse_ne_porte_aucune_donnee_personnelle() {
             "le champ {champ} n'a rien à faire ici"
         );
     }
+}
+
+#[actix_web::test]
+async fn negative_sans_historique_aucun_secteur_ne_porte_de_fourchette() {
+    // FR-009 `@negative` : au lancement, aucune fourchette. L'absence du champ
+    // dit « prix sur devis », et non « prix inconnu ».
+    let _garde = verrou().await;
+    let pool = pool().await;
+    sqlx::query("DELETE FROM fourchette_prix")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = test::init_service(app_de_test(etat_de_test(pool, None))).await;
+
+    let corps: Value =
+        test::read_body_json(test::call_service(&app, depuis(Some("fr"), 20).to_request()).await)
+            .await;
+    for secteur in corps["secteurs"].as_array().unwrap() {
+        assert!(
+            secteur.get("fourchette").is_none(),
+            "secteur {} : {secteur}",
+            secteur["code"]
+        );
+    }
+}
+
+#[actix_web::test]
+async fn happy_une_fourchette_calculee_est_servie_en_centimes() {
+    let _garde = verrou().await;
+    let pool = pool().await;
+    sqlx::query(
+        "INSERT INTO fourchette_prix (secteur_code, min_cents, max_cents, nb_missions, calculee_le)
+         VALUES ('plomberie', 8000, 20000, 12, now())
+         ON CONFLICT (secteur_code) DO UPDATE
+             SET min_cents = EXCLUDED.min_cents, max_cents = EXCLUDED.max_cents",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = test::init_service(app_de_test(etat_de_test(pool.clone(), None))).await;
+
+    let corps: Value =
+        test::read_body_json(test::call_service(&app, depuis(Some("fr"), 21).to_request()).await)
+            .await;
+    let plomberie = corps["secteurs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["code"] == "plomberie")
+        .expect("le secteur plomberie");
+    // En centimes, pas en euros : c'est au client de choisir son format, et un
+    // arrondi côté serveur ferait diverger l'affiché du calculé.
+    assert_eq!(plomberie["fourchette"]["min_cents"], 8000);
+    assert_eq!(plomberie["fourchette"]["max_cents"], 20000);
+
+    // Les autres secteurs restent sans fourchette : une seule ligne insérée.
+    let serrurerie = corps["secteurs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["code"] == "serrurerie")
+        .unwrap();
+    assert!(serrurerie.get("fourchette").is_none());
+
+    sqlx::query("DELETE FROM fourchette_prix WHERE secteur_code = 'plomberie'")
+        .execute(&pool)
+        .await
+        .unwrap();
+}
+
+#[actix_web::test]
+async fn security_la_base_refuse_une_fourchette_sous_le_seuil_d_anonymat() {
+    // Le seuil de FR-009 `@security` n'est pas seulement dans le calcul : la
+    // base le repose, pour qu'aucun chemin d'écriture ne puisse le contourner.
+    let pool = pool().await;
+    let erreur = sqlx::query(
+        "INSERT INTO fourchette_prix (secteur_code, min_cents, max_cents, nb_missions, calculee_le)
+         VALUES ('auto', 8000, 20000, 2, now())",
+    )
+    .execute(&pool)
+    .await;
+    assert!(erreur.is_err(), "deux Missions ne doivent pas passer");
+
+    // Et des bornes inversées non plus : elles signaleraient un calcul faux.
+    let inversee = sqlx::query(
+        "INSERT INTO fourchette_prix (secteur_code, min_cents, max_cents, nb_missions, calculee_le)
+         VALUES ('auto', 20000, 8000, 12, now())",
+    )
+    .execute(&pool)
+    .await;
+    assert!(inversee.is_err());
 }

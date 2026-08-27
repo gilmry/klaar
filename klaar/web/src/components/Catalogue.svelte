@@ -11,6 +11,8 @@
   import {
     chargerCatalogue,
     codeDepuisErreur,
+    formaterFourchette,
+    mentionPrix,
     messageErreur,
     type SecteurCatalogue,
   } from "../lib/catalogue";
@@ -46,6 +48,9 @@
     {#each secteurs as secteur (secteur.code)}
       <li data-secteur={secteur.code}>
         <strong>{secteur.libelle}</strong>
+        <span data-prix={secteur.fourchette ? "fourchette" : "sur-devis"}>
+          {formaterFourchette(locale, secteur.fourchette)}
+        </span>
         {#if secteur.skills.length > 0}
           <ul>
             {#each secteur.skills as skill (skill.code)}
@@ -56,6 +61,9 @@
       </li>
     {/each}
   </ul>
+  {#if secteurs.some((s) => s.fourchette)}
+    <p class="klaar-tempere" data-mention-prix>{mentionPrix(locale)}</p>
+  {/if}
 {/if}
 
 <style>
@@ -63,5 +71,6 @@
   ul ul { padding-left: 1.2rem; }
   li[data-secteur] { margin-bottom: 0.8rem; }
   li[data-skill] { color: #3d5a68; }
+  span[data-prix] { margin-left: 0.5rem; color: #3d5a68; }
   p[role="alert"] { color: #c2543a; }
 </style>

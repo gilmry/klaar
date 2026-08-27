@@ -35,11 +35,27 @@ pub struct SkillDto {
     pub libelle: String,
 }
 
+/// Fourchette indicative, en centimes (FR-009).
+///
+/// En centimes et non en euros, comme tout montant traversant l'API : c'est au
+/// client de choisir son format d'affichage, et un arrondi côté serveur ferait
+/// diverger ce qui est montré de ce qui a été calculé.
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FourchetteDto {
+    pub min_cents: i64,
+    pub max_cents: i64,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SecteurDto {
     pub code: String,
     pub libelle: String,
+    /// Absente tant que l'historique ne permet pas d'en publier une. Absence
+    /// veut dire « prix sur devis », pas « prix inconnu » (FR-009 `@negative`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fourchette: Option<FourchetteDto>,
     pub skills: Vec<SkillDto>,
 }
 
@@ -166,6 +182,10 @@ pub async fn secteurs(
             .map(|s| SecteurDto {
                 code: s.code.to_string(),
                 libelle: s.libelles.pour(locale).to_string(),
+                fourchette: s.fourchette.map(|f| FourchetteDto {
+                    min_cents: f.min.cents(),
+                    max_cents: f.max.cents(),
+                }),
                 skills: s
                     .skills
                     .iter()

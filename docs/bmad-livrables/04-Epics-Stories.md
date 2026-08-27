@@ -397,11 +397,33 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > sensibles, 60 par minute pour la lecture publique. Les clés restent préfixées par usage,
 > sans quoi consulter le catalogue épuiserait le droit de se connecter.
 
-### Story 2.3 — Prix indicatifs par Secteur (FR-009)
+### Story 2.3 — Prix indicatifs par Secteur (FR-009) — *algorithme et exposition faits, données absentes*
 - **En tant que** User · **je veux** une fourchette de prix · **afin d'** estimer mon budget
 - **4×N** : PRD FR-009 (IQR outliers, lancement sans data)
 - **Couche(s)** : Application (job calcul IQR) + Infra
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **Ce qui est livré** : le calcul IQR complet, avec son seuil d'anonymat, la table d'agrégat
+> `fourchette_prix`, l'exposition par l'API et l'affichage. Le calcul reproduit l'exemple de
+> FR-009 `@edge` — sur `[80, 120, 150, 200, 1000]`, la fourchette rendue est 80–200 — qui
+> sert donc de vecteur de test.
+>
+> **Ce qui manque** : les données. Le job qui alimente la table lit l'historique des
+> Missions, qui n'existe pas avant l'Epic 3. La table reste donc vide, et toutes les
+> fourchettes sont absentes — ce qui est exactement le scénario `@negative` du FR : au
+> lancement, « prix sur devis ». L'état livré **est** l'état attendu à ce stade.
+>
+> **Un garde-fou surnuméraire retiré.** Le premier jet appliquait le seuil d'anonymat aussi
+> **après** exclusion des valeurs aberrantes, et contredisait alors l'exemple de FR-009
+> lui-même : cinq Missions dont une aberrante n'en laissent que quatre, et le PRD attend
+> pourtant une fourchette. Le seuil porte donc sur l'échantillon d'entrée. Ce que cela
+> laisse subsister est écrit dans `COMPLIANCE.md` : au seuil, les bornes publiées sont deux
+> prix réellement facturés sur cinq.
+>
+> La contrainte d'anonymat est reposée par la base (`nb_missions >= 5`), pour qu'aucun chemin
+> d'écriture ne puisse la contourner. La mention « prix indicatif, prix final fixé par le
+> prestataire » accompagne obligatoirement toute fourchette : sans elle, une fourchette se
+> lit comme un devis, et l'écart devient un litige.
 
 ### Story 2.4 — Admin catalogue (FR-010, post-MVP ready)
 - **En tant que** ops · **je veux** gérer le catalogue · **afin de** l'étendre

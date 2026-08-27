@@ -123,6 +123,26 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Prix indicatifs : ce que la fourchette expose (Story 2.3, FR-009)
+
+Une fourchette est faite de deux prix réels : son minimum et son maximum **sont** des
+montants qu'un prestataire a effectivement facturés. Un seuil de cinq Missions conditionne
+donc sa publication, conformément à l'exemple de FR-009.
+
+**Ce que ce seuil ne supprime pas** : à cinq Missions, la fourchette publie deux prix
+facturés sur cinq. Le seuil retenu est celui du PRD ; le relever demanderait un jeu de
+données réel à observer, qui n'existe pas encore. À réévaluer avant toute mise en service
+avec de vrais prestataires — c'est le genre de réglage qu'un chiffre choisi sur le papier
+ne tranche pas.
+
+Le seuil porte sur l'échantillon d'entrée, pas sur ce qu'il reste après exclusion des
+valeurs aberrantes : l'appliquer aux deux contredirait l'exemple du FR. La contrainte est
+reposée par la base (`nb_missions >= 5`), pour qu'aucun chemin d'écriture ne la contourne.
+
+**Non fourni** : le job de calcul. Il lit l'historique des Missions, qui n'existe pas avant
+l'Epic 3. La table d'agrégat reste vide et toutes les fourchettes sont absentes, ce qui est
+l'état prévu par FR-009 `@negative` au lancement.
+
 ## Droit à l'effacement (Story 1.9, FR-005, RGPD art. 17)
 
 `POST /api/v1/me/erase` avec la confirmation `DELETE` programme l'effacement à trente jours ;

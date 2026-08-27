@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::fourchette::FourchettePrix;
 use crate::libelles::Libelles;
 
 /// Code stable d'une entrée de catalogue.
@@ -91,6 +92,9 @@ pub struct Secteur {
     pub code: CodeCatalogue,
     pub libelles: Libelles,
     pub skills: Vec<Skill>,
+    /// Fourchette indicative, quand l'historique suffit à en publier une
+    /// (FR-009). `None` signifie « prix sur devis », pas « prix inconnu ».
+    pub fourchette: Option<FourchettePrix>,
 }
 
 impl Secteur {
@@ -131,6 +135,7 @@ mod tests {
             code: CodeCatalogue::parse("plomberie").unwrap(),
             libelles: Libelles::new("Plomberie", "Loodgieterij", "Plumbing"),
             skills,
+            fourchette: None,
         }
     }
 

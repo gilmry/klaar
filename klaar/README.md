@@ -276,6 +276,29 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   avec une liste vide — un état de démarrage, pas une panne. `KLAAR_CATALOGUE_MAINTENANCE=1`
   fait répondre 503 avec `Retry-After`, ce qui distingue un retrait volontaire d'une panne.
 
+- **2.3** — **Prix indicatifs** (FR-009) : calcul IQR, seuil d'anonymat, table d'agrégat, exposition par l'API et affichage.
+
+  **Ce qui est livré, et ce qui manque.** L'algorithme est complet et reproduit l'exemple de
+  FR-009 mot pour mot — sur `[80, 120, 150, 200, 1000]`, la fourchette rendue est 80–200 et
+  non 80–1000 — qui sert donc de vecteur de test. Le job qui alimenterait la table lit
+  l'historique des Missions, absent avant l'Epic 3 : la table reste vide et toutes les
+  fourchettes affichent « prix sur devis ». C'est exactement le scénario `@negative` du FR :
+  l'état livré **est** l'état attendu à ce stade.
+
+  **Une fourchette est faite de deux prix réels.** Son minimum et son maximum sont des
+  montants qu'un prestataire a facturés : publier une fourchette de deux Missions revient à
+  publier ces deux prix. D'où le seuil de cinq, qui n'est pas une précaution statistique
+  mais la condition pour que l'agrégat en soit un. Ce qu'il ne supprime pas est écrit dans
+  `COMPLIANCE.md` : au seuil, deux prix sur cinq restent exposés.
+
+  **Un garde-fou surnuméraire retiré, par un test.** Le premier jet appliquait le seuil aussi
+  après exclusion des aberrations, et contredisait alors l'exemple du PRD : cinq Missions
+  dont une aberrante n'en laissent que quatre. Le seuil porte sur l'échantillon d'entrée.
+
+  La mention « prix indicatif, prix final fixé par le prestataire » accompagne
+  obligatoirement toute fourchette — sans elle, une fourchette se lit comme un devis, et
+  l'écart devient un litige.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

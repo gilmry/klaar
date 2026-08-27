@@ -94,6 +94,7 @@ pub struct EtatApplication {
         routes::catalogue::CatalogueDto,
         routes::catalogue::SecteurDto,
         routes::catalogue::SkillDto,
+        routes::catalogue::FourchetteDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
