@@ -15,3 +15,4 @@ klaar-intervention = { path = "../klaar-intervention", version = "0.0.0" }
 klaar-payment = { path = "../klaar-payment", version = "0.0.0" }
 klaar-messaging = { path = "../klaar-messaging", version = "0.0.0" }
 klaar-trust = { path = "../klaar-trust", version = "0.0.0" }
+uuid.workspace = true

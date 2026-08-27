@@ -135,7 +135,7 @@ klaar/
 
 ### Contexte
 
-Le Brief v0.2 envisageait une **bascule native (RN/Flutter)** au jalon J12 (~1000-1600 h) après un MVP Tauri 2.0. Cette option créait :
+Le Brief v0.2 envisageait une **bascule native (RN/Flutter)** au jalon J12 (~1000-1600 h, ~100-160 k€) après un MVP Tauri 2.0. Cette option créait :
 - une **double codebase** (Rust + TS/Svelte côté Tauri, puis RN-JS ou Flutter-Dart côté natif) — violation de la cohérence Rust (ADR-001) ;
 - un **coût massif** (réécriture complète, re-submission stores, E2E natif) ;
 - un **risque H-13** (maturité plugin Tauri géoloc background iOS) utilisé comme justification pour ouvrir la porte natif — alors que des paliers moins coûteux existent (PWA foreground permanent, plugin Tauri custom).
@@ -155,7 +155,7 @@ Toute évolution mobile = enhancement du socle Tauri/PWA :
 
 - **Cohérence Rust (ADR-001) préservée** : 1 seul langage backend cloud + backend embarqué Tauri
 - **Sobriété (Manifeste sumak kawsay)** : 1 codebase au lieu de 3 (Rust + TS Svelte + RN-JS/Flutter-Dart)
-- **Coût** : économie majeure vs bascule native (deux bases de code à maintenir)
+- **Coût** : économie de ~**800-1400 k€** vs bascule native (devis §4.5)
 - **Tauri 2.0 stable** depuis octobre 2024, écosystème plugins mature (notification, push, biometric, stronghold)
 - **PWA fallback** garantit un continuum de service même en cas de blocage plugin Tauri spécifique
 
@@ -1448,7 +1448,7 @@ Open question §Questions ouvertes #3. Influence le pricing tier (Free / Pro / E
 | **C13 IA/monétisation/ouverture** | v0.3 §7 | FR-056 à FR-063 | `klaar-matching` (extension IA), `klaar-surge` (NOUVEAU), `klaar-subscription` (NOUVEAU), `klaar-public-api` (NOUVEAU), `klaar-ml-adapter` (NOUVEAU), `klaar-insurance-adapter` (NOUVEAU) | ADR-009 (à tracer), ADR-010 (à tracer) | **J13** (gate base Providers + demande partenaires) |
 | **C14 Expansion géo** | v0.3 §7 | FR-064 à FR-068 | `klaar-region-adapter` (NOUVEAU), `klaar-geo-adapter` (extension routing régional), multi-région IaC | ADR-006 confirmé | **J14** (gate rentabilité RBC prouvée > 12 mois) |
 
-> Toutes les extensions sont activées **au fil de l'eau** selon les gates go/no-go. Le client peut s'arrêter à n'importe quel jalon (roadmap continue Brief §19). Aucune dépendance technique irréversible n'est créée tant que la capacité n'est pas activée — les crates existent en placeholder (feature flag `cargo feature j11`/`j12_prime`/`j13`/`j14`).
+> Toutes les extensions sont activées **au fil de l'eau** selon les gates go/no-go du DEVIS §4.5. Le client peut s'arrêter à n'importe quel jalon (roadmap continue Brief §19). Aucune dépendance technique irréversible n'est créée tant que la capacité n'est pas activée — les crates existent en placeholder (feature flag `cargo feature j11`/`j12_prime`/`j13`/`j14`).
 
 ---
 

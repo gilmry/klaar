@@ -6,3 +6,13 @@ packages/klaar-client/src/schema.d.ts
 *.cdx.json
 *.sig
 *.pem
+
+# Story 0.2 — PWA
+web/node_modules/
+web/dist/
+web/.astro/
+web/test-results/
+web/playwright-report/
+
+# Secrets locaux (clé privée VAPID, DATABASE_URL) — jamais committés.
+.env

@@ -1,0 +1,37 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  titre: string;
+  description?: string;
+}
+const { titre, description = "Dépannage et services à la demande à Bruxelles." } = Astro.props;
+---
+
+<!doctype html>
+<html lang="fr-BE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{titre}</title>
+    <meta name="description" content={description} />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#1b3a4b" />
+    <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  </head>
+  <body>
+    <header class="klaar-entete">
+      <img src="/icons/icon-192.png" alt="" width="32" height="32" />
+      <strong>Klaar</strong>
+      <span class="klaar-tempere">Bruxelles</span>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <script>
+      import { registerServiceWorker } from "../lib/registerSW";
+      registerServiceWorker();
+    </script>
+  </body>
+</html>

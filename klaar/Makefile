@@ -1,13 +1,26 @@
-.PHONY: bootstrap test build db-up db-down migrate hooks codegen
+.PHONY: bootstrap test build db-up db-down migrate hooks codegen frontend frontend-test msrv
 
 # Story 0.1 — DoD : idempotent, tous les crates compilent, cargo test vert.
-bootstrap: build test
+bootstrap: build test frontend
 
 build:
 	cargo build --workspace
 
 test:
 	cargo test --workspace
+
+# Story 0.1 — la MSRV déclarée dans Cargo.toml doit être vraie, pas décorative.
+msrv:
+	rustup toolchain install $$(grep '^rust-version' Cargo.toml | cut -d'"' -f2) --profile minimal
+	cargo +$$(grep '^rust-version' Cargo.toml | cut -d'"' -f2) check --workspace
+
+# Story 0.2 — PWA Astro + Svelte (ADR-010). Remplace le bootstrap Tauri.
+frontend:
+	npm --prefix web ci --no-audit --no-fund || npm --prefix web install --no-audit --no-fund
+	npm --prefix web run build
+
+frontend-test:
+	npm --prefix web run test
 
 # Story 0.3 — PostgreSQL + PostGIS local (dev uniquement, pas de secret réel).
 db-up:

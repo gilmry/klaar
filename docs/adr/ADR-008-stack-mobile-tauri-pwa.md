@@ -1,10 +1,11 @@
 # ADR-008 — Stack mobile : Tauri 2.0 + PWA uniquement (pas de réécriture native)
 
-- **Statut** : Accepté
+- **Statut** : **Remplacé par [ADR-010](ADR-010-stack-pwa-only.md)** le 27/08/2026 — Tauri est retiré, le client est une PWA Astro + Svelte.
+- **Statut d'origine** : Accepté
 - **Date** : 2026-07-18
 - **Décideur** : Superviseur (décision structurante v0.3), formalisée par l'Architecte
 - **Superviseur valideur** : ⏳ PENDING (à contresigner avec l'ensemble v0.3)
-- **Livrables impactés** : Brief v0.4 §7/§16/§19, PRD v0.3 module E2', Architecture v0.2 §2, Epics v2.1 Epic 11, CBS v1.2 §Partie 2, Estimateur v2.1 §11
+- **Livrables impactés** : Brief v0.4 §7/§16/§19, PRD v0.3 module E2', Architecture v0.2 §2, Epics v2.1 Epic 11, CBS v1.2 §Partie 2, Estimateur v2.1 §11, DEVIS §4.5
 
 ## Contexte
 
@@ -58,7 +59,7 @@ Le jalon **J12 « Native premium »** devient **J12' « Enhancement Tauri/PWA co
 
 ### Négatives / risques à tracer
 - ⚠️ **Le repli natif n'existe plus.** Tauri devient un point de passage obligé sans plan B de stack. Cette décision **aggrave le concern C-2** du Validateur : l'échec du PoC ne peut plus être rattrapé en basculant natif.
-- **Géoloc background non garantie** au MVP : dépend du plugin Tauri (gate PoC Story 0.12). En cas d'échec → suivi **foreground uniquement**, UX dégradée. Ce point est **exclu de la garantie de résultat** et communiqué comme tel au client ().
+- **Géoloc background non garantie** au MVP : dépend du plugin Tauri (gate PoC Story 0.12). En cas d'échec → suivi **foreground uniquement**, UX dégradée. Ce point est **exclu de la garantie de résultat** et communiqué comme tel au client (DEVIS §4.5).
 - **Plafond de performance** : si un besoin futur exige des animations 120 fps ou un accès matériel exotique, la décision devra être rouverte — au prix fort, puisque le rattrapage se fera alors sur une base plus large.
 - **Dépendance à la trajectoire amont de Tauri Mobile** : l'écosystème mobile de Tauri 2.0 est plus jeune que RN/Flutter. Risque de plugin manquant à traiter au cas par cas.
 

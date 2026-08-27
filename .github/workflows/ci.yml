@@ -15,6 +15,27 @@ jobs:
   quality-gate:
     name: Quality gate (fmt, clippy, tests)
     runs-on: ubuntu-latest
+    services:
+      # klaar-api refuse désormais de démarrer sans base : un service qui
+      # démarre « vert » puis rejette toutes les requêtes est plus coûteux à
+      # diagnostiquer qu'un service qui refuse de démarrer. Les tests
+      # d'intégration en ont besoin pour la même raison, ON CONFLICT et les
+      # contraintes d'unicité n'existant pas dans un double en mémoire.
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: klaar
+          POSTGRES_PASSWORD: klaar_dev_only
+          POSTGRES_DB: klaar
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U klaar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -25,7 +46,27 @@ jobs:
           workspaces: klaar
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Applique les migrations
+        run: cargo run -p klaar-api --bin klaar-migrate
       - run: cargo test --workspace
+
+  msrv:
+    name: MSRV (rust-version de Cargo.toml)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lit la MSRV déclarée
+        id: msrv
+        run: echo "version=$(grep '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: klaar
+      # Une MSRV déclarée mais jamais compilée est une fiction. Elle l'était :
+      # Cargo.toml annonçait 1.85 alors que l'arbre de dépendances exige 1.88.
+      - run: cargo check --workspace
 
   security-gate:
     name: Security gate (audit, deny, secrets)
@@ -61,6 +102,27 @@ jobs:
     name: Contrat API (schemathesis)
     runs-on: ubuntu-latest
     needs: [quality-gate]
+    services:
+      # klaar-api refuse désormais de démarrer sans base : un service qui
+      # démarre « vert » puis rejette toutes les requêtes est plus coûteux à
+      # diagnostiquer qu'un service qui refuse de démarrer. Les tests
+      # d'intégration en ont besoin pour la même raison, ON CONFLICT et les
+      # contraintes d'unicité n'existant pas dans un double en mémoire.
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: klaar
+          POSTGRES_PASSWORD: klaar_dev_only
+          POSTGRES_DB: klaar
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U klaar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -73,6 +135,8 @@ jobs:
       - run: pip install schemathesis
       - name: Compile klaar-api à l'avance (le run à froid en CI dépasse le délai d'attente de schemathesis)
         run: cargo build -p klaar-api --bin klaar-api
+      - name: Applique les migrations
+        run: cargo run -p klaar-api --bin klaar-migrate
       - name: Démarre klaar-api en arrière-plan
         run: cargo run -p klaar-api --bin klaar-api &
       - name: Fuzz le contrat API (schemathesis, ADR-004)
@@ -88,6 +152,27 @@ jobs:
     name: Codegen TS client (@klaar/client)
     runs-on: ubuntu-latest
     needs: [quality-gate]
+    services:
+      # klaar-api refuse désormais de démarrer sans base : un service qui
+      # démarre « vert » puis rejette toutes les requêtes est plus coûteux à
+      # diagnostiquer qu'un service qui refuse de démarrer. Les tests
+      # d'intégration en ont besoin pour la même raison, ON CONFLICT et les
+      # contraintes d'unicité n'existant pas dans un double en mémoire.
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: klaar
+          POSTGRES_PASSWORD: klaar_dev_only
+          POSTGRES_DB: klaar
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U klaar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -97,6 +182,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Applique les migrations
+        run: cargo run -p klaar-api --bin klaar-migrate
       - run: bash scripts/codegen.sh
       - name: Vérifie que le client a bien été régénéré
         run: test -s packages/klaar-client/src/schema.d.ts
@@ -133,3 +220,30 @@ jobs:
             klaar/**/*.cdx.json
             klaar/**/*.cdx.json.sig
             klaar/**/*.cdx.json.pem
+
+  frontend:
+    name: PWA (build, tests, e2e)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: klaar/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: klaar/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Contrôle de types + build statique
+        run: npm run build
+      - name: Tests unitaires (queue hors-ligne, 4 classes)
+        run: npm run test
+      - run: npx playwright install --with-deps chromium
+      - name: Tests e2e (installabilité, service worker, hors-ligne)
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: klaar/web/playwright-report/

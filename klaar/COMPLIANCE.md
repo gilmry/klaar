@@ -28,12 +28,24 @@ vers les documents de conception (`docs/bmad-livrables/`).
 
 C'est un point de départ défendable. Ce n'est pas une conformité.
 
-## Un point connu, non corrigé
+## Un point connu, désormais corrigé
 
-Le span racine de `tracing-actix-web` journalise par défaut `http.client_ip` et
-`http.user_agent`. Une adresse IP est une donnée personnelle. Sans conséquence tant que
-`/api/v1/health` est le seul endpoint exposé, à corriger avant tout endpoint réel — voir
-le commentaire dans `crates/klaar-api/src/main.rs`.
+Le span racine de `tracing-actix-web` journalisait par défaut `http.client_ip` et
+`http.user_agent`. Une adresse IP est une donnée personnelle, et l'agent utilisateur
+contribue à l'empreinte du navigateur : les inscrire à chaque requête constituait un
+traitement que rien ne documentait. Sans conséquence tant que `/api/v1/health` était le
+seul endpoint, la question a cessé d'être théorique avec les endpoints d'abonnement push.
+
+Corrigé par un constructeur de span dédié (`crates/klaar-api/src/telemetry.rs`), qui
+conserve route, méthode, code et identifiant de requête, et laisse tomber les deux autres.
+La route journalisée est le motif (`/missions/{id}`) et non le chemin brut, pour la même
+raison : un identifiant de Mission dans chaque ligne de journal reconstitue l'activité
+d'une personne.
+
+Une première tentative se contentait de déclarer ces champs vides et **ne marchait pas** —
+la macro `root_span!` les renseigne elle-même, et les journaux contenaient toujours l'IP.
+Le test `crates/klaar-api/tests/telemetry.rs` inspecte les journaux réellement émis,
+précisément pour que cette illusion ne puisse pas se reproduire sans être vue.
 
 ## Vulnérabilité transitive acceptée
 

@@ -7,10 +7,11 @@ PostgreSQL/PostGIS.
 *Klaar* : « prêt, terminé » en néerlandais, employé tel quel dans le français bruxellois.
 C'est l'état qu'on veut à la fin d'une intervention.
 
-> **Statut : scaffolding.** Le Sprint 0 est partiellement réalisé. Le backend sert un seul
-> endpoint (`/api/v1/health`) ; les 7 bounded contexts métier sont des crates vides en
-> attente d'implémentation. Ce dépôt vaut aujourd'hui pour sa **conception** et son
-> **socle de délivrabilité**, pas pour ses fonctionnalités.
+> **Statut : socle en place, métier à écrire.** Le backend sert un seul endpoint
+> (`/api/v1/health`) et les 7 bounded contexts sont des crates vides. La PWA est une
+> coquille installable et fonctionnelle hors ligne, sans parcours métier. Ce dépôt vaut
+> aujourd'hui pour sa **conception** et son **socle de délivrabilité**, pas pour ses
+> fonctionnalités.
 
 ## Ce que c'est vraiment
 
@@ -27,8 +28,10 @@ chaque décision structurante, y compris celles qui ont été renversées.
 ## Structure
 
 ```
-klaar/                  workspace Cargo (19 crates)
-├── crates/
+klaar/
+├── web/                PWA Astro + Svelte (ADR-010) — manifeste, service worker,
+│                       queue d'écritures hors-ligne IndexedDB
+├── crates/             workspace Cargo (19 crates)
 │   ├── klaar-shared-kernel/     value objects (Email, Geo, Money, VatRate, Locale…)
 │   ├── klaar-{identity,catalog,matching,intervention,payment,messaging,trust}/
 │   │                            les 7 bounded contexts cœur (Domain) — stubs
@@ -40,7 +43,7 @@ klaar/                  workspace Cargo (19 crates)
 └── packages/klaar-client/       client TypeScript généré depuis l'OpenAPI
 
 docs/
-├── adr/                9 décisions d'architecture
+├── adr/                10 décisions d'architecture
 └── bmad-livrables/     PRD, Architecture, Epics & Stories
 ```
 
@@ -48,7 +51,7 @@ docs/
 
 ```sh
 cd klaar
-make bootstrap   # build + test, idempotent
+make bootstrap   # build backend + tests + PWA, idempotent
 make db-up       # PostgreSQL + PostGIS local
 make migrate     # migrations refinery, idempotentes
 ```
@@ -79,6 +82,15 @@ validation de ce projet a été refait après qu'une première passe se soit aut
 100/100. Un relecteur chargé de réfuter qui se décerne un sans-faute signale de la
 complaisance, pas de la qualité. La seconde passe a rendu un PASS conditionnel avec sept
 réserves ouvertes.
+
+## Décisions notables
+
+- **[ADR-010](docs/adr/ADR-010-stack-pwa-only.md)** retire Tauri : le client est une PWA,
+  et rien d'autre. Ça supprime le seul point de passage obligé sans plan B du projet, au
+  prix de la géolocalisation en arrière-plan, qui devient une capacité absente et non un
+  chantier reporté.
+- **[ADR-009](docs/adr/ADR-009-license-mit.md)** fait passer le code en MIT, en
+  documentant que ce n'est pas la licence que la doctrine désigne.
 
 ## Licence
 

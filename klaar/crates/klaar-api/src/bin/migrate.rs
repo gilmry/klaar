@@ -9,7 +9,7 @@ mod embedded {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://klaar:klaar_dev_only@localhost:5432/klaar".to_string());
+        .unwrap_or_else(|_| "postgres://klaar:klaar_dev_only@localhost:5433/klaar".to_string());
 
     let (mut client, connection) =
         tokio_postgres::connect(&database_url, tokio_postgres::NoTls).await?;

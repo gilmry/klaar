@@ -1,0 +1,30 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import EtatConnexion from "../components/EtatConnexion.svelte";
+import BoutonNotifications from "../components/BoutonNotifications.svelte";
+---
+
+<AppLayout titre="Klaar — dépannage à Bruxelles">
+  <h1>Klaar</h1>
+  <p class="klaar-tempere">
+    « Prêt, terminé » en néerlandais. C'est l'état qu'on veut à la fin d'une
+    intervention.
+  </p>
+
+  <EtatConnexion client:load />
+
+  <h2>Notifications</h2>
+  <BoutonNotifications client:load />
+
+  <h2>État du chantier</h2>
+  <p>
+    Cette PWA est la coquille livrée par la Story 0.2. Elle est installable,
+    fonctionne hors ligne et conserve les écritures faites sans réseau, mais
+    aucun parcours métier n'y est encore branché : ils arrivent epic par epic,
+    à commencer par l'identité (Epic 1).
+  </p>
+  <p class="klaar-tempere">
+    Avant tout traitement de position réel, une analyse d'impact RGPD est
+    légalement requise. Voir <code>klaar/COMPLIANCE.md</code>.
+  </p>
+</AppLayout>

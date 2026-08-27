@@ -6,7 +6,10 @@ services:
       POSTGRES_PASSWORD: klaar_dev_only
       POSTGRES_DB: klaar
     ports:
-      - "5432:5432"
+      # 5433 et non 5432 : un poste qui héberge plusieurs projets ne doit pas
+      # les faire se disputer le port par défaut. KLAAR_PG_PORT permet d'en
+      # choisir un autre sans modifier ce fichier.
+      - "${KLAAR_PG_PORT:-5433}:5432"
     volumes:
       - klaar-postgres-data:/var/lib/postgresql/data
     healthcheck:

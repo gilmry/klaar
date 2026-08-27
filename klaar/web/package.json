@@ -1,0 +1,30 @@
+{
+  "name": "klaar-web",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "PWA Klaar (Astro + Svelte, ADR-010). Surfaces User, Provider et Admin.",
+  "scripts": {
+    "dev": "astro dev --host 0.0.0.0",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.4",
+    "@astrojs/svelte": "^7.0.9",
+    "astro": "^5.13.0",
+    "idb": "^8.0.3",
+    "svelte": "^5.38.0",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "fake-indexeddb": "^6.0.1",
+    "vitest": "^3.2.4"
+  }
+}

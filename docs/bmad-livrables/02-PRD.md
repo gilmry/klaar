@@ -2356,7 +2356,7 @@ Feature: i18n documents
 
 ## 7. Capacités d'extension (E1-E4) — FR-045 à FR-068
 
-> Les 24 FR ci-dessous couvrent les capacités d'extension C11-C14 du Brief v0.3 §7. Ils sont déclenchés au fil de l'eau selon les gates go/no-go, au rythme choisi. Chaque jalon est indépendant des autres.
+> Les 24 FR ci-dessous couvrent les capacités d'extension C11-C14. Ils sont déclenchés au fil de l'eau selon les gates go/no-go de chaque jalon.
 >
 > **Conformité transverse** (rappel) : RGPD (Art. 17, 22, 35), AI Act (Art. 10, 12, 14, 15), Platform Work (loi BE 26 avril 2024 + directive UE 2024/2831), DSP2/SCA, NIS2/CyFun Basic, TVA BE. Invariants Brief §10 intangibles (BCE, prix libre Provider, pas d'exclusivité, escrow, trace immuable, etc.).
 >
@@ -4547,7 +4547,7 @@ Feature: Dashboard multi-villes
 | **E4 — Expansion géographique** | C14 (J14) | FR-064 à FR-068 (5 FR) | E4.1-E4.3 (~60 h accéléré / 130-230 h prudent, par ville) |
 | **Total extension v0.3** | | **24 FR** | **~232 h accéléré / 1120-1830 h prudent (+ J14 à la ville)** |
 
-> **Chiffrage à deux branches (v0.3, aligné CBS v1.2 §Partie 2)** : la branche **accélérée** correspond aux heures réelles facturables en binôme agent IA, mesurées à la maille story (04-Epics v2.0, Epics 10-13). La branche **prudente** conserve les priors CBS v1.1 comme plafond de risque, applicable si la vélocité foyer ne se confirme pas en S1-S2. Le chiffrage communiqué expose le scénario **neutre** et jamais la seule branche accélérée (cf. concern C-7 du Validateur).
+> **Chiffrage à deux branches (v0.3, aligné CBS v1.2 §Partie 2)** : la branche **accélérée** correspond aux heures réelles facturables en binôme agent IA, mesurées à la maille story (04-Epics v2.0, Epics 10-13). La branche **prudente** conserve les priors CBS v1.1 comme plafond de risque, applicable si la vélocité foyer ne se confirme pas en S1-S2. Le devis client expose le scénario **neutre** (~135-170 k€ J0-J13) et jamais la seule branche accélérée — cf. concern C-7 du Validateur v2.1.
 
 ### 8.2 Synthèse consolidée PRD v0.3
 
@@ -4574,7 +4574,7 @@ Feature: Dashboard multi-villes
 ### 8.4 Décisions structurantes v0.3 à valider par le superviseur
 
 1. **Stack mobile lockée Tauri 2.0 + PWA** (pas de RN/Flutter) — Brief §16, ADR-001
-2. **Module E2' substitue J12 originel** (économie de budget majeure)
+2. **Module E2' substitue J12 originel** (gain budget estimé : 800-1400 k€ évités)
 3. **Gate go/no-go fill rate > 60 %** avant activation E1 (Brief §19.3)
 4. **Gate rentabilité RBC > 12 mois** avant activation E4 (Brief §19.3)
 5. **PWA grand public** (FR-055) déplacé depuis E3.6 vers E2'.5 (cohérent avec décision Tauri/PWA only)

@@ -36,13 +36,14 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Taille** : **M** (0,75 j) · **Tours** : 3
 - **DoD** : `.tool-versions` figé (Rust 1.85+) · `cargo machete` propre · `make bootstrap` idempotent
 
-### Story 0.2 — Bootstrap Tauri 2.0 mobile + admin Astro
-- **En tant que** équipe · **je veux** `tauri-app/` + `admin-web/` initialisés · **afin de** démarrer le frontend
-- **Critères Gherkin** : `Étant donné` le workspace · `Quand` je lance `make frontend` · `Alors` Tauri iOS + Android + admin web build OK
-- **4×N** : `@happy` builds OK · `@negative` plugin manquant · `@edge` device non supporté · `@security` permissions Tauri allowlist stricte
+### Story 0.2 — Bootstrap PWA Astro + Svelte (ADR-010)
+- **En tant que** équipe · **je veux** `web/` initialisé en Astro + Svelte, installable et fonctionnel hors-ligne · **afin de** démarrer le frontend
+- **Critères Gherkin** : `Étant donné` le workspace · `Quand` je lance `make frontend` · `Alors` `web/` build sans erreur, sert un manifeste valide et enregistre son service worker
+- **4×N** : `@happy` build + manifeste + SW enregistré · `@negative` build cassé détecté · `@edge` navigateur sans service worker (dégradation, pas d'erreur) · `@security` CSP stricte, aucun script tiers
 - **Couche(s)** : Frontend + IaC
 - **Taille** : **L** (1 j) · **Tours** : 5
-- **DoD** : `tauri dev` marche sur iOS sim + Android emu · `pnpm dev` admin OK
+- **DoD** : `npm run build` vert · Web App Manifest + icônes maskables · service worker enregistré · queue offline IndexedDB testée · consomme `@klaar/client`
+- *Remplace le bootstrap Tauri 2.0 mobile, retiré par ADR-010. Ce qui était bloqué par l'absence de macOS et de compte développeur ne l'est plus.*
 
 ### Story 0.3 — PostgreSQL + PostGIS + migrations refinery
 - **En tant que** équipe · **je veux** un PostgreSQL 16 + PostGIS sur OVH BE/EU en dev/integration · **afin de** démarrer les BC stateful
@@ -129,15 +130,25 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Taille** : **M** (0,75 j) · **Tours** : 3
 - **DoD** : tile-server + Valhalla déployés · MAJ OSM BE hebdo automatisée · P99 latence tiles < 200 ms
 
-### Story 0.12 — PoC push Tauri 2.0 Mobile (ADR-007)
-- **En tant que** Provider · **je veux** recevoir une notification push · **afin de** valider la maturité plugin Tauri 2.0
-- **Critères Gherkin** : `Étant donné` le PoC mobile · `Quand` backend envoie 1 push · `Alors` Provider le reçoit sur iOS sim + Android emu, click ouvre la Mission
-- **4×N** : `@happy` push delivered < 5 s · `@negative` plugin bug détecté · `@edge` app killed (background) · `@security` token device roté
-- **Couche(s)** : Infra (push adapter) + Frontend (Tauri plugin)
+### Story 0.12 — Web Push VAPID de bout en bout (ADR-010, amende ADR-007)
+- **En tant que** Provider · **je veux** recevoir une notification push dans la PWA · **afin d'** être alerté d'une Demande sans garder l'application ouverte
+- **Critères Gherkin** : `Étant donné` un navigateur abonné · `Quand` le backend émet un push · `Alors` le service worker affiche la notification et le clic ouvre la Mission ciblée
+- **4×N** : `@happy` push chiffré reçu et affiché · `@negative` abonnement expiré (410 Gone) purgé côté serveur · `@edge` permission refusée, aucun abonnement créé · `@security` charge chiffrée RFC 8291, `Authorization` VAPID signée ES256, clé privée jamais exposée au client
+- **Couche(s)** : Infra (`klaar-push-adapter`, Web Push) + Application (port `PushNotifier`) + Frontend (service worker `push` / `notificationclick`)
 - **Taille** : **L** (1 j) · **Tours** : 5
-- **DoD** : PoC iOS sim + Android emu · si échec → déclencher plan B UnifiedPush (Story 1.11)
+- **DoD** : chiffrement `aes128gcm` vérifié par vecteurs de test RFC 8291 · JWT VAPID vérifié par sa signature · purge automatique des abonnements morts
+- *Remplace le PoC push Tauri, retiré par ADR-010. **Limite assumée** : sur iOS le push n'arrive qu'aux PWA ajoutées à l'écran d'accueil (iOS ≥ 16.4). Non vérifiable ici faute d'appareil ; le protocole, lui, l'est intégralement.*
 
 **Sprint 0 total** : 12 stories · ~10,75 j wall-clock · ~44 tours
+
+> **État au 27/08/2026.** Faites : 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.9, 0.12. Partielles
+> avec limites écrites : 0.8 (pas de trace distribuée ni de Sentry), 0.10 (runbook non
+> joué). **Bloquées par un prérequis absent, pas par l'effort** : 0.7a/b/c et 0.11
+> nécessitent un compte OVH provisionné.
+>
+> ADR-010 a débloqué 0.2 et 0.12, qui l'étaient par macOS et par des comptes développeur
+> payants. Deux des quatre stories restantes du Sprint 0 ont ainsi été levées par une
+> décision de conception, pas par du travail supplémentaire.
 
 ---
 
@@ -316,19 +327,19 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain (MissionStatus state machine) + Application + Infra (mission_statuses table)
 - **Taille** : **L** (1 j) · **Tours** : 5
 
-### Story 4.4 — Tracking géoloc temps réel (foreground MVP ; background conditionnel) (FR-019)
+### Story 4.4 — Tracking géoloc temps réel, foreground uniquement (FR-019)
 - **En tant que** User · **je veux** voir la position Provider temps réel · **afin de** savoir quand il arrive
-- **Baseline MVP** : tracking **foreground** (app au premier plan pendant EN_ROUTE) — garanti sur Tauri **et** fallback PWA (Geolocation API)
-- **Enhancement conditionnel** : tracking **background continu** si le PoC plugin Tauri Mobile réussit (Story 0.12 / H-2) ; sinon fallback PWA foreground
+- **Périmètre** : tracking **foreground**, PWA ouverte pendant EN_ROUTE (`Geolocation.watchPosition`)
+- **Hors périmètre, définitivement** : le suivi en arrière-plan. ADR-010 le classe *won't do* — aucune API web ne le fournit. Ce n'est plus un conditionnel sous gate de PoC, c'est une capacité que le produit n'a pas.
 - **4×N** : PRD FR-019 (consentement, DPIA, purge post-Mission)
-- **Couche(s)** : Frontend (Tauri plugin **ou** PWA Geolocation API + Svelte map) + Infra (actix-web-actors WebSocket)
+- **Couche(s)** : Frontend (Geolocation API + carte Svelte) + Infra (WebSocket actix-web-actors)
 - **Taille** : **L** (1 j) · **Tours** : 6
-- **Dépendance** : H-2 Brief — maturité plugin Tauri Mobile géoloc background ; **fallback PWA foreground garanti** (pas de blocage MVP)
+- **Prérequis dur** : DPIA géoloc signée **avant** le premier traitement de position réel (RGPD art. 35). Voir `klaar/COMPLIANCE.md`.
 
 ### Story 4.5 — Preuves photos BEFORE/AFTER (FR-020)
 - **En tant que** Provider · **je veux** prendre photos avant/après · **afin de** documenter
 - **4×N** : PRD FR-020 (EXIF, hash, scan antivirus, chiffrement KMS)
-- **Couche(s)** : Infra (S3 + ClamAV + KMS) + Frontend (Tauri camera)
+- **Couche(s)** : Infra (S3 + ClamAV + KMS) + Frontend (`<input capture>` / MediaDevices)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 
 ### Story 4.6 — Validation fin Mission + libération Escrow (FR-021)
@@ -619,15 +630,24 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ---
 
-## Epic 11 — E2' Enhancement Tauri/PWA (C12, J12') · Priorité **Post-MVP**
+## Epic 11 — E2' Enhancement PWA (C12, J12') · Priorité **Post-MVP**
 
-> Remplace le jalon J12 originel « Native premium RN/Flutter ». Décision superviseur v0.3 : **pas de natif, Tauri 2.0 + PWA uniquement** (ADR-008). Budget 100-200 h au lieu de 1000-1600 h. Sous-capacités CBS E2'.1-E2'.5 (révisées) — voir `00-Capability-Breakdown-Estimation.md` §Partie 2 · J12'. Référence PRD §7 module E2' (FR-051 à FR-055).
+> Remplace le jalon J12 originel « Native premium RN/Flutter ». **ADR-010 retire Tauri** : le client est une PWA Astro + Svelte, et cet epic est re-spécifié en conséquence. Deux des sept stories changent de nature, une disparaît. Référence PRD §7 module E2' (FR-051 à FR-055) — les FR concernés sont à re-rédiger au prochain passage sur le PRD, cet epic fait foi entre-temps.
+>
+> | FR | ADR-008 (Tauri) | ADR-010 (PWA) |
+> |---|---|---|
+> | FR-051 push enrichi | plugins Tauri, parité APNs | Web Push, **sans actions inline sur iOS** |
+> | FR-052 secure storage + biométrie | `biometric` + Stronghold | **WebAuthn** : couvre l'auth, **pas** le stockage chiffré de secrets |
+> | FR-053 géoloc background | conditionnel, sous gate PoC | **won't do** |
+> | FR-054 re-submission stores | Tauri Updater + stores | **sans objet**, story retirée |
+> | FR-055 PWA grand public | surface secondaire | **c'est le produit** |
 
 ### Story 11.1 — Push rich media + actions inline (FR-051)
 - **En tant que** User/Provider · **je veux** des notifications enrichies avec actions inline (accepter/refuser un Devis en 1 tap) · **afin de** réagir sans ouvrir l'app
 - **Critères Gherkin** : PRD FR-051
 - **4×N** : PRD FR-051 (notif Devis actions, deep-link, preview tronqué, échecs envoi, action invalide, device offline, multi-device, payload chiffré, anti-spoofing, no tracking)
-- **Couche(s)** : Infra (extension push adapter APNs/FCM avec categories + actions) + Frontend (Tauri `notification` v2 plugin + handlers) + Application
+- **Couche(s)** : Infra (Web Push, `actions` du `NotificationOptions`) + Frontend (service worker `notificationclick` + handlers) + Application
+- **Limite** : les `actions` de la Notification API sont ignorées par Safari/iOS. Sur iOS, la notification ouvre l'application, elle ne permet pas de répondre depuis le shade.
 - **Taille** : **L** (1 j) · **Tours** : 5
 - **DoD** : P95 delivery < 10 s · JWT short-lived actions inline · payload AES-256-GCM
 
@@ -635,51 +655,42 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **En tant que** User · **je veux** qu'une notif m'ouvre directement la Mission ciblée · **afin de** gagner du temps
 - **Critères Gherkin** : PRD FR-051 (scénario deep-link `mission_id`)
 - **4×N** : happy ouverture /mission/M-1234 · negative mission inconnue · edge auth required · security pas de fuite données
-- **Couche(s)** : Frontend (routeur Svelte + Tauri `deep-link` plugin) + Application
+- **Couche(s)** : Frontend (routeur Astro/Svelte + `clients.openWindow` dans le service worker) + Application
 - **Taille** : **M** (0,75 j) · **Tours** : 3
-- **DoD** : auth vérifiée avant affichage · universal links iOS + app links Android
+- **DoD** : auth vérifiée avant affichage · une URL suffit, il n'y a plus ni universal link ni app link à déclarer
 
-### Story 11.3 — Secure storage biométrie FaceID/TouchID (FR-052)
-- **En tant que** User · **je veux** protéger refresh token + paiements ≥ 100 € via biométrie native · **afin de** sécuriser les actions sensibles (DSP2 SCA renforcée)
-- **Critères Gherkin** : PRD FR-052
-- **4×N** : PRD FR-052 (refresh Keychain/Keystore, SCA ≥ 100 €, échecs, < 100 € sans biométrie, opt-out, migration device, jailbreak, audit)
-- **Couche(s)** : Infra (Tauri `biometric` + `stronghold` plugins) + Frontend (prompts biométriques) + Application (hooks refresh + payment)
+### Story 11.3 — Authentification forte WebAuthn (FR-052, re-spécifiée par ADR-010)
+- **En tant que** User · **je veux** confirmer les actions sensibles (paiement ≥ 100 €) par l'authentificateur de plateforme de mon appareil · **afin de** satisfaire la SCA DSP2
+- **Critères Gherkin** : PRD FR-052, **amendés** : le moyen n'est plus le Keychain, c'est une passkey liée au domaine
+- **4×N** : `@happy` challenge signé et vérifié serveur · `@negative` signature invalide rejetée · `@edge` appareil sans authentificateur de plateforme (repli mot de passe + OTP) · `@security` anti-rejeu par challenge à usage unique, `userVerification: required`
+- **Couche(s)** : Infra (vérification WebAuthn côté serveur) + Frontend (`navigator.credentials`) + Application (hooks refresh + payment)
 - **Taille** : **L** (1 j) · **Tours** : 5
-- **DoD** : aucune donnée biométrique serveur · SafetyNet/DT-Tap · audit_log 13 mois (DSP2)
+- **DoD** : aucune donnée biométrique côté serveur (elle ne quitte pas l'appareil) · audit_log 13 mois (DSP2)
+- **Régression assumée** : WebAuthn authentifie, il ne **stocke** pas. Le refresh token ne peut plus être gardé dans une enclave sécurisée ; il reste en cookie `HttpOnly` `Secure` `SameSite=Strict`. C'est un niveau de protection inférieur à ce que promettait ADR-008, et il faut le dire.
 
-### Story 11.4 — PoC géoloc background plugin Tauri (FR-053)
-- **En tant que** Provider en Mission · **je veux** partager ma position en arrière-plan · **afin que** le User me suive en continu sans intervention manuelle
-- **Critères Gherkin** : PRD FR-053
-- **4×N** : PRD FR-053 (tracking bg nominal, arrêt auto fin Mission, refus permission, fallback PWA, mode avion, Mission > 4 h, aucune collecte hors Mission, suppression RGPD étendue)
-- **Couche(s)** : Frontend (Tauri `geolocation` background plugin) + Infra (batch receiver) + Application (start/stop tracking)
-- **Taille** : **L** (1 j) · **Tours** : 6
-- **DoD** : gate J12' PoC validé · opt-in explicite · DPIA étendu · stop auto à COMPLETED
+### ~~Story 11.4 — PoC géoloc background plugin Tauri (FR-053)~~ — **retirée (ADR-010)**
+Il n'y a plus de plugin à éprouver. Le suivi en arrière-plan sort du périmètre produit, il ne devient pas « à faire plus tard ». Si l'exigence redevient bloquante, c'est ADR-010 qu'il faut rouvrir, pas cette story.
 
-### Story 11.5 — Fallback PWA foreground permanent (FR-053)
-- **En tant que** Provider dont le device ne supporte pas le background · **je veux** un mode foreground dégradé · **afin de** garantir le tracking minimum
-- **Critères Gherkin** : PRD FR-053 (scénario fallback PWA foreground + Story 4.4 baseline MVP)
-- **4×N** : happy bascule transparente · negative permission révoquée · edge batterie faible · security
-- **Couche(s)** : Frontend (PWA Geolocation API fallback) + Application
+### Story 11.5 — Suivi foreground robuste (FR-053, re-spécifiée)
+- **En tant que** User · **je veux** que le suivi survive à un tunnel, un verrouillage bref ou une perte de réseau · **afin de** ne pas perdre la trace de mon dépanneur
+- **Critères Gherkin** : reprise de `watchPosition` au `visibilitychange`, positions mises en file dans IndexedDB tant que le réseau est absent, rejeu ordonné à la reconnexion
+- **4×N** : `@happy` reprise transparente après retour au premier plan · `@negative` permission révoquée en cours de Mission (message explicite, pas d'échec silencieux) · `@edge` 15 min hors ligne puis rejeu sans doublon ni désordre · `@security` aucune position conservée après `COMPLETED`
+- **Couche(s)** : Frontend (Geolocation API + queue IndexedDB) + Application
 - **Taille** : **M** (0,75 j) · **Tours** : 3
-- **DoD** : warning "MODE_DÉGRADÉ" · rapport telemetry · fréquence adaptative
+- **DoD** : bandeau « suivi interrompu » visible quand la PWA passe en arrière-plan, jamais de position inventée par interpolation · purge à `COMPLETED` vérifiée
 
-### Story 11.6 — Re-submission stores automatisée (FR-054)
-- **En tant que** ops release manager · **je veux** publier une nouvelle version sur App Store + Play Store avec rollback OTA · **afin de** réagir en < 1 h sans attendre la review
-- **Critères Gherkin** : PRD FR-054
-- **4×N** : PRD FR-054 (submission simultanée, hotfix OTA, rejets store, rollback lent Apple, doublon version, cert expiré, signature, anti-rollback, SBOM)
-- **Couche(s)** : Infra (CI/CD release pipeline + Tauri Updater + stores APIs) + Frontend (Tauri Updater client)
+### ~~Story 11.6 — Re-submission stores automatisée (FR-054)~~ — **sans objet (ADR-010)**
+Il n'y a plus de store. Le déploiement d'un correctif est une mise en ligne, et le service worker rend la nouvelle version disponible au chargement suivant. FR-054 n'a plus de contenu.
+
+### Story 11.7 — Surface publique et incitation à l'installation (FR-055, re-spécifiée)
+- **En tant que** visiteur · **je veux** utiliser Klaar sans rien installer · **afin de** l'essayer avant de l'ajouter à mon écran d'accueil
+- **Note** : ce n'est plus une « alternative » à une application native, **c'est le produit**. La story ne porte donc plus que sur la partie qui reste vraie : le parcours d'installation et la dégradation propre.
+- **4×N** : `@happy` `beforeinstallprompt` capté et proposé après 2 sessions · `@negative` navigateur sans support (aucune invite, aucune erreur) · `@edge` iOS, où l'invite n'existe pas et où il faut une consigne explicite « Partager → Sur l'écran d'accueil » · `@security` HTTPS/HSTS strict, CSP `strict-dynamic`, service worker servi en même origine
+- **Couche(s)** : Frontend + Infra (CDN + HSTS)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
-- **DoD** : 2 soumissions simultanées · OTA < 1 h · signature code obligatoire · SBOM CycloneDX joint
+- **DoD** : P95 accueil < 3 s · matrice de dégradation par navigateur documentée · le push iOS annoncé comme conditionnel à l'installation, dans l'interface et pas seulement dans la doc
 
-### Story 11.7 — PWA grand public alternative (FR-055)
-- **En tant que** User sans app installée · **je veux** accéder à Klaar via navigateur · **afin de** tester puis installer l'app si besoin
-- **Critères Gherkin** : PRD FR-055
-- **4×N** : PRD FR-055 (accès sans install, création Demande, install après 2 sessions, dégradations PWA, navigateur non supporté, offline, migration PWA→native, HTTPS, service worker integrity, ops PWA interdit)
-- **Couche(s)** : Frontend (`pwa-public/` Svelte 5 + service worker dédié) + Infra (CDN + HSTS)
-- **Taille** : **L** (1 j) · **Tours** : 5
-- **DoD** : feature parity matrix documentée · P95 home < 3 s · HTTPS/HSTS strict · CSP strict-dynamic
-
-**Epic 11 total** : 7 stories · ~5,5 j wall-clock · ~31 tours
+**Epic 11 total** : **5 stories** (2 retirées par ADR-010) · ~4 j wall-clock · ~22 tours
 
 ---
 
@@ -935,8 +946,8 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Story T.5** — DPIA géoloc document vivant — **S** (0,5 j) · 2 tours
 - **Story T.6** — Procédure backup/restore testée mensuellement — **S** (0,5 j) · 2 tours
 
-### Déploiement stores
-- **Story T.15** — Submission App Store + Play Store + provisioning (certificats Apple Developer 99 €/an, compte Google Play 25 $ one-shot) — **L** (1 j) · 3 tours
+### ~~Déploiement stores~~ — **retiré (ADR-010)**
+- ~~**Story T.15** — Submission App Store + Play Store + provisioning~~ — sans objet : la PWA se distribue par son URL. Les 99 €/an Apple et 25 $ Google sortent du budget, et avec eux le délai de revue entre un correctif et sa mise à disposition.
 
 ### Audit juridique (H-3 critique, pre-S5)
 - **Story J.1** — Audit juridique Platform Work par avocat BE (loi 26/04/2024 + directive UE 2024/2831 transposée 2 déc 2026) · revue invariants §10.1-10.3 · revue contrat Provider — **M** (0,75 j) · 0 tour (mission externe avocat, ~3 k€ budget à prévoir)
@@ -945,6 +956,16 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Story T.7 à T.18** — réserve pour imprévu (~12 j wall-clock cumulés, 20 % du total MVP)
 
 **Stories transverses total** : ~12 stories · ~18 j wall-clock · ~36 tours
+
+---
+
+## Estimation du projet
+
+Le décompte par epic (stories, jours wall-clock, tours) ainsi que le chiffrage, les
+comparaisons de marché et le modèle de facturation figurent dans les livrables restés
+privés — ils relèvent de la relation commerciale, pas de la conception. Ce qui est
+opposable ici est le découpage lui-même : **76 stories** pour le cœur MVP, chacune
+dimensionnée sur ses deux axes et assortie de ses quatre classes de test.
 
 ---
 
@@ -965,13 +986,13 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 | S8 (17-18) | Epic 8 OPS + Transverses T.1-T.3 | 7,75 j |
 | S9 (19-20) | Transverses T.4-T.14 (émergence + ITIL) + UAT | 5,0 j |
 
-**Durée MVP** : **28 semaines (~7 mois) sur 14 sprints** — re-timeboxé v2.1. L'indépendant étant unique (lead dev = superviseur foyer), la capacité soutenable est de ~80 h/mois, soit **40 h et ~20 passes d'agent par sprint**. Les 548 h du cœur donnent 13,7 → **14 sprints (S0-S13)**. Le séquencement des epics et le chemin critique sont inchangés ; seule la cadence l'est. Découpage détaillé et Gantt par passes d'agent : `06-Chef-de-projet.md` §2.
+**Durée MVP** : **28 semaines (~7 mois) sur 14 sprints** — re-timeboxé v2.1. L'indépendant étant unique (lead dev = superviseur foyer), la capacité soutenable est de ~80 h/mois, soit **40 h et ~20 passes d'agent par sprint**. Le volume d'effort du cœur donne **14 sprints (S0-S13)**.<!-- 548 h : volume retiré du public avec le chiffrage --> Le séquencement des epics et le chemin critique sont inchangés ; seule la cadence l'est. Découpage détaillé et Gantt par passes d'agent : `06-Chef-de-projet.md` §2.
 
 ---
 
 ## Suggested Sprint Plan Extension (J11-J14, post-MVP au fil de l'eau)
 
-> Déclenchés au fil de l'eau selon les gates go/no-go. Pas de calendrier imposé. Chaque jalon est indépendant des autres.
+> Déclenchés au fil de l'eau selon les gates go/no-go de chaque jalon. Pas de calendrier imposé.
 
 | Sprint | Epics / stories | Wall-clock |
 |---|---|---|
@@ -998,10 +1019,10 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 ## Risques spécifiques découpage (H-1, H-2)
 
 - **H-1 scope MVP** : 76 stories est ambitieux pour ~7 mois en **solo** (pas de binôme humain — bus factor 1). Mitigation : stories Should (Epic 6 MSG, Epic 9 i18n) peuvent basculer post-MVP si dépassement.
-- **H-2 Tauri Mobile** : si plugins immatures en S0, plan B = PWA restreinte (sans background tracking). **v0.3 : pas de bascule RN/Flutter, Tauri 2.0 + PWA uniquement** (ADR-008) — fallback PWA foreground garanti.
+- **H-2 ~~Tauri Mobile~~ — risque clos par ADR-010.** Il portait sur la maturité des plugins Tauri Mobile sans plan B (concern C-2 du Validateur). Tauri étant retiré, il n'y a plus de plugin dont dépendre. Le risque n'est pas mitigé, il est supprimé — au prix de la géoloc background, désormais hors périmètre.
 - **H-3 Platform Work** : jurisprudence APD possible entre S5 et S8 (loi 26 avril 2024 + directive 2 déc 2026) — story habilitante juridique à prévoir.
 - **H-9 courbe Rust** : risque de glissement S1-S2 (team freelance découvre la codebase) — pair programming obligatoire (Brief conviction 8).
-- **H-13 géoloc background** : si plugin Tauri insuffisant, fallback PWA foreground (Story 11.5) — pas de blocage J12'.
+- **H-13 géoloc background** : **acté comme perdu** (ADR-010). Ce n'est plus un risque à surveiller mais une capacité absente, à annoncer comme telle. Le risque résiduel est commercial : un prospect pour qui le suivi écran éteint est bloquant ne sera pas servi par ce produit.
 - **H-14 surcharge KYC** : activation séquentielle secteurs et villes (1 secteur/2 par an max), bulk import capé 1000 lignes.
 - **H-15 AI Act matching IA** : canary 10 % → 50 % → 100 %, kill-switch drift > 20 %, audit biais semestriel (Story 12.4).
 
@@ -1012,11 +1033,12 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 1. **One mission per Provider** (FR-013) : à confirmer ou assouplir (impact Epic 3 + 4)
 2. **Story T.7-T.14 réserve émergence** : 6 j soit ~10 % du total — suffisant ou ajuster à 20 % (12 j) ?
 3. **Sprint 0 durée** : 8 j est optimiste pour 9 stories complexes — étendre à 3 semaines ?
-5. **Plan B Tauri** : à décider quand déclencher (Sprint 0 PoC) si plugins immatures ? **v0.3 : fallback PWA uniquement, pas de RN/Flutter.**
+4. **Capacité soutenable** : ~80 h/mois pour un intervenant unique sur ~7 mois, est-ce tenable pour le cœur MVP ?
+5. ~~**Plan B Tauri**~~ — **question close par ADR-010** : il n'y a plus de Tauri, donc plus de plan B à déclencher. La PWA n'est plus un repli, c'est la stack.
 6. **Gate J11 fill rate > 60 %** : seuil validé ou ajuster ? Même question pour gate J14 rentabilité RBC > 12 mois.
 7. **Activation E2' (J12')** : budget 100-200 h confirmé vs J12 original 1000-1600 h ?
 8. **Partenaires assurance (J13)** : Baloise vs AG vs autre — pré-validation commerciale avant Story 12.11 ?
 
 ---
 
-*Dérivé du Manifeste Maury (CC BY-SA 4.0). Méthode Foyer. Version 2.0 — 76 stories cœur + ~47 stories extension = **123 stories** pour 14 capacités (J0-J14). Roadmap continue par capacité. En attente de validation superviseur (signature humaine PENDING) avant passage au Validateur.*
+*Dérivé du Manifeste Maury (CC BY-SA 4.0). Méthode Foyer. Version 2.1 — 76 stories cœur + ~45 stories extension pour 14 capacités (J0-J14). Roadmap continue par capacité. Amendé le 27/08/2026 par ADR-010 (bascule PWA, deux stories de l'Epic 11 retirées).*

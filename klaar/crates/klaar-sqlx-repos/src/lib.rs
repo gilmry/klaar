@@ -1,5 +1,7 @@
-//! Adapters de persistance PostgreSQL/PostGIS (sqlx, ADR-002).
-//!
-//! Scaffolding Sprint 0 (Story 0.1) : le bounded context existe et compile,
-//! son contenu métier sera implémenté epic par epic (voir
-//! docs/bmad-livrables/04-Epics-Stories.md).
+//! Adapters de persistance PostgreSQL (ADR-002 : `sqlx`, SQL pur, pas d'ORM).
+
+mod pool;
+mod push_subscription;
+
+pub use pool::{creer_pool, PoolPg};
+pub use push_subscription::PgPushSubscriptionRepository;
