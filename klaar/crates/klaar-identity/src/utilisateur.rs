@@ -10,11 +10,26 @@ use crate::jeton_verification::{EmpreinteJeton, JetonVerification, VALIDITE_HEUR
 use crate::mot_de_passe::EmpreinteMotDePasse;
 use crate::verrouillage::Verrouillage;
 
+/// Durée du délai de grâce avant effacement effectif (FR-005).
+///
+/// Son unique raison d'être est la réversibilité : un effacement immédiat
+/// n'aurait pas besoin de délai. C'est pourquoi `annuler_effacement` existe,
+/// bien que FR-005 ne le décrive pas — trente jours pendant lesquels on ne
+/// pourrait rien annuler seraient trente jours d'attente pour rien.
+pub const DELAI_EFFACEMENT_JOURS: i64 = 30;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatutUtilisateur {
     /// Compte créé, adresse non encore prouvée. Ne donne accès à rien.
     EnAttenteVerificationEmail,
     Actif,
+    /// Effacement demandé, exécution différée. Le compte reste utilisable :
+    /// verrouiller ici empêcherait son titulaire d'annuler sa propre demande.
+    EffacementDemande,
+    /// Effacé. Ne porte plus ni adresse réelle ni empreinte de mot de passe ;
+    /// la ligne subsiste pour que le journal d'audit reste rattachable, sans
+    /// que ce rattachement désigne encore quelqu'un.
+    Efface,
 }
 
 impl StatutUtilisateur {
@@ -24,6 +39,8 @@ impl StatutUtilisateur {
         match self {
             Self::EnAttenteVerificationEmail => "PENDING_EMAIL_VERIFY",
             Self::Actif => "ACTIVE",
+            Self::EffacementDemande => "ERASED_PENDING",
+            Self::Efface => "ERASED",
         }
     }
 
@@ -31,6 +48,8 @@ impl StatutUtilisateur {
         match valeur {
             "PENDING_EMAIL_VERIFY" => Some(Self::EnAttenteVerificationEmail),
             "ACTIVE" => Some(Self::Actif),
+            "ERASED_PENDING" => Some(Self::EffacementDemande),
+            "ERASED" => Some(Self::Efface),
             _ => None,
         }
     }
@@ -46,12 +65,18 @@ impl fmt::Display for StatutUtilisateur {
 pub struct Utilisateur {
     pub id: Uuid,
     pub email: Email,
-    pub empreinte_mot_de_passe: EmpreinteMotDePasse,
+    /// Absente sur un compte effacé : FR-005 exige que l'empreinte disparaisse.
+    /// Un `Option` plutôt qu'une valeur sentinelle, pour que le compilateur
+    /// force à traiter le cas au lieu de laisser une chaîne impossible se
+    /// comparer silencieusement à un mot de passe.
+    pub empreinte_mot_de_passe: Option<EmpreinteMotDePasse>,
     pub statut: StatutUtilisateur,
     pub locale: Locale,
     pub cree_le: DateTime<Utc>,
     /// Compteur d'échecs et verrou éventuel (FR-007).
     pub verrouillage: Verrouillage,
+    /// Instant à partir duquel l'effacement peut être exécuté (FR-005).
+    pub efface_le: Option<DateTime<Utc>>,
 }
 
 /// Jeton fraîchement émis : la valeur en clair à envoyer, et ce qu'il faut
@@ -81,7 +106,7 @@ impl Utilisateur {
         Self {
             id: Uuid::new_v4(),
             email,
-            empreinte_mot_de_passe,
+            empreinte_mot_de_passe: Some(empreinte_mot_de_passe),
             // Aucun paramètre ne permet de créer un compte directement actif :
             // c'est l'invariant de FR-001, et le seul chemin vers `Actif` passe
             // par `verifier_email`.
@@ -89,6 +114,7 @@ impl Utilisateur {
             locale,
             cree_le: maintenant,
             verrouillage: Verrouillage::default(),
+            efface_le: None,
         }
     }
 
@@ -104,6 +130,48 @@ impl Utilisateur {
 
     pub fn est_actif(&self) -> bool {
         self.statut == StatutUtilisateur::Actif
+    }
+
+    /// Vrai si le compte peut encore ouvrir une session.
+    ///
+    /// Un effacement demandé n'y fait pas obstacle : son titulaire doit pouvoir
+    /// se connecter pour l'annuler. Un compte effacé, lui, n'a plus d'empreinte
+    /// de mot de passe et ne peut de toute façon rien vérifier.
+    pub fn peut_ouvrir_session(&self) -> bool {
+        matches!(
+            self.statut,
+            StatutUtilisateur::Actif | StatutUtilisateur::EffacementDemande
+        )
+    }
+
+    /// Demande l'effacement. Idempotent : redemander ne repousse pas l'échéance.
+    ///
+    /// Repousser ferait d'une demande répétée un moyen de différer
+    /// indéfiniment l'exécution, ce qui viderait le droit de son effet.
+    pub fn demander_effacement(&mut self, maintenant: DateTime<Utc>) {
+        if self.statut == StatutUtilisateur::EffacementDemande {
+            return;
+        }
+        self.statut = StatutUtilisateur::EffacementDemande;
+        self.efface_le = Some(maintenant + Duration::days(DELAI_EFFACEMENT_JOURS));
+    }
+
+    /// Annule une demande d'effacement et rend le compte à son état actif.
+    pub fn annuler_effacement(&mut self) -> bool {
+        if self.statut != StatutUtilisateur::EffacementDemande {
+            return false;
+        }
+        self.statut = StatutUtilisateur::Actif;
+        self.efface_le = None;
+        true
+    }
+
+    /// Vrai si l'échéance est atteinte et l'effacement exécutable.
+    pub fn effacement_du(&self, maintenant: DateTime<Utc>) -> bool {
+        self.statut == StatutUtilisateur::EffacementDemande
+            && self
+                .efface_le
+                .is_some_and(|echeance| echeance <= maintenant)
     }
 
     /// Passe le compte en `ACTIVE`. Idempotent : re-vérifier un compte déjà
@@ -125,6 +193,15 @@ mod tests {
 
     fn instant() -> DateTime<Utc> {
         DateTime::from_timestamp(1_780_000_000, 0).unwrap()
+    }
+
+    fn compte() -> Utilisateur {
+        Utilisateur::inscrire(
+            Email::parse("marie@example.eu").unwrap(),
+            empreinte(),
+            Locale::Fr,
+            instant(),
+        )
     }
 
     #[test]
@@ -177,6 +254,74 @@ mod tests {
         u.verifier_email();
         u.verifier_email();
         assert!(u.est_actif());
+    }
+
+    #[test]
+    fn happy_demander_l_effacement_programme_l_echeance_a_trente_jours() {
+        let mut u = compte();
+        u.verifier_email();
+        u.demander_effacement(instant());
+        assert_eq!(u.statut.as_str(), "ERASED_PENDING");
+        assert_eq!(u.efface_le, Some(instant() + Duration::days(30)));
+    }
+
+    #[test]
+    fn happy_annuler_rend_le_compte_actif() {
+        let mut u = compte();
+        u.verifier_email();
+        u.demander_effacement(instant());
+        assert!(u.annuler_effacement());
+        assert!(u.est_actif());
+        assert_eq!(u.efface_le, None);
+    }
+
+    #[test]
+    fn negative_annuler_sans_demande_ne_fait_rien() {
+        let mut u = compte();
+        u.verifier_email();
+        assert!(!u.annuler_effacement());
+        assert!(u.est_actif());
+    }
+
+    #[test]
+    fn edge_redemander_l_effacement_ne_repousse_pas_l_echeance() {
+        // Sinon, redemander deviendrait un moyen de différer indéfiniment
+        // l'exécution, ce qui viderait le droit de son effet.
+        let mut u = compte();
+        u.verifier_email();
+        u.demander_effacement(instant());
+        let echeance = u.efface_le;
+        u.demander_effacement(instant() + Duration::days(20));
+        assert_eq!(u.efface_le, echeance);
+    }
+
+    #[test]
+    fn edge_l_effacement_n_est_du_qu_a_l_echeance() {
+        let mut u = compte();
+        u.verifier_email();
+        u.demander_effacement(instant());
+        assert!(!u.effacement_du(instant() + Duration::days(29)));
+        assert!(u.effacement_du(instant() + Duration::days(30)));
+    }
+
+    #[test]
+    fn security_un_effacement_demande_laisse_ouvrir_une_session() {
+        // Le titulaire doit pouvoir se connecter pour annuler sa propre
+        // demande : le verrouiller ferait du délai de grâce une impasse.
+        let mut u = compte();
+        u.verifier_email();
+        u.demander_effacement(instant());
+        assert!(u.peut_ouvrir_session());
+    }
+
+    #[test]
+    fn security_un_compte_non_verifie_ou_efface_n_ouvre_pas_de_session() {
+        let u = compte();
+        assert!(!u.peut_ouvrir_session(), "en attente de vérification");
+
+        let mut efface = compte();
+        efface.statut = StatutUtilisateur::Efface;
+        assert!(!efface.peut_ouvrir_session());
     }
 
     #[test]

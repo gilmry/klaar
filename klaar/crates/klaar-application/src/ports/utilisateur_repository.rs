@@ -80,3 +80,45 @@ pub trait UtilisateurRepository {
 
     async fn par_id(&self, id: Uuid) -> Result<Option<Utilisateur>, RepositoryError>;
 }
+
+/// Port d'effacement (FR-005).
+///
+/// Séparé de `UtilisateurRepository` plutôt qu'ajouté dedans : trois cas
+/// d'usage sur quatre n'ont rien à faire de l'effacement, et chaque méthode
+/// ajoutée au port principal oblige tous leurs doubles de test à la
+/// reproduire. La séparation n'est pas de la coquetterie — c'est ce qui garde
+/// les tests lisibles à mesure que le domaine grandit.
+#[allow(async_fn_in_trait)]
+pub trait EffacementRepository {
+    /// Programme, ou annule, l'échéance d'effacement.
+    async fn programmer_effacement(
+        &self,
+        utilisateur_id: Uuid,
+        efface_le: Option<DateTime<Utc>>,
+    ) -> Result<(), RepositoryError>;
+
+    async fn annuler_effacement(&self, utilisateur_id: Uuid) -> Result<(), RepositoryError>;
+
+    /// Comptes dont l'échéance est atteinte.
+    async fn effacements_echus(
+        &self,
+        maintenant: DateTime<Utc>,
+    ) -> Result<Vec<Uuid>, RepositoryError>;
+
+    /// Efface les données personnelles d'un compte, **sans supprimer sa ligne**.
+    ///
+    /// La ligne subsiste pour que le journal d'audit reste rattachable, comme
+    /// l'exige le scénario `@security` de FR-005 : la supprimer emporterait par
+    /// cascade des entrées qui doivent survivre à l'effacement.
+    ///
+    /// Rend `true` si **cet appel** a effacé le compte. Deux exécutions
+    /// concurrentes du job — deux ordonnanceurs, ou une relance après une
+    /// panne — lisent la même liste d'échéances : sans ce retour, elles
+    /// écriraient chacune une entrée `USER_ERASED`, et le journal prétendrait
+    /// que le droit a été exercé deux fois.
+    async fn effacer(
+        &self,
+        utilisateur_id: Uuid,
+        maintenant: DateTime<Utc>,
+    ) -> Result<bool, RepositoryError>;
+}

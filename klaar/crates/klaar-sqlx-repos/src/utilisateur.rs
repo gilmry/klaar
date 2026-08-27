@@ -24,6 +24,12 @@ impl PgUtilisateurRepository {
     pub fn new(pool: PoolPg) -> Self {
         Self { pool }
     }
+
+    /// Le pool, pour les `impl` d'autres ports portés par le même type
+    /// (`EffacementRepository`, dans `effacement.rs`).
+    pub(crate) fn pool(&self) -> &PoolPg {
+        &self.pool
+    }
 }
 
 /// Reconstruit l'agrégat depuis une ligne.
@@ -35,20 +41,24 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Utilisateur, Repository
     let email: String = ligne.get("email");
     let statut: String = ligne.get("statut");
     let locale: String = ligne.get("locale");
-    let phc: String = ligne.get("empreinte_mot_de_passe");
+    let phc: Option<String> = ligne.get("empreinte_mot_de_passe");
 
     Ok(Utilisateur {
         id: ligne.get("id"),
         email: Email::parse(&email)
             .map_err(|e| RepositoryError::Contrainte(format!("email en base illisible : {e}")))?,
-        empreinte_mot_de_passe: EmpreinteMotDePasse::depuis_phc(&phc).map_err(|e| {
-            RepositoryError::Contrainte(format!("empreinte en base illisible : {e}"))
-        })?,
+        empreinte_mot_de_passe: phc
+            .map(|p| EmpreinteMotDePasse::depuis_phc(&p))
+            .transpose()
+            .map_err(|e| {
+                RepositoryError::Contrainte(format!("empreinte en base illisible : {e}"))
+            })?,
         statut: StatutUtilisateur::parse(&statut)
             .ok_or_else(|| RepositoryError::Contrainte(format!("statut inconnu : {statut}")))?,
         locale: Locale::parse(&locale)
             .map_err(|e| RepositoryError::Contrainte(format!("locale en base illisible : {e}")))?,
         cree_le: ligne.get("cree_le"),
+        efface_le: ligne.get("efface_le"),
         verrouillage: Verrouillage {
             echecs_consecutifs: ligne.get("echecs_consecutifs"),
             dernier_echec_le: ligne.get("dernier_echec_le"),
@@ -58,7 +68,7 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Utilisateur, Repository
 }
 
 const COLONNES: &str = "id, email, empreinte_mot_de_passe, statut, locale, cree_le, \
-     echecs_consecutifs, dernier_echec_le, verrouille_jusqu_a";
+     echecs_consecutifs, dernier_echec_le, verrouille_jusqu_a, efface_le";
 
 impl UtilisateurRepository for PgUtilisateurRepository {
     async fn creer_si_absent(
@@ -85,7 +95,12 @@ impl UtilisateurRepository for PgUtilisateurRepository {
         )
         .bind(utilisateur.id)
         .bind(utilisateur.email.as_str())
-        .bind(utilisateur.empreinte_mot_de_passe.as_str())
+        .bind(
+            utilisateur
+                .empreinte_mot_de_passe
+                .as_ref()
+                .map(|e| e.as_str()),
+        )
         .bind(utilisateur.statut.as_str())
         .bind(utilisateur.locale.as_str())
         .bind(utilisateur.cree_le)

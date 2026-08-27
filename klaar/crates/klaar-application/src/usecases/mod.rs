@@ -2,6 +2,7 @@
 //! propre. Chacun est tracé sur un FR du PRD.
 
 pub mod connecter;
+pub mod effacer;
 pub mod inscrire_utilisateur;
 pub mod rafraichir;
 pub mod verifier_email;

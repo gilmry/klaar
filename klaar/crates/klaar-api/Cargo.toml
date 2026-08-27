@@ -49,6 +49,13 @@ path = "src/bin/migrate.rs"
 name = "klaar-vapid"
 path = "src/bin/vapid.rs"
 
+# Story 1.9 — exécution différée des effacements. Binaire à planifier, et non
+# tâche de fond du serveur : une tâche de fond tourne autant de fois qu'il y a
+# d'exemplaires, et se tait quand le serveur redémarre au mauvais moment.
+[[bin]]
+name = "klaar-effacer"
+path = "src/bin/effacer.rs"
+
 [dev-dependencies]
 actix-rt = "2"
 # Pour lancer deux requêtes réellement concurrentes sur le même jeton et

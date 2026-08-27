@@ -168,7 +168,20 @@ where
     // attaquant que l'adresse existe, ce que le scénario `@security` du même FR
     // interdit. Vérifier d'abord coûte le même temps dans les deux cas et ne
     // révèle rien : pour obtenir un 423, il faut déjà avoir le mot de passe.
-    if !compte.empreinte_mot_de_passe.verifier(&mot_de_passe) {
+    // `None` sur un compte effacé : rien à comparer, donc rien qui puisse
+    // réussir. Le leurre est vérifié quand même pour que le temps de réponse
+    // reste celui des autres chemins.
+    let mot_de_passe_correct = match &compte.empreinte_mot_de_passe {
+        Some(empreinte) => empreinte.verifier(&mot_de_passe),
+        None => {
+            if let Some(leurre) = empreinte_leurre(parametres) {
+                let _ = leurre.verifier(&mot_de_passe);
+            }
+            false
+        }
+    };
+
+    if !mot_de_passe_correct {
         let precedent = compte.verrouillage;
         let apres = precedent.apres_echec(maintenant);
         depot.mettre_a_jour_verrouillage(compte.id, &apres).await?;
@@ -212,7 +225,9 @@ where
         return Err(ErreurConnexion::CompteVerrouille { retry_after });
     }
 
-    if !compte.est_actif() {
+    // Un effacement demandé n'empêche pas la connexion : son titulaire doit
+    // pouvoir se connecter pour annuler sa propre demande.
+    if !compte.peut_ouvrir_session() {
         journal_echec(journal, maintenant).await?;
         return Err(ErreurConnexion::CompteNonVerifie);
     }

@@ -23,6 +23,11 @@ pub enum CodeAudit {
     SessionContextChanged,
     /// Compte verrouillé après échecs répétés (FR-007).
     AccountLocked,
+    /// Effacement demandé, exécution différée (FR-005).
+    UserErasureRequested,
+    UserErasureCancelled,
+    /// Effacement exécuté. Conservé : c'est la trace que le droit a été honoré.
+    UserErased,
 }
 
 impl CodeAudit {
@@ -38,6 +43,9 @@ impl CodeAudit {
             Self::SessionReuseDetected => "SESSION_REUSE_DETECTED",
             Self::SessionContextChanged => "SESSION_CONTEXT_CHANGED",
             Self::AccountLocked => "ACCOUNT_LOCKED",
+            Self::UserErasureRequested => "USER_ERASURE_REQUESTED",
+            Self::UserErasureCancelled => "USER_ERASURE_CANCELLED",
+            Self::UserErased => "USER_ERASED",
         }
     }
 }

@@ -51,6 +51,14 @@ export interface RequestOptions {
    * la queue hors-ligne (voir `offlineQueue.ts`).
    */
   idempotencyKey?: string;
+  /**
+   * En-têtes supplémentaires, `Authorization` en pratique.
+   *
+   * Fusionnés après les en-têtes calculés ici : une route qui a besoin de
+   * porter un jeton le dit à l'appel, plutôt que ce module n'aille chercher un
+   * état d'authentification dont il n'a pas à connaître l'existence.
+   */
+  headers?: Record<string, string>;
   signal?: AbortSignal;
 }
 
@@ -60,6 +68,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  Object.assign(headers, options.headers ?? {});
 
   let response: Response;
   try {

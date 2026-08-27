@@ -13,6 +13,7 @@ correspondant, vous met en infraction — pas l'auteur.
 | Obligation | Régime | État dans ce dépôt |
 |---|---|---|
 | **DPIA (analyse d'impact)** avant tout traitement de géolocalisation | RGPD art. 35 | **Absente.** Obligatoire *avant* le traitement, pas après. |
+| Droit à l'effacement (art. 17) | RGPD | **Partiel.** Voir la section dédiée : ce qui existe est effacé, ce qui n'existe pas encore ne l'est pas. |
 | Analyse de classification des travailleurs | Loi BE du 26/04/2024 + directive UE 2024/2831 (Platform Work) | Absente. Les invariants de non-fixation des prix sont décrits en conception, pas audités. |
 | Agrément / passeport établissement de paiement, SCA | DSP2 | Absent. Le séquestre s'appuie sur Stripe Connect ; l'agrément reste celui de votre entité. |
 | Documentation et audit de biais d'un matching algorithmique | AI Act art. 10-15 | Décrit en conception (FR-012, FR-056), non implémenté. |
@@ -121,6 +122,32 @@ d'analyse d'audience.
 plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaque redémarrage.
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
+
+## Droit à l'effacement (Story 1.9, FR-005, RGPD art. 17)
+
+`POST /api/v1/me/erase` avec la confirmation `DELETE` programme l'effacement à trente jours ;
+`POST /api/v1/me/erase/cancel` l'annule ; le binaire `klaar-effacer`, à planifier, exécute
+les échéances.
+
+**Ce qui est effacé** : adresse, empreinte du mot de passe, jetons de vérification,
+sessions de rafraîchissement, abonnements push. La ligne de compte est **vidée, pas
+supprimée** — la supprimer emporterait par cascade les entrées du journal d'audit, que le
+scénario `@security` de FR-005 exige de conserver. L'adresse est remplacée par une valeur
+dérivée de l'identifiant sur le domaine `.invalid`, réservé par la RFC 2606.
+
+**Ce qui n'est pas effacé, faute d'exister** : Missions, factures, traces de
+géolocalisation, identifiants Stripe. Leurs bounded contexts arrivent aux Epics 3 et
+suivants ; l'effacement devra les traiter à ce moment-là, et **ne le fait pas aujourd'hui**.
+Les refus « Mission en cours » et « dette paiement » que décrit FR-005 sont hors d'atteinte
+pour la même raison.
+
+**Ajout non demandé par FR-005, et qui en découle** : l'annulation pendant le délai de
+grâce. Trente jours n'ont de raison d'être que s'ils sont réversibles. Le compte reste donc
+utilisable pendant l'attente, sans quoi son titulaire ne pourrait pas se connecter pour
+annuler sa propre demande.
+
+**Non fourni** : la notification des sous-traitants et des destinataires (art. 19), et
+l'export des données (art. 20, portabilité), qui est un droit distinct.
 
 ## Verrouillage anti-brute-force (Story 1.8, FR-007)
 

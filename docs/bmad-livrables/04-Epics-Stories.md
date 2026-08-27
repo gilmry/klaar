@@ -301,12 +301,40 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > source unique, on ne l'atteint pas. Le verrou vise l'attaque distribuée, ce que les tests
 > reproduisent en variant l'adresse source.
 
-### Story 1.9 — RGPD effacement (FR-005)
+### Story 1.9 — RGPD effacement (FR-005) — *faite pour le périmètre existant*
 - **En tant que** User · **je veux** effacer mes données · **afin d'** exercer mon droit RGPD Art. 17
 - **4×N** : PRD FR-005 (Mission en cours, dette, window 7 j)
 - **Couche(s)** : Domain + Application + Infra (job async)
 - **Taille** : **L** (1 j) · **Tours** : 5
 - **Dépendance** : tous les autres BC doivent supporter l'anonymisation (consommateur de l'événement `UserErased`)
+
+> **Ce qui est effacé, et ce qui ne peut pas encore l'être.** L'article 17 vise les données
+> à caractère personnel. Celles d'un compte, dans l'état actuel du code, sont son adresse,
+> l'empreinte de son mot de passe, ses jetons de vérification, ses sessions et ses
+> abonnements push : toutes disparaissent. Les Missions, factures et traces de
+> géolocalisation que décrit FR-005 **n'existent pas encore** — leurs bounded contexts
+> arrivent aux Epics 3 et suivants, et l'effacement devra les traiter à ce moment-là. Les
+> scénarios `@negative` « Mission en cours » et « dette paiement » sont donc hors d'atteinte
+> pour la même raison.
+>
+> **L'annulation existe bien que FR-005 ne la décrive pas.** Un délai de trente jours n'a de
+> raison d'être que s'il est réversible ; sans annulation, ce serait trente jours d'attente
+> pour rien. Le compte reste utilisable pendant le délai, faute de quoi son titulaire ne
+> pourrait pas se connecter pour annuler sa propre demande.
+>
+> **La ligne de compte est vidée, pas supprimée.** La supprimer emporterait par cascade les
+> entrées du journal d'audit, que le scénario `@security` exige de conserver. L'adresse est
+> remplacée par une valeur dérivée de l'identifiant sur le domaine `.invalid`, réservé par
+> la RFC 2606 : rien ne peut y être livré, et rien ne permet de remonter à l'adresse
+> d'origine.
+>
+> **Un défaut de concurrence trouvé par un test** : deux exécutions simultanées du job
+> effaçaient le même compte deux fois, et le journal d'audit prétendait alors que le droit
+> avait été exercé deux fois. La mise à jour est désormais gardée par le statut et passe en
+> premier dans la transaction, ce qui sérialise les exécutions concurrentes.
+>
+> Livre au passage l'extracteur `Authentifie` : premier endpoint protégé, donc premier
+> besoin de vérifier un jeton d'accès.
 
 ### Story 1.10 — Logout + révocation refresh — *couverte par la Story 1.4*
 - **En tant que** User · **je veux** me logout · **afin de** sécuriser ma session

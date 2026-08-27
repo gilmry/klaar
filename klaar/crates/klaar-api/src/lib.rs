@@ -19,6 +19,7 @@ use klaar_sqlx_repos::{
     PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository, PgUtilisateurRepository,
 };
 
+pub mod auth;
 pub mod jwt;
 pub mod limitation;
 pub mod routes;
@@ -65,6 +66,8 @@ pub struct EtatApplication {
         routes::session::login,
         routes::session::refresh,
         routes::session::logout,
+        routes::compte::effacer_mon_compte,
+        routes::compte::annuler_mon_effacement,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -78,6 +81,9 @@ pub struct EtatApplication {
         routes::verification::VerificationFaiteDto,
         routes::session::ConnexionDto,
         routes::session::SessionOuverteDto,
+        routes::compte::EffacementDto,
+        routes::compte::EffacementProgrammeDto,
+        crate::auth::ErreurAuthDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -88,6 +94,7 @@ pub struct EtatApplication {
     tags(
         (name = "sonde", description = "Disponibilité du service"),
         (name = "authentification", description = "Comptes et sessions (FR-001 à FR-004)"),
+        (name = "compte", description = "Compte de l'utilisateur authentifié (FR-005)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -102,6 +109,8 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::session::login)
         .service(routes::session::refresh)
         .service(routes::session::logout)
+        .service(routes::compte::effacer_mon_compte)
+        .service(routes::compte::annuler_mon_effacement)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);

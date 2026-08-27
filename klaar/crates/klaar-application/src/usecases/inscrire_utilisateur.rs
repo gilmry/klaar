@@ -567,7 +567,11 @@ mod tests {
             .await
             .unwrap();
         let comptes = bac.depot.comptes.borrow();
-        let phc = comptes[0].empreinte_mot_de_passe.as_str();
+        let phc = comptes[0]
+            .empreinte_mot_de_passe
+            .as_ref()
+            .expect("un compte neuf a toujours une empreinte")
+            .as_str();
         assert!(phc.starts_with("$argon2id$"));
         assert!(!phc.contains("Marie@2026Secure"));
         assert!(!format!("{:?}", comptes[0]).contains("Marie@2026Secure"));

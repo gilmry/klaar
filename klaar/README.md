@@ -217,6 +217,33 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
 
 - **1.10** — **Déconnexion et révocation** : livrée avec la Story 1.4.
 
+- **1.9** — **Effacement RGPD** (FR-005, art. 17) : `POST /api/v1/me/erase` avec confirmation `DELETE`, annulation possible pendant trente jours, exécution par le binaire `klaar-effacer` à planifier.
+
+  **Ce qui est effacé, et ce qui ne peut pas encore l'être.** Adresse, empreinte du mot de
+  passe, jetons, sessions et abonnements push disparaissent. Les Missions, factures et
+  traces de géolocalisation que décrit FR-005 n'existent pas encore : leurs contextes
+  arrivent aux Epics 3 et suivants, et c'est écrit dans `COMPLIANCE.md` plutôt que passé
+  sous silence.
+
+  **La ligne de compte est vidée, pas supprimée** : la supprimer emporterait par cascade les
+  entrées du journal d'audit, que le scénario `@security` exige de conserver. L'adresse
+  devient une valeur dérivée de l'identifiant sur le domaine `.invalid`, réservé par la
+  RFC 2606 — rien n'y sera jamais livré, et rien ne permet de remonter à l'origine.
+
+  **L'annulation n'est pas dans FR-005 et en découle** : un délai de trente jours n'a de
+  raison d'être que s'il est réversible. Le compte reste donc utilisable pendant l'attente,
+  faute de quoi son titulaire ne pourrait pas se connecter pour annuler sa propre demande.
+
+  **Un défaut de concurrence trouvé par un test** : deux exécutions simultanées du job
+  effaçaient le même compte deux fois, et le journal d'audit prétendait alors que le droit
+  avait été exercé deux fois. La mise à jour est gardée par le statut et passe en premier
+  dans la transaction, ce qui sérialise les exécutions concurrentes.
+
+  Livre au passage l'extracteur `Authentifie` — premier endpoint protégé. Un extracteur et
+  non un middleware : le type dans la signature du handler **est** la déclaration que la
+  route est protégée, alors qu'une route ajoutée hors du périmètre d'un middleware serait
+  publique sans que rien ne le signale.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :
