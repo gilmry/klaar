@@ -23,6 +23,19 @@ async function interceptrice(
   return recues;
 }
 
+/**
+ * Neutralise la reprise de session automatique.
+ *
+ * La page tente un `POST /auth/refresh` au montage. Sans cette interception,
+ * les cas qui testent le formulaire verraient d'abord l'état « reprise », puis
+ * un appel réseau réel dans le vide.
+ */
+async function sansReprise(page: Page) {
+  await page.route("**/api/v1/auth/refresh", (route: Route) =>
+    route.fulfill({ status: 401, contentType: "application/json", body: '{"code":"REFRESH_INVALID"}' }),
+  );
+}
+
 async function remplir(page: Page, email: string, motDePasse: string) {
   await page.fill("#connexion-email", email);
   await page.fill("#connexion-mot-de-passe", motDePasse);
@@ -34,6 +47,7 @@ test("@happy une connexion valide affiche l'état connecté", async ({ page }) =
     corps: { jeton_acces: "jwt.de.test", expire_dans: 3600 },
   });
 
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -45,6 +59,7 @@ test("@happy une connexion valide affiche l'état connecté", async ({ page }) =
 test("@negative un refus n'expose pas si l'adresse existe", async ({ page }) => {
   await interceptrice(page, { statut: 401, corps: { code: "INVALID_CREDENTIALS" } });
 
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -57,6 +72,7 @@ test("@negative un refus n'expose pas si l'adresse existe", async ({ page }) => 
 
 test("@negative un compte non vérifié renvoie vers le courriel", async ({ page }) => {
   await interceptrice(page, { statut: 403, corps: { code: "ACCOUNT_NOT_VERIFIED" } });
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -65,6 +81,7 @@ test("@negative un compte non vérifié renvoie vers le courriel", async ({ page
 
 test("@edge la limitation de débit est annoncée pour ce qu'elle est", async ({ page }) => {
   await interceptrice(page, { statut: 429, corps: { code: "RATE_LIMIT_EXCEEDED" } });
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -73,6 +90,7 @@ test("@edge la limitation de débit est annoncée pour ce qu'elle est", async ({
 
 test("@edge une coupure réseau est distinguée d'un refus", async ({ page }) => {
   await page.route(ROUTE_LOGIN, (route: Route) => route.abort("failed"));
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -89,6 +107,7 @@ test("@security le jeton n'est écrit ni dans localStorage ni dans sessionStorag
     corps: { jeton_acces: "JETON-RECONNAISSABLE", expire_dans: 3600 },
   });
 
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -111,6 +130,7 @@ test("@security le cookie de refresh reste invisible à JavaScript", async ({ pa
     cookie: "klaar_refresh=secret-refresh; Path=/api/v1/auth; HttpOnly; SameSite=Lax",
   });
 
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", MDP);
   await page.click('[data-action="connecter"]');
@@ -127,6 +147,7 @@ test("@security le mot de passe est vidé et absent du DOM après connexion", as
     corps: { jeton_acces: "jwt.de.test", expire_dans: 3600 },
   });
 
+  await sansReprise(page);
   await page.goto("/connexion");
   await remplir(page, "marie@example.eu", "MotDePasseTresParticulier@2026");
   await page.click('[data-action="connecter"]');
@@ -137,10 +158,83 @@ test("@security le mot de passe est vidé et absent du DOM après connexion", as
 });
 
 test("@security le champ mot de passe est masqué et annoncé comme existant", async ({ page }) => {
+  await sansReprise(page);
   await page.goto("/connexion");
   const champ = page.locator("#connexion-mot-de-passe");
   await expect(champ).toHaveAttribute("type", "password");
   // `current-password` ici, `new-password` à l'inscription : c'est ce qui fait
   // proposer le mot de passe enregistré plutôt qu'une suggestion de création.
   await expect(champ).toHaveAttribute("autocomplete", "current-password");
+});
+
+test("@happy la session est reprise au chargement sans ressaisie", async ({ page }) => {
+  // Ce que la Story 1.4 change pour l'utilisateur : recharger ne déconnecte
+  // plus. Le refresh voyage dans son cookie, invisible à ce code.
+  let appels = 0;
+  await page.route("**/api/v1/auth/refresh", async (route: Route) => {
+    appels += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jeton_acces: "jwt.repris", expire_dans: 3600 }),
+    });
+  });
+
+  await page.goto("/connexion");
+
+  await expect(page.locator("[data-succes-connexion]")).toBeVisible();
+  await expect(page.locator('[data-formulaire="connexion"]')).toHaveCount(0);
+  expect(appels).toBe(1);
+});
+
+test("@edge une reprise impossible affiche le formulaire sans erreur", async ({ page }) => {
+  // Arriver sur la page sans être connecté est l'état normal d'un visiteur.
+  await sansReprise(page);
+  await page.goto("/connexion");
+
+  await expect(page.locator('[data-formulaire="connexion"]')).toBeVisible();
+  await expect(page.locator("[data-erreur-connexion]")).toHaveCount(0);
+});
+
+test("@happy se déconnecter ferme la session et rend le formulaire", async ({ page }) => {
+  await page.route("**/api/v1/auth/refresh", (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jeton_acces: "jwt.repris", expire_dans: 3600 }),
+    }),
+  );
+  let deconnexions = 0;
+  await page.route("**/api/v1/auth/logout", async (route: Route) => {
+    deconnexions += 1;
+    await route.fulfill({ status: 204, body: "" });
+  });
+
+  await page.goto("/connexion");
+  await expect(page.locator("[data-succes-connexion]")).toBeVisible();
+
+  await page.click('[data-action="deconnecter"]');
+
+  await expect(page.locator('[data-formulaire="connexion"]')).toBeVisible();
+  expect(deconnexions).toBe(1);
+});
+
+test("@security la déconnexion oublie le jeton même si le serveur échoue", async ({ page }) => {
+  await page.route("**/api/v1/auth/refresh", (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ jeton_acces: "jwt.repris", expire_dans: 3600 }),
+    }),
+  );
+  await page.route("**/api/v1/auth/logout", (route: Route) => route.abort("failed"));
+
+  await page.goto("/connexion");
+  await expect(page.locator("[data-succes-connexion]")).toBeVisible();
+
+  await page.click('[data-action="deconnecter"]');
+
+  // Laisser la session ouverte parce que le réseau a lâché serait le pire des
+  // deux mondes : l'utilisateur croit être déconnecté et ne l'est pas.
+  await expect(page.locator('[data-formulaire="connexion"]')).toBeVisible();
 });

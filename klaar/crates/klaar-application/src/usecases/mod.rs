@@ -3,4 +3,5 @@
 
 pub mod connecter;
 pub mod inscrire_utilisateur;
+pub mod rafraichir;
 pub mod verifier_email;

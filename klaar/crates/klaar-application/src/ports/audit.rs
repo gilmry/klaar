@@ -15,6 +15,12 @@ pub enum CodeAudit {
     UserEmailVerified,
     UserLogin,
     UserLoginFailed,
+    UserLogout,
+    SessionRefreshed,
+    /// Refresh rejoué : signature d'un vol, famille coupée.
+    SessionReuseDetected,
+    /// Refresh présenté depuis un autre contexte. Signalé, pas bloquant.
+    SessionContextChanged,
 }
 
 impl CodeAudit {
@@ -25,6 +31,10 @@ impl CodeAudit {
             Self::UserEmailVerified => "USER_EMAIL_VERIFIED",
             Self::UserLogin => "USER_LOGIN",
             Self::UserLoginFailed => "USER_LOGIN_FAILED",
+            Self::UserLogout => "USER_LOGOUT",
+            Self::SessionRefreshed => "SESSION_REFRESHED",
+            Self::SessionReuseDetected => "SESSION_REUSE_DETECTED",
+            Self::SessionContextChanged => "SESSION_CONTEXT_CHANGED",
         }
     }
 }

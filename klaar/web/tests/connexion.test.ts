@@ -9,7 +9,10 @@ import {
   jetonAcces,
   messageErreur,
   oublierJeton,
+  rafraichir,
+  restaurerSession,
   seConnecter,
+  seDeconnecter,
   type CodeErreurConnexion,
 } from "../src/lib/connexion";
 
@@ -23,6 +26,11 @@ const CODES: CodeErreurConnexion[] = [
   "INVALID_CREDENTIALS",
   "ACCOUNT_NOT_VERIFIED",
   "RATE_LIMIT_EXCEEDED",
+  "REFRESH_MISSING",
+  "REFRESH_INVALID",
+  "REFRESH_EXPIRED",
+  "REFRESH_REVOKED",
+  "REFRESH_REUSED",
   "SERVICE_UNAVAILABLE",
   "INCONNU",
   "HORS_LIGNE",
@@ -138,6 +146,80 @@ describe("@security", () => {
     expect(String(url)).not.toContain("MotDePasseTresParticulier");
     expect(String(url)).not.toContain("marie@example.eu");
     expect(options.method).toBe("POST");
+  });
+});
+
+describe("@happy rotation", () => {
+  it("échange le refresh sans envoyer de corps", async () => {
+    // Le refresh voyage dans son cookie HttpOnly, que ce code ne peut pas lire.
+    const fetchMock = reponseOk("jwt.rafraichi");
+    vi.stubGlobal("fetch", fetchMock);
+
+    await rafraichir();
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/auth/refresh");
+    expect(options.method).toBe("POST");
+    expect(options.body).toBeUndefined();
+    expect(options.credentials).toBe("include");
+    expect(jetonAcces()).toBe("jwt.rafraichi");
+  });
+
+  it("reprend la session au chargement", async () => {
+    vi.stubGlobal("fetch", reponseOk("jwt.repris"));
+    await expect(restaurerSession()).resolves.toBe(true);
+    expect(jetonAcces()).toBe("jwt.repris");
+  });
+});
+
+describe("@negative rotation", () => {
+  it("une reprise impossible ne lève pas d'erreur et ne garde rien", async () => {
+    // Arriver sur une page sans être connecté est l'état normal d'un visiteur,
+    // pas une anomalie à afficher.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ code: "REFRESH_INVALID" }), { status: 401 }),
+      ),
+    );
+    await expect(restaurerSession()).resolves.toBe(false);
+    expect(jetonAcces()).toBeNull();
+  });
+
+  it("un rejeu détecté remonte comme tel, et son message explique pourquoi", () => {
+    // Une déconnexion sans explication laisse croire à une panne. Ici, elle
+    // signale un vol probable, ce que la personne a besoin de savoir.
+    expect(codeDepuisErreur(new ApiError(401, '{"code":"REFRESH_REUSED"}'))).toBe(
+      "REFRESH_REUSED",
+    );
+    expect(messageErreur("fr", "REFRESH_REUSED")).toMatch(/sécurité/i);
+    expect(messageErreur("fr", "REFRESH_REUSED")).toMatch(/mot de passe/i);
+  });
+});
+
+describe("@security déconnexion", () => {
+  it("oublie le jeton même si l'appel au serveur échoue", async () => {
+    // Laisser un jeton en mémoire après un clic sur « me déconnecter » serait
+    // le pire des deux mondes.
+    vi.stubGlobal("fetch", reponseOk("jwt.de.test"));
+    await seConnecter({ email: "marie@example.eu", mot_de_passe: "Marie@2026Secure" });
+    expect(jetonAcces()).not.toBeNull();
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("réseau coupé")));
+    await expect(seDeconnecter()).rejects.toBeInstanceOf(Error);
+    expect(jetonAcces()).toBeNull();
+  });
+
+  it("appelle bien /auth/logout et oublie le jeton", async () => {
+    vi.stubGlobal("fetch", reponseOk());
+    await seConnecter({ email: "marie@example.eu", mot_de_passe: "Marie@2026Secure" });
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await seDeconnecter();
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/auth/logout");
+    expect(jetonAcces()).toBeNull();
   });
 });
 

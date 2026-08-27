@@ -229,11 +229,31 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > existent déjà pour cela ; recharger la page déconnecte encore, faute de
 > rafraîchissement.
 
-### Story 1.4 — Refresh token rotatif (FR-004)
+### Story 1.4 — Refresh token rotatif (FR-004) — *faite*
 - **En tant que** User · **je veux** un refresh rotatif · **afin de** garder ma session sans re-login
 - **4×N** : refresh valide / expiré / révoqué / réutilisé (vol détecté)
-- **Couche(s)** : Application + Infra
+- **Couche(s)** : Application (`rafraichir`, `deconnecter`) + Infra (migration V5, rotation transactionnelle `FOR UPDATE`) + API (`POST /api/v1/auth/refresh` et `/logout`) + Frontend (reprise de session au chargement, renouvellement programmé, déconnexion)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Un refresh rejoué coupe toute sa famille.** Chaque présentation consomme le jeton et
+> en rend un neuf ; le porteur légitime a donc toujours le dernier. Présenter un jeton déjà
+> consommé signifie qu'une copie circule, sans qu'on puisse dire laquelle des deux mains
+> est la bonne — les deux sont donc coupées. Le coût est une reconnexion, contre une
+> session volée qui durerait trente jours.
+>
+> **Le *binding* est partiel, et c'est délibéré.** `@security` demande un lien
+> « UA + IP + device ». L'agent utilisateur est lié, sous forme d'empreinte, et un
+> changement lève `SESSION_CONTEXT_CHANGED` **sans couper la session** : les navigateurs
+> changent d'agent à chaque mise à jour, bloquer là-dessus déconnecterait tout le monde
+> toutes les quelques semaines. L'adresse IP n'est **pas** liée : un téléphone en change
+> plusieurs fois par trajet en passant du wifi aux données mobiles. Le challenge itsme que
+> prévoit le scénario n'est pas fourni (contrat itsme hors périmètre) ; l'anomalie est donc
+> consignée sans remédiation automatique.
+>
+> **Ce que cela change pour l'utilisateur** : recharger la page ne déconnecte plus, et le
+> jeton d'accès se renouvelle une minute avant d'expirer. La déconnexion coupe la famille
+> entière, maillons déjà consommés compris — les laisser vivants rendrait la détection de
+> rejeu inopérante après un `logout`.
 
 ### Story 1.5 — Auth itsme complet (FR-002)
 - **En tant que** User/Provider belge · **je veux** m'authentifier itsme · **afin de** vérifier mon identité eIDAS substantial

@@ -166,6 +166,33 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   détection de rejeu. Un refresh volé reste utilisable jusqu'à son expiration, et recharger
   la page déconnecte. Les colonnes `famille_id` et `consomme_le` existent déjà pour cela.
 
+- **1.4** — **Refresh rotatif et détection de vol** (FR-004) : `POST /api/v1/auth/refresh` et `/logout`, reprise de session au chargement, renouvellement programmé une minute avant expiration.
+
+  **Un refresh rejoué coupe toute sa famille.** Chaque présentation consomme le jeton et en
+  rend un neuf : le porteur légitime a donc toujours le dernier. Présenter un jeton déjà
+  consommé signifie qu'une copie circule — et rien ne permet de dire laquelle des deux mains
+  est la bonne, d'où la coupure des deux. Le coût est une reconnexion, contre une session
+  volée qui durerait trente jours. Vérifié en conditions réelles : après le rejeu, le
+  refresh courant du porteur légitime répond `REFRESH_REVOKED`.
+
+  **Le *binding* est partiel, délibérément.** FR-004 demande un lien « UA + IP + device ».
+  L'agent utilisateur est lié, sous forme d'empreinte, et un changement lève
+  `SESSION_CONTEXT_CHANGED` **sans couper la session** : les navigateurs changent d'agent à
+  chaque mise à jour, bloquer là-dessus déconnecterait tout le monde toutes les quelques
+  semaines sans qu'aucun vol n'ait eu lieu. L'adresse IP n'est pas liée du tout : un
+  téléphone en change plusieurs fois par trajet entre wifi et données mobiles. La protection
+  réelle est la rotation, qui ne dépend d'aucune de ces heuristiques.
+
+  Rotation et coupure se font dans une transaction, la ligne verrouillée par `FOR UPDATE` :
+  deux onglets qui rafraîchissent en même temps sérialisent, sinon le second obtiendrait un
+  refresh que le premier rejeu ferait passer pour un vol. Le nouveau maillon hérite du
+  contexte **d'origine** et non de celui présenté — sinon un voleur ferait glisser
+  l'empreinte attendue vers la sienne à chaque rotation, et l'anomalie cesserait d'être
+  signalée.
+
+  Côté PWA, recharger la page ne déconnecte plus. Un test e2e le vérifie sans jamais lire le
+  cookie, qui reste `HttpOnly`.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

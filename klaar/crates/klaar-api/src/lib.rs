@@ -63,6 +63,8 @@ pub struct EtatApplication {
         routes::auth::signup,
         routes::verification::verifier,
         routes::session::login,
+        routes::session::refresh,
+        routes::session::logout,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -98,6 +100,8 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::auth::signup)
         .service(routes::verification::verifier)
         .service(routes::session::login)
+        .service(routes::session::refresh)
+        .service(routes::session::logout)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);

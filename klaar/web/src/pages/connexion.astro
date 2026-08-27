@@ -15,7 +15,8 @@ import FormulaireConnexion from "../components/FormulaireConnexion.svelte";
 
   <p class="klaar-tempere">
     Le jeton de session reste en mémoire de l'onglet, jamais dans le stockage du
-    navigateur : une faille de script ne peut donc pas le recopier. Recharger la
-    page déconnecte, tant que le rafraîchissement automatique n'est pas livré.
+    navigateur : une faille de script ne peut donc pas le recopier. Il se
+    renouvelle avant d'expirer à partir d'un jeton conservé en cookie, hors de
+    portée de JavaScript.
   </p>
 </AppLayout>

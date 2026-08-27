@@ -98,10 +98,24 @@ cookie `HttpOnly` `Secure` `SameSite=Lax` restreint au chemin `/api/v1/auth`, al
 vérification fixé explicitement (un jeton annonçant `alg: none` est refusé, un test le
 vérifie).
 
-**Non fourni à ce stade** : la rotation du refresh, la détection de rejeu et le *binding*
-UA/IP que décrit le scénario `@security` de FR-004. Un refresh volé reste donc utilisable
-jusqu'à son expiration. La table porte déjà `famille_id` et `consomme_le` pour la Story 1.4,
-mais **tant qu'elle n'est pas livrée, la durée de 30 jours est une durée d'exposition**.
+Fourni depuis la Story 1.4 : rotation à chaque usage, détection de rejeu, coupure de la
+famille entière au premier jeton rejoué, et déconnexion explicite. Un refresh volé n'est
+donc plus utilisable trente jours : il l'est jusqu'à la prochaine rotation du porteur
+légitime, après quoi la chaîne est coupée pour les deux.
+
+**Le *binding* reste partiel.** Le scénario `@security` de FR-004 demande un lien
+« UA + IP + device ». L'agent utilisateur est lié, sous forme d'empreinte SHA-256, et un
+changement lève `SESSION_CONTEXT_CHANGED` dans le journal d'audit **sans couper la
+session** : les navigateurs changent d'agent à chaque mise à jour, bloquer là-dessus
+déconnecterait tous les utilisateurs toutes les quelques semaines sans qu'aucun vol n'ait
+eu lieu. L'adresse IP n'est **pas** liée : un téléphone en change plusieurs fois par trajet
+en passant du wifi aux données mobiles. Le challenge itsme prévu en réponse à l'anomalie
+n'est pas fourni — il suppose un contrat itsme, hors périmètre. L'anomalie est donc
+consignée, sans remédiation automatique.
+
+**RGPD.** L'agent utilisateur n'est pas conservé, seulement son empreinte, et à cette seule
+fin de détection. C'est une mesure de sécurité au sens de l'art. 32, pas une mesure
+d'analyse d'audience.
 
 `KLAAR_JWT_SECRET` est obligatoire au démarrage : sans elle, `klaar-api` refuse de démarrer
 plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaque redémarrage.

@@ -115,6 +115,7 @@ pub async fn connecter<R, S, J, H, E>(
     emetteur: &E,
     parametres: ParametresArgon2,
     refresh_en_clair: &str,
+    contexte: Option<&str>,
     commande: CommandeConnexion,
 ) -> Result<Session, ErreurConnexion>
 where
@@ -178,6 +179,10 @@ where
             // l'autre.
             famille_id: Uuid::new_v4(),
             expire_le: refresh_expire_le,
+            // Enregistré à l'ouverture pour que la rotation puisse comparer
+            // (Story 1.4). Une empreinte, jamais l'agent utilisateur lui-même.
+            empreinte_contexte: contexte
+                .map(|c| klaar_identity::JetonVerification::depuis_chaine(c).empreinte()),
         })
         .await?;
 
@@ -302,6 +307,21 @@ mod tests {
             Ok(())
         }
 
+        async fn rotationner(
+            &self,
+            _: &EmpreinteJeton,
+            _: &EmpreinteJeton,
+            _: Option<&EmpreinteJeton>,
+            _: DateTime<Utc>,
+            _: DateTime<Utc>,
+        ) -> Result<crate::ports::session_repository::ResultatRotation, RepositoryError> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
+        async fn famille_de(&self, _: &EmpreinteJeton) -> Result<Option<Uuid>, RepositoryError> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
         async fn revoquer_famille(
             &self,
             _: Uuid,
@@ -371,6 +391,7 @@ mod tests {
                 &EmetteurFactice,
                 P,
                 REFRESH,
+                None,
                 CommandeConnexion {
                     email: email.to_string(),
                     mot_de_passe: mot_de_passe.to_string(),

@@ -1437,6 +1437,7 @@ dependencies = [
 name = "klaar-api"
 version = "0.0.0"
 dependencies = [
+ "actix-http",
  "actix-rt",
  "actix-web",
  "actix-web-prom",

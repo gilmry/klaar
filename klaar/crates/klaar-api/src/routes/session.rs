@@ -7,6 +7,7 @@ use utoipa::ToSchema;
 
 use klaar_application::ports::horloge::Horloge;
 use klaar_application::usecases::connecter::{connecter, CommandeConnexion, ErreurConnexion};
+use klaar_application::usecases::rafraichir::{deconnecter, rafraichir, ErreurRafraichissement};
 use klaar_identity::JetonVerification;
 
 use crate::limitation::Verdict;
@@ -55,6 +56,41 @@ fn cookie_refresh(valeur: &str, duree_secondes: i64, securise: bool) -> Cookie<'
         .finish()
 }
 
+/// Agent utilisateur, quand le client en annonce un.
+///
+/// Sert uniquement à lier le refresh à son contexte d'obtention (Story 1.4). Il
+/// n'est ni journalisé ni conservé : seule son empreinte l'est, et à cette
+/// seule fin.
+fn contexte(requete: &HttpRequest) -> Option<String> {
+    requete
+        .headers()
+        .get(actix_web::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+}
+
+/// Refresh présenté par le client, lu dans son cookie.
+fn refresh_presente(requete: &HttpRequest) -> String {
+    requete
+        .cookie(COOKIE_REFRESH)
+        .map(|c| c.value().to_string())
+        .unwrap_or_default()
+}
+
+/// Cookie de suppression : même nom, même chemin, durée nulle.
+///
+/// Le chemin doit être identique à celui de la pose, sinon le navigateur
+/// considère qu'il s'agit d'un autre cookie et garde l'ancien.
+fn cookie_efface(securise: bool) -> Cookie<'static> {
+    Cookie::build(COOKIE_REFRESH, "")
+        .path(CHEMIN_COOKIE)
+        .http_only(true)
+        .secure(securise)
+        .same_site(SameSite::Lax)
+        .max_age(DureeCookie::seconds(0))
+        .finish()
+}
+
 /// Ouvre une session.
 #[utoipa::path(
     post,
@@ -92,7 +128,9 @@ pub async fn login(
 
     // Tiré ici, dans la couche qui sait ce qu'est un cookie : le cas d'usage
     // reçoit la valeur et n'a pas à connaître le générateur.
-    let refresh = JetonVerification::tirer();
+    // Nommé `nouveau` et non `refresh` : la macro `#[post("…/refresh")]` plus
+    // bas engendre une struct unitaire `refresh`, qui masquerait cette liaison.
+    let nouveau = JetonVerification::tirer();
 
     match connecter(
         etat.utilisateurs.as_ref(),
@@ -101,7 +139,8 @@ pub async fn login(
         etat.horloge.as_ref(),
         etat.jetons.as_ref(),
         etat.argon2,
-        refresh.expose(),
+        nouveau.expose(),
+        contexte(&requete).as_deref(),
         CommandeConnexion {
             email: corps.email.clone(),
             mot_de_passe: corps.mot_de_passe.clone(),
@@ -136,6 +175,99 @@ pub async fn login(
             };
             HttpResponse::build(statut).json(ErreurValidationDto {
                 code: e.code().to_string(),
+            })
+        }
+    }
+}
+
+/// Rafraîchit la session à partir du cookie de refresh.
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    tag = "authentification",
+    responses(
+        (status = 200, description = "Session renouvelée ; nouveau refresh posé", body = SessionOuverteDto),
+        (status = 400, description = "Aucun refresh présenté", body = ErreurValidationDto),
+        (status = 401, description = "Refresh invalide, expiré, révoqué ou rejoué", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[post("/api/v1/auth/refresh")]
+pub async fn refresh(requete: HttpRequest, etat: web::Data<EtatApplication>) -> HttpResponse {
+    let nouveau = JetonVerification::tirer();
+
+    match rafraichir(
+        etat.sessions.as_ref(),
+        etat.journal.as_ref(),
+        etat.horloge.as_ref(),
+        etat.jetons.as_ref(),
+        &refresh_presente(&requete),
+        nouveau.expose(),
+        contexte(&requete).as_deref(),
+    )
+    .await
+    {
+        Ok(session) => HttpResponse::Ok()
+            .cookie(cookie_refresh(
+                &session.refresh,
+                session.refresh_expire_dans_secondes,
+                etat.cookie_securise,
+            ))
+            .json(SessionOuverteDto {
+                jeton_acces: session.jeton_acces,
+                expire_dans: session.expire_dans_secondes,
+            }),
+        Err(e) => {
+            let statut = match &e {
+                ErreurRafraichissement::Absent => actix_web::http::StatusCode::BAD_REQUEST,
+                ErreurRafraichissement::Indisponible(_) => {
+                    tracing::error!(erreur = %e, "rafraîchissement impossible");
+                    actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+                }
+                _ => actix_web::http::StatusCode::UNAUTHORIZED,
+            };
+            // Le cookie est effacé sur tout refus : le garder ferait rejouer le
+            // même jeton mort à chaque tentative, et un rejeu suffit à couper
+            // la famille. Autant que le client reparte propre.
+            HttpResponse::build(statut)
+                .cookie(cookie_efface(etat.cookie_securise))
+                .json(ErreurValidationDto {
+                    code: e.code().to_string(),
+                })
+        }
+    }
+}
+
+/// Ferme la session courante et toute sa famille.
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    tag = "authentification",
+    responses(
+        (status = 204, description = "Session fermée, ou déjà absente"),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[post("/api/v1/auth/logout")]
+pub async fn logout(requete: HttpRequest, etat: web::Data<EtatApplication>) -> HttpResponse {
+    match deconnecter(
+        etat.sessions.as_ref(),
+        etat.journal.as_ref(),
+        etat.horloge.as_ref(),
+        &refresh_presente(&requete),
+    )
+    .await
+    {
+        // 204 que la session ait existé ou non : répondre 404 sur un refresh
+        // inconnu ferait de la déconnexion un moyen de tester la validité d'un
+        // jeton volé.
+        Ok(()) => HttpResponse::NoContent()
+            .cookie(cookie_efface(etat.cookie_securise))
+            .finish(),
+        Err(e) => {
+            tracing::error!(erreur = %e, "déconnexion impossible");
+            HttpResponse::ServiceUnavailable().json(ErreurValidationDto {
+                code: "SERVICE_UNAVAILABLE".to_string(),
             })
         }
     }

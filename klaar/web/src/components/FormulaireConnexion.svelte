@@ -1,27 +1,38 @@
 <script lang="ts">
   /**
-   * Formulaire de connexion (Story 1.3, FR-004).
+   * Connexion et état de session (Stories 1.3 et 1.4, FR-004).
+   *
+   * Au montage, la session est reprise depuis le cookie de rafraîchissement :
+   * recharger la page ne déconnecte donc plus. L'échec de cette reprise n'est
+   * pas affiché — arriver sur la page sans être connecté est l'état normal
+   * d'un visiteur, pas une erreur.
    *
    * Un seul message pour « adresse inconnue » et « mot de passe faux », comme
    * le backend : distinguer les deux ferait de cet écran un moyen de tester la
    * présence de n'importe quelle adresse.
-   *
-   * « Compte non vérifié » est distingué, lui, parce que l'atteindre suppose
-   * déjà de connaître le bon mot de passe, et que la personne a besoin de
-   * savoir qu'il lui reste un courriel à ouvrir.
    */
+  import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { codeDepuisErreur, messageErreur, seConnecter } from "../lib/connexion";
+  import {
+    codeDepuisErreur,
+    messageErreur,
+    restaurerSession,
+    seConnecter,
+    seDeconnecter,
+  } from "../lib/connexion";
 
   let email = $state("");
   let motDePasse = $state("");
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
   let connecte = $state(false);
+  let reprise = $state(true);
   let locale = $state<LocaleKlaar>("fr");
 
-  $effect(() => {
+  onMount(async () => {
     locale = localeAffichee();
+    connecte = await restaurerSession();
+    reprise = false;
   });
 
   async function soumettre(evenement: SubmitEvent) {
@@ -41,13 +52,30 @@
       occupe = false;
     }
   }
+
+  async function deconnecter() {
+    occupe = true;
+    try {
+      await seDeconnecter();
+    } finally {
+      // Même si l'appel a échoué : le jeton local est oublié dans tous les cas,
+      // laisser une session vivante après un clic sur « me déconnecter » serait
+      // le pire des deux mondes.
+      connecte = false;
+      occupe = false;
+    }
+  }
 </script>
 
-{#if connecte}
+{#if reprise}
+  <p data-etat-session="reprise">Reprise de session…</p>
+{:else if connecte}
   <p role="status" data-succes-connexion>
-    Vous êtes connecté. La session dure une heure et se renouvellera d'elle-même
-    dès que le rafraîchissement sera livré.
+    Vous êtes connecté. La session se renouvelle d'elle-même avant d'expirer.
   </p>
+  <button type="button" onclick={deconnecter} disabled={occupe} data-action="deconnecter">
+    {occupe ? "Un instant…" : "Me déconnecter"}
+  </button>
 {:else}
   <form onsubmit={soumettre} data-formulaire="connexion" novalidate>
     <label for="connexion-email">Adresse email</label>
