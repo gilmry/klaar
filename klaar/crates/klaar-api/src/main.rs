@@ -18,8 +18,8 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
-    creer_pool, PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository,
-    PgUtilisateurRepository,
+    creer_pool, PgCatalogueRepository, PgJournalAudit, PgPushSubscriptionRepository,
+    PgSessionRepository, PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -110,6 +110,16 @@ async fn main() -> std::io::Result<()> {
         );
     }
 
+    // Retire le catalogue le temps d'une mise à jour (FR-008 `@edge`). Le
+    // service répond alors 503 avec `Retry-After`, ce qui distingue un retrait
+    // volontaire d'une panne — et évite qu'un visiteur tombe sur un catalogue à
+    // moitié réécrit.
+    let catalogue_en_maintenance =
+        std::env::var("KLAAR_CATALOGUE_MAINTENANCE").as_deref() == Ok("1");
+    if catalogue_en_maintenance {
+        tracing::warn!("KLAAR_CATALOGUE_MAINTENANCE=1 : le catalogue répond 503");
+    }
+
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     tracing::info!(%bind_addr, "klaar-api démarre — /api/v1/docs Swagger UI, /metrics Prometheus");
 
@@ -125,6 +135,7 @@ async fn main() -> std::io::Result<()> {
             utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
             journal: Arc::new(PgJournalAudit::new(pool.clone())),
             sessions: Arc::new(PgSessionRepository::new(pool.clone())),
+            catalogue: Arc::new(PgCatalogueRepository::new(pool.clone())),
             jetons: jetons.clone(),
             courriel: courriel.clone(),
             horloge: Arc::new(HorlogeSysteme),
@@ -132,6 +143,7 @@ async fn main() -> std::io::Result<()> {
             argon2: ParametresArgon2::production(),
             derriere_proxy,
             cookie_securise,
+            catalogue_en_maintenance,
         });
         App::new()
             // Span racine expurgé de l'IP et de l'agent utilisateur, cf.

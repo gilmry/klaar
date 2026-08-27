@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 klaar-application = { path = "../klaar-application", version = "0.0.0" }
 klaar-identity = { path = "../klaar-identity", version = "0.0.0" }
+klaar-catalog = { path = "../klaar-catalog", version = "0.0.0" }
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
 klaar-sqlx-repos = { path = "../klaar-sqlx-repos", version = "0.0.0" }
 klaar-stripe-adapter = { path = "../klaar-stripe-adapter", version = "0.0.0" }

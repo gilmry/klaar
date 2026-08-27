@@ -1448,6 +1448,7 @@ dependencies = [
  "klaar-application",
  "klaar-audit-adapter",
  "klaar-av-adapter",
+ "klaar-catalog",
  "klaar-email-adapter",
  "klaar-geo-adapter",
  "klaar-identity",
@@ -1509,6 +1510,7 @@ name = "klaar-catalog"
 version = "0.0.0"
 dependencies = [
  "klaar-shared-kernel",
+ "serde",
 ]
 
 [[package]]
@@ -1609,6 +1611,7 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "klaar-application",
+ "klaar-catalog",
  "klaar-identity",
  "klaar-shared-kernel",
  "sqlx",

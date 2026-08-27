@@ -244,6 +244,38 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   route est protégée, alors qu'une route ajoutée hors du périmètre d'un middleware serait
   publique sans que rien ne le signale.
 
+## Epic 2 — Catalogue
+
+- **2.1** — **Catalogue MVP trilingue** (FR-008) : cinq secteurs et dix-huit Skills amorcés par migration, bounded context `klaar-catalog`.
+
+  **La liste des Skills est une proposition, pas une donnée de conception.** Le PRD nomme
+  les secteurs et ne dit rien des compétences qu'ils regroupent : celles-ci viennent des
+  interventions de dépannage courantes à Bruxelles et restent à valider avec le métier.
+  C'est écrit dans la migration, pour que personne ne les prenne pour un acquis.
+
+  Les trois traductions sont obligatoires, en base comme dans le domaine. Bruxelles est
+  officiellement bilingue : une entrée sans néerlandais n'est pas une entrée incomplète,
+  c'est une entrée qui ne devrait pas exister. Un test refuse un jeu de données dont plus
+  d'un dixième des néerlandais recopie le français — le symptôme habituel d'un
+  « à compléter plus tard ». L'ordre d'affichage est explicite et non alphabétique, sans
+  quoi le même catalogue apparaîtrait dans un ordre différent selon la langue.
+
+- **2.2** — **API de lecture** (FR-008) : `GET /api/v1/catalog/sectors?locale=`, page `/catalogue`.
+
+  **L'`ETag` porte sur le contenu servi, jamais sur une date de mise à jour** : un
+  horodatage changerait à chaque redéploiement sans qu'une ligne ait bougé, et invaliderait
+  tous les caches pour rien. Deux langues donnent deux `ETag` distincts — sinon un cache
+  servirait le néerlandais à qui demande le français en se croyant correct.
+
+  **`Cache-Control: public, max-age=300`**, parce que le catalogue est identique pour tout
+  le monde. Un test vérifie que la réponse ne contient aucune donnée propre au demandeur :
+  c'est la condition qui rend ce `public` légitime.
+
+  L'avertissement de repli de langue est **rendu au client** et pas seulement journalisé :
+  c'est à lui d'apprendre qu'il n'aura pas la langue demandée. Un catalogue vide répond 200
+  avec une liste vide — un état de démarrage, pas une panne. `KLAAR_CATALOGUE_MAINTENANCE=1`
+  fait répondre 503 avec `Retry-After`, ce qui distingue un retrait volontaire d'une panne.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

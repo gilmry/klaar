@@ -1,5 +1,6 @@
 //! Adapters de persistance PostgreSQL (ADR-002 : `sqlx`, SQL pur, pas d'ORM).
 
+mod catalogue;
 mod effacement;
 mod journal_audit;
 mod pool;
@@ -7,6 +8,7 @@ mod push_subscription;
 mod session;
 mod utilisateur;
 
+pub use catalogue::PgCatalogueRepository;
 pub use journal_audit::PgJournalAudit;
 pub use pool::{creer_pool, PoolPg};
 pub use push_subscription::PgPushSubscriptionRepository;

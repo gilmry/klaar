@@ -1,0 +1,17 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import Catalogue from "../components/Catalogue.svelte";
+---
+
+<AppLayout
+  titre="Klaar — que faisons-nous ?"
+  description="Les secteurs et compétences couverts par Klaar à Bruxelles."
+>
+  <h1>Que faisons-nous ?</h1>
+  <p class="klaar-tempere">
+    Les secteurs couverts, et les interventions qu'ils regroupent. Cette liste
+    est celle du MVP : elle s'étendra secteur par secteur.
+  </p>
+
+  <Catalogue client:load />
+</AppLayout>

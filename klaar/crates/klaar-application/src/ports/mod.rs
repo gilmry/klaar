@@ -3,6 +3,7 @@
 //! de protocole ni de fournisseur ne doit apparaître ici.
 
 pub mod audit;
+pub mod catalogue_repository;
 pub mod courriel;
 pub mod erreurs;
 pub mod horloge;

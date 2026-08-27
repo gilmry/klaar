@@ -2,6 +2,7 @@
 //! story et un FR du PRD.
 
 pub mod auth;
+pub mod catalogue;
 pub mod compte;
 pub mod health;
 pub mod push;

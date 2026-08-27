@@ -20,10 +20,39 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-/// Tentatives autorisées par fenêtre.
-pub const MAX_PAR_FENETRE: usize = 5;
-/// Durée de la fenêtre, en secondes. Reprise telle quelle dans `Retry-After`.
-pub const FENETRE_SECONDES: i64 = 3600;
+/// Quota : un nombre de passages et la fenêtre sur laquelle il se compte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    pub max: usize,
+    pub fenetre_secondes: i64,
+}
+
+impl Quota {
+    /// Écritures sensibles — inscription, connexion (FR-001, FR-007).
+    pub const fn ecriture_sensible() -> Self {
+        Self {
+            max: 5,
+            fenetre_secondes: 3600,
+        }
+    }
+
+    /// Lecture publique du catalogue (FR-008 `@security`).
+    ///
+    /// Beaucoup plus large : le catalogue est la première page que consulte un
+    /// visiteur, et il la rechargera. Le quota protège du moissonnage en
+    /// boucle, pas de l'usage normal.
+    pub const fn lecture_publique() -> Self {
+        Self {
+            max: 60,
+            fenetre_secondes: 60,
+        }
+    }
+}
+
+/// Tentatives autorisées par fenêtre pour les écritures sensibles.
+pub const MAX_PAR_FENETRE: usize = Quota::ecriture_sensible().max;
+/// Durée de cette fenêtre, en secondes. Reprise telle quelle dans `Retry-After`.
+pub const FENETRE_SECONDES: i64 = Quota::ecriture_sensible().fenetre_secondes;
 
 /// Nombre de clés au-delà duquel un nettoyage complet est déclenché.
 ///
@@ -65,7 +94,16 @@ impl LimiteurMemoire {
     /// horaire, ce qui vide la limite de son sens précisément au moment où
     /// elle devrait tenir.
     pub fn verifier(&self, ip: &str, maintenant: DateTime<Utc>) -> Verdict {
-        let debut = maintenant - Duration::seconds(FENETRE_SECONDES);
+        self.verifier_quota(ip, maintenant, Quota::ecriture_sensible())
+    }
+
+    /// Même chose, avec un quota choisi.
+    ///
+    /// Les clés sont préfixées par l'appelant : deux usages différents ne
+    /// doivent pas se partager un compteur, sinon consulter le catalogue
+    /// épuiserait le droit de se connecter.
+    pub fn verifier_quota(&self, ip: &str, maintenant: DateTime<Utc>, quota: Quota) -> Verdict {
+        let debut = maintenant - Duration::seconds(quota.fenetre_secondes);
         let mut tentatives = self
             .tentatives
             .lock()
@@ -81,12 +119,12 @@ impl LimiteurMemoire {
         let dates = tentatives.entry(cle(ip)).or_default();
         dates.retain(|d| *d > debut);
 
-        if dates.len() >= MAX_PAR_FENETRE {
+        if dates.len() >= quota.max {
             // Le délai annoncé est celui qui libère réellement une place :
             // l'expiration de la plus ancienne tentative encore comptée.
             // Annoncer la fenêtre entière ferait attendre pour rien.
             let plus_ancienne = dates.iter().min().copied().unwrap_or(maintenant);
-            let libre_le = plus_ancienne + Duration::seconds(FENETRE_SECONDES);
+            let libre_le = plus_ancienne + Duration::seconds(quota.fenetre_secondes);
             let retry_after = (libre_le - maintenant).num_seconds().max(1);
             return Verdict::Refuse { retry_after };
         }
@@ -203,6 +241,57 @@ mod tests {
             panic!("refus attendu");
         };
         assert_eq!(t0 - t1, 600);
+    }
+
+    #[test]
+    fn happy_un_quota_de_lecture_laisse_passer_soixante_appels() {
+        // Le catalogue est la première page consultée, et elle se recharge :
+        // le quota protège du moissonnage, pas de l'usage normal.
+        let l = LimiteurMemoire::new();
+        let quota = Quota::lecture_publique();
+        for i in 0..quota.max {
+            assert_eq!(
+                l.verifier_quota("1.2.3.4", instant(), quota),
+                Verdict::Autorise,
+                "appel {i}"
+            );
+        }
+        assert!(matches!(
+            l.verifier_quota("1.2.3.4", instant(), quota),
+            Verdict::Refuse { .. }
+        ));
+    }
+
+    #[test]
+    fn edge_le_delai_annonce_suit_la_fenetre_du_quota() {
+        let l = LimiteurMemoire::new();
+        let quota = Quota::lecture_publique();
+        for _ in 0..quota.max {
+            l.verifier_quota("1.2.3.4", instant(), quota);
+        }
+        match l.verifier_quota("1.2.3.4", instant(), quota) {
+            Verdict::Refuse { retry_after } => assert_eq!(retry_after, 60),
+            Verdict::Autorise => panic!("refus attendu"),
+        }
+    }
+
+    #[test]
+    fn security_deux_quotas_ne_partagent_pas_leur_compteur() {
+        // Les clés sont préfixées par l'appelant. Sans cela, consulter le
+        // catalogue épuiserait le droit de se connecter, et le lien entre les
+        // deux serait incompréhensible pour l'utilisateur.
+        let l = LimiteurMemoire::new();
+        for _ in 0..MAX_PAR_FENETRE {
+            l.verifier("login:1.2.3.4", instant());
+        }
+        assert!(matches!(
+            l.verifier("login:1.2.3.4", instant()),
+            Verdict::Refuse { .. }
+        ));
+        assert_eq!(
+            l.verifier_quota("catalogue:1.2.3.4", instant(), Quota::lecture_publique()),
+            Verdict::Autorise
+        );
     }
 
     #[test]

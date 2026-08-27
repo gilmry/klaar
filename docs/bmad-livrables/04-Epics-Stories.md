@@ -348,17 +348,54 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 2 — Catalog (CTL) · Priorité **Must**
 
-### Story 2.1 — Seed catalogue 5 secteurs MVP + i18n (FR-008)
+### Story 2.1 — Seed catalogue 5 secteurs MVP + i18n (FR-008) — *faite*
 - **En tant que** ops · **je veux** le catalogue seed (plomberie, serrurerie, électricité, auto, livraison) · **afin de** démarrer
 - **4×N** : PRD FR-008
 - **Couche(s)** : Domain (Sector, Skill entities) + Infra (migration seed)
 - **Taille** : **S** (0,5 j) · **Tours** : 2
 
-### Story 2.2 — API lecture catalogue + cache CDN (FR-008)
+> **La liste des Skills est une proposition, pas une donnée de conception.** Le PRD nomme
+> les cinq secteurs ; il ne dit rien des compétences qu'ils regroupent. Les dix-huit Skills
+> amorcés sont tirés des interventions de dépannage courantes à Bruxelles, et sont **à
+> valider avec le métier** avant toute mise en service. Ils sont là pour que le catalogue
+> existe et se teste.
+>
+> **Les trois traductions sont obligatoires**, en base comme dans le domaine. Bruxelles est
+> officiellement bilingue : une entrée sans néerlandais n'est pas une entrée incomplète,
+> c'est une entrée qui ne devrait pas exister. Un test refuse un jeu de données dont plus
+> d'un dixième des néerlandais recopie le français — le symptôme habituel d'un « à compléter
+> plus tard ».
+>
+> **L'ordre d'affichage est explicite et non alphabétique** : l'ordre alphabétique change
+> d'une langue à l'autre, et le même catalogue apparaîtrait dans un ordre différent selon la
+> langue choisie.
+
+### Story 2.2 — API lecture catalogue + cache CDN (FR-008) — *faite*
 - **En tant que** User · **je veux** consulter le catalogue · **afin de** choisir mon Secteur
 - **4×N** : PRD FR-008 (locale fallback, rate-limit)
 - **Couche(s)** : Application + Infra (actix handler)
 - **Taille** : **S** (0,5 j) · **Tours** : 2
+
+> **L'avertissement de repli est rendu au client**, et pas seulement journalisé, comme le
+> demande `@negative` : c'est au client d'apprendre qu'il n'aura pas la langue qu'il a
+> réclamée, pas à l'exploitant de le découvrir dans ses journaux.
+>
+> **L'`ETag` est calculé sur le contenu servi**, jamais sur une date de mise à jour. Un
+> horodatage changerait à chaque redéploiement sans qu'une ligne du catalogue ait bougé, et
+> invaliderait tous les caches pour rien. Deux langues donnent deux `ETag` distincts, sans
+> quoi un cache servirait le néerlandais à qui demande le français en se croyant correct.
+>
+> **`Cache-Control: public`** parce que le catalogue est le même pour tout le monde. Un test
+> vérifie que la réponse ne contient aucune donnée propre à celui qui l'a demandée — c'est
+> la condition qui rend ce `public` légitime.
+>
+> **Le catalogue en maintenance répond 503 avec `Retry-After`**, via
+> `KLAAR_CATALOGUE_MAINTENANCE=1`, ce qui distingue un retrait volontaire d'une panne et
+> évite qu'un visiteur tombe sur un catalogue à moitié réécrit.
+>
+> Le limiteur accepte désormais des quotas nommés : 5 par heure pour les écritures
+> sensibles, 60 par minute pour la lecture publique. Les clés restent préfixées par usage,
+> sans quoi consulter le catalogue épuiserait le droit de se connecter.
 
 ### Story 2.3 — Prix indicatifs par Secteur (FR-009)
 - **En tant que** User · **je veux** une fourchette de prix · **afin d'** estimer mon budget

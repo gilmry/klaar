@@ -1,5 +1,11 @@
-//! Bounded context Catalog : Sector, Skill, prix indicatifs (FR-008 à FR-010).
+//! Bounded context Catalogue : Secteurs et Skills (FR-008 à FR-010).
 //!
-//! Scaffolding Sprint 0 (Story 0.1) : le bounded context existe et compile,
-//! son contenu métier sera implémenté epic par epic (voir
-//! docs/bmad-livrables/04-Epics-Stories.md).
+//! Domaine pur, sans IO. Le catalogue est la seule liste que l'utilisateur voit
+//! avant de décrire son problème : ses codes finissent dans des URL, des
+//! statistiques et des exports, et ne se renomment donc pas.
+
+mod libelles;
+mod secteur;
+
+pub use libelles::Libelles;
+pub use secteur::{CodeCatalogue, CodeError, Secteur, Skill};

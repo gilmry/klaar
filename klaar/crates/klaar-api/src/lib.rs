@@ -16,7 +16,8 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
-    PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository, PgUtilisateurRepository,
+    PgCatalogueRepository, PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository,
+    PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -37,6 +38,7 @@ pub struct EtatApplication {
     pub utilisateurs: Arc<PgUtilisateurRepository>,
     pub journal: Arc<PgJournalAudit>,
     pub sessions: Arc<PgSessionRepository>,
+    pub catalogue: Arc<PgCatalogueRepository>,
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
@@ -55,6 +57,10 @@ pub struct EtatApplication {
     /// partout sauf en développement local sur HTTP, où le navigateur
     /// refuserait alors le cookie sans rien dire.
     pub cookie_securise: bool,
+    /// Retire temporairement le catalogue (FR-008 `@edge`). Le service
+    /// répond alors 503 avec `Retry-After`, ce qui distingue un retrait
+    /// volontaire d'une panne.
+    pub catalogue_en_maintenance: bool,
 }
 
 #[derive(OpenApi)]
@@ -68,6 +74,7 @@ pub struct EtatApplication {
         routes::session::logout,
         routes::compte::effacer_mon_compte,
         routes::compte::annuler_mon_effacement,
+        routes::catalogue::secteurs,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -84,6 +91,9 @@ pub struct EtatApplication {
         routes::compte::EffacementDto,
         routes::compte::EffacementProgrammeDto,
         crate::auth::ErreurAuthDto,
+        routes::catalogue::CatalogueDto,
+        routes::catalogue::SecteurDto,
+        routes::catalogue::SkillDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -95,6 +105,7 @@ pub struct EtatApplication {
         (name = "sonde", description = "Disponibilité du service"),
         (name = "authentification", description = "Comptes et sessions (FR-001 à FR-004)"),
         (name = "compte", description = "Compte de l'utilisateur authentifié (FR-005)"),
+        (name = "catalogue", description = "Secteurs et Skills (FR-008)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -111,6 +122,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::session::logout)
         .service(routes::compte::effacer_mon_compte)
         .service(routes::compte::annuler_mon_effacement)
+        .service(routes::catalogue::secteurs)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);
@@ -132,7 +144,8 @@ pub fn etat_de_test(
         push,
         utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
         journal: Arc::new(PgJournalAudit::new(pool.clone())),
-        sessions: Arc::new(PgSessionRepository::new(pool)),
+        sessions: Arc::new(PgSessionRepository::new(pool.clone())),
+        catalogue: Arc::new(PgCatalogueRepository::new(pool)),
         jetons: Arc::new(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),
@@ -143,6 +156,7 @@ pub fn etat_de_test(
         argon2: ParametresArgon2::tests(),
         derriere_proxy: false,
         cookie_securise: false,
+        catalogue_en_maintenance: false,
     })
 }
 
