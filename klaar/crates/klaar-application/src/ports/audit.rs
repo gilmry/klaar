@@ -28,6 +28,8 @@ pub enum CodeAudit {
     UserErasureCancelled,
     /// Effacement exécuté. Conservé : c'est la trace que le droit a été honoré.
     UserErased,
+    /// Demande soumise (FR-011).
+    RequestCreated,
 }
 
 impl CodeAudit {
@@ -46,6 +48,7 @@ impl CodeAudit {
             Self::UserErasureRequested => "USER_ERASURE_REQUESTED",
             Self::UserErasureCancelled => "USER_ERASURE_CANCELLED",
             Self::UserErased => "USER_ERASED",
+            Self::RequestCreated => "REQUEST_CREATED",
         }
     }
 }

@@ -1,5 +1,13 @@
-//! Bounded context Matching & Dispatch : Request, Match (FR-011 à FR-015).
+//! Bounded context Matching & Dispatch : Demande, Match (FR-011 à FR-015).
 //!
-//! Scaffolding Sprint 0 (Story 0.1) : le bounded context existe et compile,
-//! son contenu métier sera implémenté epic par epic (voir
-//! docs/bmad-livrables/04-Epics-Stories.md).
+//! Domaine pur, sans IO. Le périmètre géographique du service y vit aussi :
+//! c'est une règle métier — qui est servi, et qui ne l'est pas — et non un
+//! détail d'infrastructure.
+
+mod demande;
+mod perimetre;
+
+pub use demande::{
+    Demande, DemandeError, StatutDemande, Urgence, DESCRIPTION_MAX, FENETRE_DOUBLON_MINUTES,
+};
+pub use perimetre::{dans_le_perimetre, LAT_MAX, LAT_MIN, LON_MAX, LON_MIN};

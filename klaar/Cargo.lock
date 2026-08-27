@@ -1563,7 +1563,11 @@ dependencies = [
 name = "klaar-matching"
 version = "0.0.0"
 dependencies = [
+ "chrono",
+ "klaar-catalog",
  "klaar-shared-kernel",
+ "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -1613,6 +1617,7 @@ dependencies = [
  "klaar-application",
  "klaar-catalog",
  "klaar-identity",
+ "klaar-matching",
  "klaar-shared-kernel",
  "sqlx",
  "tokio",

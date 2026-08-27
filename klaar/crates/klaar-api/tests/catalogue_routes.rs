@@ -108,19 +108,7 @@ async fn negative_la_maintenance_repond_503_avec_un_delai() {
     // pose ici, ce qui est le seul endroit où elle doit pouvoir l'être.
     let etat = actix_web::web::Data::new(EtatApplication {
         catalogue_en_maintenance: true,
-        abonnements: etat.abonnements.clone(),
-        push: etat.push.clone(),
-        utilisateurs: etat.utilisateurs.clone(),
-        journal: etat.journal.clone(),
-        sessions: etat.sessions.clone(),
-        catalogue: etat.catalogue.clone(),
-        jetons: etat.jetons.clone(),
-        courriel: etat.courriel.clone(),
-        horloge: etat.horloge.clone(),
-        limiteur: etat.limiteur.clone(),
-        argon2: etat.argon2,
-        derriere_proxy: etat.derriere_proxy,
-        cookie_securise: etat.cookie_securise,
+        ..(**etat).clone()
     });
     let app = test::init_service(app_de_test(etat)).await;
 

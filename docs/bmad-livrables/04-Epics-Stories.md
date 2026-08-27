@@ -437,11 +437,36 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 3 — Matching & Dispatch (MCH) · Priorité **Must** (cœur métier)
 
-### Story 3.1 — Soumission Demande (FR-011)
+### Story 3.1 — Soumission Demande (FR-011) — *faite, sauf la précondition de paiement*
 - **En tant que** User · **je veux** soumettre une Demande · **afin de** déclencher le matching
 - **4×N** : PRD FR-011 (validations, doublon, rate-limit)
 - **Couche(s)** : Domain (Request aggregate) + Application + Infra (PostGIS) + Frontend (formulaire)
 - **Taille** : **L** (1 j) · **Tours** : 5
+
+> **Le périmètre géographique est un rectangle, pas la Région.** Le contrôle `GEO_OUTSIDE_RBC`
+> ramène les dix-neuf communes à un rectangle englobant, qui **sur-accepte** : Kraainem et
+> Drogenbos, en Brabant flamand, y tombent. Le choix est délibéré — sur-accepter fait entrer
+> quelques Demandes hors périmètre qu'un prestataire refusera, sous-accepter refuserait des
+> Bruxellois chez eux. Un test constate cette sur-acceptation plutôt que de la masquer, et
+> devra être inversé quand le contour réel viendra (Story 0.11, bloquée faute d'hébergement).
+>
+> **La précondition « méthode paiement valide » n'est pas tenue**, faute de Story 1.7. Le
+> contrôle existe pourtant, avec son port, son `422` et ses tests : il est désactivable par
+> `KLAAR_EXIGER_METHODE_PAIEMENT=0`, et l'est dans le déploiement vitrine. Actif par défaut —
+> un contrôle de paiement qu'on oublie de rallumer est pire que pas de contrôle, parce que
+> personne ne s'en aperçoit.
+>
+> **Le matching n'est pas déclenché** : FR-011 prévoit un job asynchrone à la création, qui
+> appartient aux Stories 3.2 et 3.3. Une Demande naît `BROADCASTING` et y reste, faute de
+> prestataires à qui la diffuser. La page le dit à l'utilisateur plutôt que de laisser croire
+> qu'un dépanneur est en route.
+>
+> **Photos non fournies** (`@happy` « Demande avec photos ») : le stockage objet chiffré
+> demande un compartiment provisionné, hors périmètre.
+>
+> Le doublon rend la Demande existante en `200`, et non un `409` : l'utilisateur veut
+> retrouver la sienne, pas apprendre qu'il a cliqué deux fois. Il est cherché **avant** le
+> quota horaire, sans quoi cinq double-clics se verraient refuser pour excès.
 
 ### Story 3.2 — Recherche géoloc multi-Provider (FR-012)
 - **En tant que** système · **je veux** trouver Providers < 5 km + Skill · **afin de** notifier

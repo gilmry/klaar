@@ -16,8 +16,8 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
-    PgCatalogueRepository, PgJournalAudit, PgPushSubscriptionRepository, PgSessionRepository,
-    PgUtilisateurRepository,
+    PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgPaiementRepository,
+    PgPushSubscriptionRepository, PgSessionRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -29,6 +29,13 @@ pub mod telemetry;
 use limitation::LimiteurMemoire;
 
 /// Dépendances partagées par les handlers.
+///
+/// `Clone` pour que les tests dérivent un état complet en ne changeant qu'un
+/// champ (`EtatApplication { catalogue_en_maintenance: true, ..base.clone() }`).
+/// Sans lui, chaque nouveau champ oblige à réénumérer toute la structure dans
+/// chaque test qui en construit un — et le premier oubli passe pour une erreur
+/// de compilation dans un fichier sans rapport.
+#[derive(Clone)]
 pub struct EtatApplication {
     pub abonnements: Arc<PgPushSubscriptionRepository>,
     /// `None` quand aucune clé VAPID n'est configurée : le déploiement tourne
@@ -39,6 +46,8 @@ pub struct EtatApplication {
     pub journal: Arc<PgJournalAudit>,
     pub sessions: Arc<PgSessionRepository>,
     pub catalogue: Arc<PgCatalogueRepository>,
+    pub demandes: Arc<PgDemandeRepository>,
+    pub paiements: Arc<PgPaiementRepository>,
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
@@ -61,6 +70,11 @@ pub struct EtatApplication {
     /// répond alors 503 avec `Retry-After`, ce qui distingue un retrait
     /// volontaire d'une panne.
     pub catalogue_en_maintenance: bool,
+    /// Exiger une méthode de paiement avant toute Demande (FR-011).
+    /// Vrai par défaut : un contrôle de paiement qu'on oublie de rallumer
+    /// est pire que pas de contrôle, parce que personne ne s'en aperçoit.
+    /// Faux dans le déploiement vitrine, où Stripe est hors périmètre.
+    pub exiger_methode_paiement: bool,
 }
 
 #[derive(OpenApi)]
@@ -75,6 +89,7 @@ pub struct EtatApplication {
         routes::compte::effacer_mon_compte,
         routes::compte::annuler_mon_effacement,
         routes::catalogue::secteurs,
+        routes::demande::soumettre_demande,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -95,6 +110,8 @@ pub struct EtatApplication {
         routes::catalogue::SecteurDto,
         routes::catalogue::SkillDto,
         routes::catalogue::FourchetteDto,
+        routes::demande::DemandeDto,
+        routes::demande::DemandeCreeeDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -107,6 +124,7 @@ pub struct EtatApplication {
         (name = "authentification", description = "Comptes et sessions (FR-001 à FR-004)"),
         (name = "compte", description = "Compte de l'utilisateur authentifié (FR-005)"),
         (name = "catalogue", description = "Secteurs et Skills (FR-008)"),
+        (name = "demandes", description = "Demandes de dépannage (FR-011 à FR-015)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -124,6 +142,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::compte::effacer_mon_compte)
         .service(routes::compte::annuler_mon_effacement)
         .service(routes::catalogue::secteurs)
+        .service(routes::demande::soumettre_demande)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);
@@ -146,7 +165,9 @@ pub fn etat_de_test(
         utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
         journal: Arc::new(PgJournalAudit::new(pool.clone())),
         sessions: Arc::new(PgSessionRepository::new(pool.clone())),
-        catalogue: Arc::new(PgCatalogueRepository::new(pool)),
+        catalogue: Arc::new(PgCatalogueRepository::new(pool.clone())),
+        demandes: Arc::new(PgDemandeRepository::new(pool.clone())),
+        paiements: Arc::new(PgPaiementRepository::new(pool)),
         jetons: Arc::new(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),
@@ -158,6 +179,9 @@ pub fn etat_de_test(
         derriere_proxy: false,
         cookie_securise: false,
         catalogue_en_maintenance: false,
+        // Les tests n'ont pas de Stripe : le contrôle est vérifié par ses
+        // propres cas, avec un état construit à la main.
+        exiger_methode_paiement: false,
     })
 }
 

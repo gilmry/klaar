@@ -5,6 +5,7 @@
 pub mod audit;
 pub mod catalogue_repository;
 pub mod courriel;
+pub mod demande_repository;
 pub mod erreurs;
 pub mod horloge;
 pub mod jeton_acces;

@@ -299,6 +299,33 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   obligatoirement toute fourchette — sans elle, une fourchette se lit comme un devis, et
   l'écart devient un litige.
 
+## Epic 3 — Demandes et matching
+
+- **3.1** — **Soumission d'une Demande** (FR-011) : `POST /api/v1/requests`, page `/demande`, position PostGIS, détection de doublon, quota horaire par compte.
+
+  **Le périmètre est un rectangle, pas la Région.** Le contrôle `GEO_OUTSIDE_RBC` ramène les
+  dix-neuf communes à un rectangle englobant, qui **sur-accepte** : Kraainem et Drogenbos,
+  en Brabant flamand, y tombent. Sur-accepter fait entrer quelques Demandes hors périmètre
+  qu'un prestataire refusera ; sous-accepter refuserait des Bruxellois chez eux. Un test
+  **constate** cette sur-acceptation au lieu de la masquer, et devra être inversé le jour où
+  le contour réel arrivera (Story 0.11).
+
+  **L'ordre des arguments de `ST_MakePoint` est vérifié par un test** qui relit la position
+  depuis PostGIS. C'est le genre de détail qu'aucun test unitaire n'attrape et qui place
+  Bruxelles au large de la Somalie sans qu'aucune contrainte ne s'en aperçoive.
+
+  Le doublon rend la Demande existante en `200` plutôt qu'un `409` : l'utilisateur veut
+  retrouver la sienne, pas apprendre qu'il a cliqué deux fois. Il est cherché **avant** le
+  quota horaire, sans quoi cinq double-clics se verraient refuser pour excès. La position
+  n'est demandée qu'à l'envoi : une invite de géolocalisation à l'arrivée est refusée par
+  réflexe, et ce refus est définitif dans plusieurs navigateurs.
+
+  **Deux limites assumées** : la précondition « méthode de paiement » est désactivée dans ce
+  déploiement, faute de compte Stripe — le contrôle existe et est actif par défaut, sa
+  désactivation est journalisée au démarrage. Et le matching n'est pas déclenché : une
+  Demande naît `BROADCASTING` et y reste, ce que la page dit à l'utilisateur plutôt que de
+  laisser croire qu'un dépanneur est en route.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

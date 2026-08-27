@@ -18,8 +18,8 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
-    creer_pool, PgCatalogueRepository, PgJournalAudit, PgPushSubscriptionRepository,
-    PgSessionRepository, PgUtilisateurRepository,
+    creer_pool, PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgPaiementRepository,
+    PgPushSubscriptionRepository, PgSessionRepository, PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -120,6 +120,20 @@ async fn main() -> std::io::Result<()> {
         tracing::warn!("KLAAR_CATALOGUE_MAINTENANCE=1 : le catalogue répond 503");
     }
 
+    // FR-011 fait de la méthode de paiement une précondition à toute Demande.
+    // Le contrôle est actif par défaut : l'oublier allumé ne coûte qu'un refus
+    // explicite, l'oublier éteint laisse passer des Demandes qu'aucun paiement
+    // ne garantit. Le déploiement vitrine le désactive, faute de compte Stripe
+    // (Story 1.7).
+    let exiger_methode_paiement =
+        std::env::var("KLAAR_EXIGER_METHODE_PAIEMENT").as_deref() != Ok("0");
+    if !exiger_methode_paiement {
+        tracing::warn!(
+            "KLAAR_EXIGER_METHODE_PAIEMENT=0 : les Demandes sont acceptées sans méthode \
+             de paiement enregistrée."
+        );
+    }
+
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     tracing::info!(%bind_addr, "klaar-api démarre — /api/v1/docs Swagger UI, /metrics Prometheus");
 
@@ -136,6 +150,8 @@ async fn main() -> std::io::Result<()> {
             journal: Arc::new(PgJournalAudit::new(pool.clone())),
             sessions: Arc::new(PgSessionRepository::new(pool.clone())),
             catalogue: Arc::new(PgCatalogueRepository::new(pool.clone())),
+            demandes: Arc::new(PgDemandeRepository::new(pool.clone())),
+            paiements: Arc::new(PgPaiementRepository::new(pool.clone())),
             jetons: jetons.clone(),
             courriel: courriel.clone(),
             horloge: Arc::new(HorlogeSysteme),
@@ -144,6 +160,7 @@ async fn main() -> std::io::Result<()> {
             derriere_proxy,
             cookie_securise,
             catalogue_en_maintenance,
+            exiger_methode_paiement,
         });
         App::new()
             // Span racine expurgé de l'IP et de l'agent utilisateur, cf.

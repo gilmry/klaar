@@ -123,6 +123,35 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Périmètre géographique : un rectangle, pas la Région (Story 3.1, FR-011)
+
+Le contrôle `GEO_OUTSIDE_RBC` ramène les dix-neuf communes de la Région de
+Bruxelles-Capitale à un **rectangle englobant**. Il sur-accepte : des points du Brabant
+flamand tout proches de la frontière régionale — Kraainem, Drogenbos — y tombent.
+
+Le choix est délibéré. Sur-accepter fait entrer quelques Demandes hors périmètre, qu'un
+prestataire refusera ; sous-accepter refuserait des Bruxellois chez eux. Un test constate
+cette sur-acceptation plutôt que de la masquer.
+
+**À remplacer avant toute mise en service** par le contour réel, qui viendra des données
+OpenStreetMap de la Story 0.11 — aujourd'hui bloquée faute d'hébergement pour le
+tile-server.
+
+## Demandes : ce qui n'est pas contrôlé (Story 3.1, FR-011)
+
+**La méthode de paiement n'est pas exigée** dans le déploiement vitrine
+(`KLAAR_EXIGER_METHODE_PAIEMENT=0`), faute de compte Stripe (Story 1.7). Le contrôle existe,
+avec son port et son `422`, et il est **actif par défaut** : le désactiver est un geste
+explicite, journalisé au démarrage. Conséquence à connaître : une Demande peut être créée
+sans qu'aucun moyen de paiement ne la garantisse.
+
+**Le matching n'est pas déclenché.** Une Demande est créée en `BROADCASTING` et y reste :
+la recherche de prestataires et leur notification appartiennent aux Stories 3.2 et 3.3.
+L'interface le dit à l'utilisateur plutôt que de laisser croire qu'un dépanneur est en route.
+
+**Les photos ne sont pas prises en charge** : leur stockage chiffré demande un compartiment
+objet provisionné, hors périmètre.
+
 ## Prix indicatifs : ce que la fourchette expose (Story 2.3, FR-009)
 
 Une fourchette est faite de deux prix réels : son minimum et son maximum **sont** des
