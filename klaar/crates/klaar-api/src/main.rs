@@ -9,10 +9,16 @@ use tracing_subscriber::{fmt, fmt::format::FmtSpan, prelude::*, EnvFilter};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use klaar_api::limitation::LimiteurMemoire;
 use klaar_api::telemetry::SpanSansDonneesPersonnelles;
 use klaar_api::{configurer, ApiDoc, EtatApplication};
+use klaar_application::ports::horloge::HorlogeSysteme;
+use klaar_email_adapter::CourrielJournalise;
+use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
-use klaar_sqlx_repos::{creer_pool, PgPushSubscriptionRepository};
+use klaar_sqlx_repos::{
+    creer_pool, PgJournalAudit, PgPushSubscriptionRepository, PgUtilisateurRepository,
+};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -58,6 +64,19 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // Un seul limiteur pour tout le processus. Le construire dans la fabrique
+    // de `App` en donnerait un par fil d'exécution, et la limite annoncée
+    // serait silencieusement multipliée par le nombre de coeurs.
+    let limiteur = Arc::new(LimiteurMemoire::new());
+    let courriel = Arc::new(CourrielJournalise::depuis_environnement());
+    let derriere_proxy = std::env::var("KLAAR_DERRIERE_PROXY").as_deref() == Ok("1");
+    if !derriere_proxy {
+        tracing::info!(
+            "KLAAR_DERRIERE_PROXY absente : X-Forwarded-For ignoré, la limitation \
+             de débit compte par adresse de connexion directe"
+        );
+    }
+
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
     tracing::info!(%bind_addr, "klaar-api démarre — /api/v1/docs Swagger UI, /metrics Prometheus");
 
@@ -70,6 +89,13 @@ async fn main() -> std::io::Result<()> {
         let etat = web::Data::new(EtatApplication {
             abonnements: Arc::new(PgPushSubscriptionRepository::new(pool.clone())),
             push: push.clone(),
+            utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
+            journal: Arc::new(PgJournalAudit::new(pool.clone())),
+            courriel: courriel.clone(),
+            horloge: Arc::new(HorlogeSysteme),
+            limiteur: limiteur.clone(),
+            argon2: ParametresArgon2::production(),
+            derriere_proxy,
         });
         App::new()
             // Span racine expurgé de l'IP et de l'agent utilisateur, cf.

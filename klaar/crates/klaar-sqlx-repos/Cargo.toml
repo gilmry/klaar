@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
 klaar-application = { path = "../klaar-application", version = "0.0.0" }
+klaar-identity = { path = "../klaar-identity", version = "0.0.0" }
 # ADR-002 : sqlx en SQL pur, pas d'ORM. Les requêtes sont vérifiées à
 # l'exécution (`query_as`) et non par macro : la vérification par macro
 # imposerait une base joignable à la compilation, donc en CI et sur tout poste

@@ -16,3 +16,10 @@ klaar-payment = { path = "../klaar-payment", version = "0.0.0" }
 klaar-messaging = { path = "../klaar-messaging", version = "0.0.0" }
 klaar-trust = { path = "../klaar-trust", version = "0.0.0" }
 uuid.workspace = true
+chrono.workspace = true
+# Uniquement pour signaler les replis et les échecs non bloquants. Aucune
+# décision métier ne dépend de la journalisation.
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

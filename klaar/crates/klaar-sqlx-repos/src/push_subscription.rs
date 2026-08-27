@@ -8,6 +8,7 @@ use klaar_application::ports::push_repository::{
     AbonnementEnregistre, PushSubscriptionRepository, RepositoryError,
 };
 
+use crate::erreur;
 use crate::pool::PoolPg;
 
 pub struct PgPushSubscriptionRepository {
@@ -17,15 +18,6 @@ pub struct PgPushSubscriptionRepository {
 impl PgPushSubscriptionRepository {
     pub fn new(pool: PoolPg) -> Self {
         Self { pool }
-    }
-}
-
-fn erreur(e: sqlx::Error) -> RepositoryError {
-    match &e {
-        sqlx::Error::Database(db) if db.is_unique_violation() || db.is_foreign_key_violation() => {
-            RepositoryError::Contrainte(db.message().to_string())
-        }
-        _ => RepositoryError::Indisponible(e.to_string()),
     }
 }
 

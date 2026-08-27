@@ -1,26 +1,11 @@
 //! Port de persistance des abonnements push (Story 0.12).
 
-use std::fmt;
 use uuid::Uuid;
 
 use super::push::PushSubscription;
-
-#[derive(Debug)]
-pub enum RepositoryError {
-    Indisponible(String),
-    Contrainte(String),
-}
-
-impl fmt::Display for RepositoryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Indisponible(d) => write!(f, "dépôt indisponible : {d}"),
-            Self::Contrainte(d) => write!(f, "contrainte violée : {d}"),
-        }
-    }
-}
-
-impl std::error::Error for RepositoryError {}
+// Déplacée dans `erreurs` quand un second dépôt a eu besoin du même type.
+// Ré-exportée ici pour ne pas casser les chemins d'import existants.
+pub use super::erreurs::RepositoryError;
 
 /// Abonnement tel qu'il est conservé, avec son identité propre.
 #[derive(Debug, Clone, PartialEq, Eq)]

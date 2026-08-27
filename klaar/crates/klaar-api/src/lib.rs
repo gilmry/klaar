@@ -10,11 +10,17 @@ use std::sync::Arc;
 use actix_web::{web, App};
 use utoipa::OpenApi;
 
+use klaar_application::ports::horloge::HorlogeSysteme;
+use klaar_email_adapter::CourrielJournalise;
+use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
-use klaar_sqlx_repos::PgPushSubscriptionRepository;
+use klaar_sqlx_repos::{PgJournalAudit, PgPushSubscriptionRepository, PgUtilisateurRepository};
 
+pub mod limitation;
 pub mod routes;
 pub mod telemetry;
+
+use limitation::LimiteurMemoire;
 
 /// Dépendances partagées par les handlers.
 pub struct EtatApplication {
@@ -23,18 +29,35 @@ pub struct EtatApplication {
     /// alors sans notifications, ce qui est un mode de fonctionnement légitime
     /// et non une panne.
     pub push: Option<Arc<WebPushSender>>,
+    pub utilisateurs: Arc<PgUtilisateurRepository>,
+    pub journal: Arc<PgJournalAudit>,
+    pub courriel: Arc<CourrielJournalise>,
+    pub horloge: Arc<HorlogeSysteme>,
+    pub limiteur: Arc<LimiteurMemoire>,
+    /// Paramètres argon2id. Injectés plutôt que lus depuis `production()` pour
+    /// que les tests d'intégration ne passent pas l'essentiel de leur temps
+    /// dans une fonction de dérivation volontairement lente.
+    pub argon2: ParametresArgon2,
+    /// Faire confiance à `X-Forwarded-For`. Faux par défaut : le croire sans
+    /// proxy de confiance devant rend la limitation de débit contournable par
+    /// un simple en-tête.
+    pub derriere_proxy: bool,
 }
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         routes::health::health,
+        routes::auth::signup,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
     ),
     components(schemas(
         routes::health::HealthDto,
+        routes::auth::InscriptionDto,
+        routes::auth::InscriptionAccepteeDto,
+        routes::auth::ErreurValidationDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -44,6 +67,7 @@ pub struct EtatApplication {
     )),
     tags(
         (name = "sonde", description = "Disponibilité du service"),
+        (name = "authentification", description = "Comptes et sessions (FR-001 à FR-004)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -53,9 +77,34 @@ pub struct ApiDoc;
 /// réutilisable par `actix_web::test::init_service`.
 pub fn configurer(cfg: &mut web::ServiceConfig) {
     cfg.service(routes::health::health)
+        .service(routes::auth::signup)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);
+}
+
+/// État câblé sur une base réelle, avec des paramètres argon2 faibles.
+///
+/// Vit à côté d'`app_de_test` pour la même raison : les tests d'intégration
+/// sont une caisse séparée et ne voient pas les `#[cfg(test)]` de celle-ci. Les
+/// paramètres argon2 de production coûteraient ici une centaine de
+/// millisecondes par inscription, soit une suite qu'on finit par ne plus
+/// lancer.
+pub fn etat_de_test(
+    pool: klaar_sqlx_repos::PoolPg,
+    push: Option<Arc<WebPushSender>>,
+) -> web::Data<EtatApplication> {
+    web::Data::new(EtatApplication {
+        abonnements: Arc::new(PgPushSubscriptionRepository::new(pool.clone())),
+        push,
+        utilisateurs: Arc::new(PgUtilisateurRepository::new(pool.clone())),
+        journal: Arc::new(PgJournalAudit::new(pool)),
+        courriel: Arc::new(CourrielJournalise::new("https://klaar.test", false)),
+        horloge: Arc::new(HorlogeSysteme),
+        limiteur: Arc::new(LimiteurMemoire::new()),
+        argon2: ParametresArgon2::tests(),
+        derriere_proxy: false,
+    })
 }
 
 /// Type de retour de `App::new()` sans middleware, pour les tests.

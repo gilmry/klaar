@@ -7,9 +7,9 @@
 use std::sync::Arc;
 
 use actix_web::{http::StatusCode, test, web};
-use klaar_api::{app_de_test, EtatApplication};
+use klaar_api::{app_de_test, etat_de_test, EtatApplication};
 use klaar_push_adapter::{ClesVapid, WebPushSender};
-use klaar_sqlx_repos::{creer_pool, PgPushSubscriptionRepository};
+use klaar_sqlx_repos::creer_pool;
 use uuid::Uuid;
 
 const UA_PUBLIC: &str =
@@ -19,13 +19,13 @@ async fn etat(avec_push: bool) -> web::Data<EtatApplication> {
     let url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL requise : `make db-up && make migrate`, ou service postgres en CI");
     let pool = creer_pool(&url).await.expect("connexion PostgreSQL");
-    web::Data::new(EtatApplication {
-        abonnements: Arc::new(PgPushSubscriptionRepository::new(pool)),
-        push: avec_push.then(|| {
+    etat_de_test(
+        pool,
+        avec_push.then(|| {
             let (cles, _, _) = ClesVapid::generer("mailto:ops@klaar.be").unwrap();
             Arc::new(WebPushSender::new(cles))
         }),
-    })
+    )
 }
 
 fn corps_abonnement(endpoint: &str, auth: &str) -> serde_json::Value {

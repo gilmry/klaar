@@ -5,3 +5,4 @@
 //! un FR du PRD.
 
 pub mod ports;
+pub mod usecases;

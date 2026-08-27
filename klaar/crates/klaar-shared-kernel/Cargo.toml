@@ -8,5 +8,9 @@ license.workspace = true
 
 [dependencies]
 serde.workspace = true
+# FR-001 @edge : deux emails visuellement identiques peuvent avoir deux
+# encodages Unicode distincts (« é » précomposé contre « e » + accent
+# combinant). Sans normalisation, ils créent deux comptes.
+unicode-normalization = "0.1"
 
 [dev-dependencies]

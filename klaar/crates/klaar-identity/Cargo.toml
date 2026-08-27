@@ -8,3 +8,15 @@ license.workspace = true
 
 [dependencies]
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
+# argon2id : exigé nommément par FR-001 `@security`. Le calcul est du CPU pur,
+# sans IO ni dépendance à un fournisseur : il reste donc dans le domaine, où
+# l'invariant « un mot de passe n'est jamais conservé en clair » est énoncé.
+argon2 = { version = "0.5", features = ["std"] }
+# Le sel du hash et le jeton de vérification viennent tous deux du générateur
+# du système. `rand` seul ne garantit pas cette provenance.
+rand_core = { version = "0.6", features = ["getrandom"] }
+base64 = "0.22"
+sha2 = "0.10"
+chrono.workspace = true
+uuid.workspace = true
+serde.workspace = true

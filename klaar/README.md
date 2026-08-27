@@ -79,7 +79,44 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   6 tests e2e livrent un vrai push à un vrai navigateur (`ServiceWorker.deliverPushMessage` du protocole DevTools). **Non vérifiable ici** : la livraison depuis un service de push distant, et iOS, qui ne délivre qu'aux PWA ajoutées à l'écran d'accueil.
 - **Défaut RGPD du Sprint 0 corrigé** : le span racine journalisait `http.client_ip` et `http.user_agent`. La première tentative de correction ne marchait pas — `root_span!` renseigne ces champs lui-même, et les journaux contenaient toujours l'IP alors que le code semblait correct à la lecture. Le span est désormais construit champ par champ, et un test inspecte les journaux réellement émis plutôt que la configuration.
 - **0.10 (partiel)** — SBOM CycloneDX signé (`cosign sign-blob` keyless via OIDC GitHub, pas de clé privée à gérer) et runbook incident NIS2 (`docs/runbook-incident.md`, procédure de notification CCB en 24h/72h/1 mois). **Non fait** : le runbook n'a pas été testé en jeu de rôle (DoD complet) — inapplicable tant qu'il n'y a ni équipe ops ni déploiement réel
-- **0.8 (partiel)** — observabilité : métrique + log générés par requête, vérifié en conditions réelles (`/metrics` Prometheus scrapé, requête → ligne de log JSON avec `http.route`/`http.status_code`/`request_id`). Stack locale `docker compose up -d prometheus grafana`, dashboard provisionné automatiquement (`observability/grafana/dashboards/klaar-api.json` : requêtes/s par endpoint, latence p95). **Bug trouvé et corrigé en cours de route** : `tracing-actix-web` crée un span par requête mais rien ne l'imprime sans `fmt::layer().with_span_events(FmtSpan::CLOSE)` explicite — sans ça, aucune requête n'apparaissait dans les logs malgré `TracingLogger` actif. **Risque RGPD identifié et documenté (pas corrigé)** : le root span par défaut loggue `http.client_ip` (IP = donnée personnelle) et `http.user_agent` — sans conséquence tant que `/api/v1/health` est le seul endpoint, mais à corriger avant tout endpoint FR réel (voir commentaire dans `klaar-api/src/main.rs`). **Non fait** : trace distribuée (Tempo), AlertManager, plugin Sentry EU — DoD Story 0.8 complet demande une stack plus lourde que ce qui a du sens à scaffolder sans trafic réel à observer
+- **0.8 (partiel)** — observabilité : métrique + log générés par requête, vérifié en conditions réelles (`/metrics` Prometheus scrapé, requête → ligne de log JSON avec `http.route`/`http.status_code`/`request_id`). Stack locale `docker compose up -d prometheus grafana`, dashboard provisionné automatiquement (`observability/grafana/dashboards/klaar-api.json` : requêtes/s par endpoint, latence p95). **Bug trouvé et corrigé en cours de route** : `tracing-actix-web` crée un span par requête mais rien ne l'imprime sans `fmt::layer().with_span_events(FmtSpan::CLOSE)` explicite — sans ça, aucune requête n'apparaissait dans les logs malgré `TracingLogger` actif. **Risque RGPD identifié ici, corrigé depuis** : le root span par défaut journalisait `http.client_ip` (IP = donnée personnelle) et `http.user_agent` — voir le point dédié ci-dessus et `crates/klaar-api/src/telemetry.rs`. **Non fait** : trace distribuée (Tempo), AlertManager, plugin Sentry EU — DoD Story 0.8 complet demande une stack plus lourde que ce qui a du sens à scaffolder sans trafic réel à observer
+
+## Epic 1 — Identity & Access
+
+- **1.1** — **Inscription** (FR-001) : `POST /api/v1/auth/signup`, page `/inscription`, compte créé en `PENDING_EMAIL_VERIFY` avec jeton de vérification valable une heure, journal d'audit, limitation à 5 tentatives par heure et par adresse. Domaine dans `klaar-identity` (`MotDePasse` ≥ 12 caractères sans règle de composition — NIST SP 800-63B —, empreinte argon2id 64 MiB / 3 itérations, `JetonVerification`), cas d'usage dans `klaar-application`, migration V3.
+
+  **FR-001 se contredit, et il a fallu trancher.** Son scénario `@negative` réclame un
+  `409 EMAIL_ALREADY_EXISTS` sur une adresse déjà prise ; son scénario `@security` réclame
+  une réponse « identique (timing + payload) » que l'adresse existe ou non. Les deux ne
+  peuvent pas être vrais : le `409` fait de l'inscription un moyen de tester la présence de
+  n'importe quelle adresse. **L'anti-énumération l'emporte**, le `409` sort du contrat, et
+  la réponse est toujours `202 SIGNUP_ACCEPTED`. Tenir l'indistinguabilité demande plus que
+  de renvoyer le même corps : le mot de passe est haché *avant* que la base soit interrogée,
+  et un courriel part dans les deux cas — sinon le chemin « déjà prise » est plus court d'un
+  envoi et se reconnaît au chronomètre. Le message adressé au titulaire ne porte aucun lien.
+
+  **Le jeton de vérification n'est pas un JWT**, contrairement à ce qu'écrit FR-001. Un JWT
+  se vérifie sans état côté serveur, ce qui interdit de le marquer utilisé — alors que le
+  même FR exige qu'il ne soit pas rejouable. Jeton opaque de 32 octets, conservé haché, à
+  usage unique : même écriture en base, sans la surface d'attaque d'un JWT.
+
+  **Deux défauts trouvés par les tests, pas par relecture** :
+  - le commentaire de `Email` annonçait une normalisation NFC qui n'existait pas. En
+    l'écrivant, le test a montré que `ø` (U+00F8) **n'a aucune décomposition canonique** :
+    `o` + U+0338 n'en est pas une écriture alternative, et NFC ne les confond pas, à raison.
+    Le test dit désormais ce que la normalisation fait *et* ce qu'elle ne fait pas
+  - le formulaire lisait `navigator.language` : les tests Playwright, dont le Chromium
+    annonce `en-US`, affichaient un refus en anglais au milieu d'une page en français. La
+    langue est désormais celle déclarée par la page
+
+  **Non fourni** : le challenge hCaptcha après trois échecs (`@security` de FR-001),
+  qui suppose un tiers et un appel sortant. La limitation de débit vit en mémoire du
+  processus — suffisant à un exemplaire, insuffisant derrière plusieurs instances. Détails
+  et régimes concernés dans `COMPLIANCE.md`.
+
+  **Amende la Story 0.12** : la migration V3 pose enfin la clé étrangère
+  `push_subscription.sujet_id → utilisateur.id` que V2 annonçait sans pouvoir l'écrire,
+  en `ON DELETE CASCADE` — un abonnement orphelin continuerait à notifier un compte effacé.
 
 ## CI, premier run réel
 

@@ -154,13 +154,32 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 1 — Identity & Access (IDN) · Priorité **Must**
 
-### Story 1.1 — Signup User (FR-001)
+### Story 1.1 — Signup User (FR-001) — *faite*
 - **En tant que** visiteur · **je veux** créer un compte email + password · **afin de** faire des Demandes
 - **Critères Gherkin** : voir PRD FR-001
 - **4×N** : PRD FR-001 (4 scénarios × 4 classes)
-- **Couche(s)** : Domain (User aggregate) + Application (SignupUserHandler) + Infra (sqlx repo, actix handler) + Frontend (page /signup Svelte 5)
+- **Couche(s)** : Domain (`klaar-identity` : `Utilisateur`, `MotDePasse`, `EmpreinteMotDePasse` argon2id, `JetonVerification`) + Application (ports `UtilisateurRepository`, `EnvoiCourriel`, `JournalAudit`, `Horloge` ; cas d'usage `inscrire`) + Infra (migration V3, `PgUtilisateurRepository`, `PgJournalAudit`, `CourrielJournalise`, limitation de débit) + Frontend (`/inscription`, Svelte 5)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 - **DoD** : 4×N verts · gates · i18n FR/NL/EN · email vérification
+
+> **Trois écarts assumés avec FR-001, détaillés dans `klaar/COMPLIANCE.md`.**
+> 1. **Le `409 EMAIL_ALREADY_EXISTS` disparaît du contrat.** FR-001 le demande en
+>    `@negative` et exige en `@security` une réponse indistinguable que l'adresse existe
+>    ou non : les deux ne tiennent pas ensemble. L'inscription répond toujours `202`.
+> 2. **Un courriel part dans les deux cas**, alors que FR-001 écrit « aucun email n'est
+>    envoyé ». Sans cela, le chemin « adresse déjà prise » se reconnaît au chronomètre.
+>    Le message au titulaire ne porte aucun lien.
+> 3. **Le jeton de vérification est opaque et haché, pas un JWT.** Un JWT ne peut pas
+>    être marqué utilisé sans l'état qu'il prétend éviter, alors que FR-001 exige la
+>    non-rejouabilité.
+>
+> **Non fourni** : le challenge hCaptcha après trois échecs (`@security`), qui suppose un
+> tiers et un appel sortant hors périmètre. La limitation de débit — 5 par heure et par
+> adresse, en mémoire du processus — est la seule borne d'abus.
+>
+> **Amende la Story 0.12** au passage : la migration V3 pose la clé étrangère
+> `push_subscription.sujet_id → utilisateur.id` que V2 annonçait sans pouvoir l'écrire,
+> avec `ON DELETE CASCADE` pour que l'effacement d'un compte emporte ses abonnements.
 
 ### Story 1.2 — Email vérification par token (FR-001)
 - **En tant que** User · **je veux** vérifier mon email · **afin d'** activer mon compte

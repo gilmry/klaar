@@ -1,0 +1,25 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import FormulaireInscription from "../components/FormulaireInscription.svelte";
+---
+
+<AppLayout
+  titre="Klaar — créer un compte"
+  description="Créez votre compte Klaar pour demander un dépannage à Bruxelles."
+>
+  <h1>Créer un compte</h1>
+  <p class="klaar-tempere">
+    Une adresse email et un mot de passe suffisent. Un courriel de confirmation
+    suit, dont le lien reste valable une heure.
+  </p>
+
+  <FormulaireInscription client:load />
+
+  <h2>Ce que nous conservons</h2>
+  <p class="klaar-tempere">
+    Votre adresse email, votre mot de passe sous forme d'empreinte argon2id
+    (jamais en clair) et la langue choisie. Ni votre adresse IP ni votre
+    navigateur ne sont journalisés. Voir <code>klaar/COMPLIANCE.md</code> pour
+    ce qui n'est pas encore fourni.
+  </p>
+</AppLayout>

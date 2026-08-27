@@ -11,7 +11,7 @@
 
 use klaar_application::ports::push::PushSubscription;
 use klaar_application::ports::push_repository::PushSubscriptionRepository;
-use klaar_sqlx_repos::{creer_pool, PgPushSubscriptionRepository};
+use klaar_sqlx_repos::{creer_pool, PgPushSubscriptionRepository, PoolPg};
 use uuid::Uuid;
 
 fn url() -> String {
@@ -29,14 +29,50 @@ fn abonnement(marqueur: &str) -> PushSubscription {
     }
 }
 
+async fn pool() -> PoolPg {
+    creer_pool(&url()).await.expect("connexion PostgreSQL")
+}
+
 async fn depot() -> PgPushSubscriptionRepository {
-    PgPushSubscriptionRepository::new(creer_pool(&url()).await.expect("connexion PostgreSQL"))
+    PgPushSubscriptionRepository::new(pool().await)
+}
+
+/// Crée un compte réel et rend son identifiant.
+///
+/// Un UUID tiré au hasard ne suffit plus : la migration V3 a posé la clé
+/// étrangère que V2 annonçait, si bien qu'un `sujet_id` sans compte en face
+/// est désormais rejeté par la base. C'est exactement ce qu'on veut — un
+/// abonnement rattaché à un compte inexistant n'aurait jamais dû être
+/// enregistrable.
+async fn compte(pool: &PoolPg, marqueur: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO utilisateur (id, email, empreinte_mot_de_passe, statut, locale, cree_le)
+         VALUES ($1, $2, '$argon2id$v=19$m=32,t=1,p=1$c2Vsc2Vsc2Vsc2VsMQ$0000000000000000000000000000000000000000000',
+                 'PENDING_EMAIL_VERIFY', 'fr', now())",
+    )
+    .bind(id)
+    .bind(format!("push-{marqueur}-{id}@example.eu"))
+    .execute(pool)
+    .await
+    .expect("compte de test");
+    id
+}
+
+/// Supprime le compte, et par cascade ses abonnements.
+async fn effacer_compte(pool: &PoolPg, id: Uuid) {
+    sqlx::query("DELETE FROM utilisateur WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("nettoyage");
 }
 
 #[tokio::test]
 async fn happy_enregistre_puis_retrouve_par_sujet() {
-    let depot = depot().await;
-    let sujet = Uuid::new_v4();
+    let pool = pool().await;
+    let depot = PgPushSubscriptionRepository::new(pool.clone());
+    let sujet = compte(&pool, "happy").await;
     let a = abonnement("happy");
 
     let enregistre = depot.enregistrer(&a, Some(sujet)).await.unwrap();
@@ -48,6 +84,7 @@ async fn happy_enregistre_puis_retrouve_par_sujet() {
     assert_eq!(liste[0].id, enregistre.id);
 
     depot.supprimer_par_endpoint(&a.endpoint).await.unwrap();
+    effacer_compte(&pool, sujet).await;
 }
 
 #[tokio::test]
@@ -55,8 +92,9 @@ async fn happy_reenregistrer_le_meme_endpoint_met_a_jour_sans_dupliquer() {
     // Un navigateur peut renouveler ses clés en gardant son endpoint. Un
     // second enregistrement doit remplacer, pas ajouter : sinon l'appareil
     // reçoit chaque notification en double.
-    let depot = depot().await;
-    let sujet = Uuid::new_v4();
+    let pool = pool().await;
+    let depot = PgPushSubscriptionRepository::new(pool.clone());
+    let sujet = compte(&pool, "maj").await;
     let mut a = abonnement("maj");
 
     let premier = depot.enregistrer(&a, Some(sujet)).await.unwrap();
@@ -71,6 +109,7 @@ async fn happy_reenregistrer_le_meme_endpoint_met_a_jour_sans_dupliquer() {
     assert_eq!(liste[0].abonnement.p256dh, a.p256dh);
 
     depot.supprimer_par_endpoint(&a.endpoint).await.unwrap();
+    effacer_compte(&pool, sujet).await;
 }
 
 #[tokio::test]
@@ -97,8 +136,9 @@ async fn edge_un_abonnement_sans_sujet_est_accepte() {
 async fn edge_rattacher_un_sujet_ne_l_efface_pas_par_un_enregistrement_anonyme() {
     // COALESCE dans le ON CONFLICT : un ré-enregistrement sans sujet ne doit
     // pas détacher un abonnement déjà rattaché à un compte.
-    let depot = depot().await;
-    let sujet = Uuid::new_v4();
+    let pool = pool().await;
+    let depot = PgPushSubscriptionRepository::new(pool.clone());
+    let sujet = compte(&pool, "coalesce").await;
     let a = abonnement("coalesce");
 
     depot.enregistrer(&a, Some(sujet)).await.unwrap();
@@ -106,6 +146,7 @@ async fn edge_rattacher_un_sujet_ne_l_efface_pas_par_un_enregistrement_anonyme()
 
     assert_eq!(apres.sujet_id, Some(sujet));
     depot.supprimer_par_endpoint(&a.endpoint).await.unwrap();
+    effacer_compte(&pool, sujet).await;
 }
 
 #[tokio::test]
@@ -113,8 +154,9 @@ async fn security_la_purge_retire_reellement_la_donnee_personnelle() {
     // Un endpoint identifie un appareil. Quand le service de push le déclare
     // disparu (410), la ligne doit partir : la garder, c'est conserver une
     // donnée personnelle sans finalité.
-    let depot = depot().await;
-    let sujet = Uuid::new_v4();
+    let pool = pool().await;
+    let depot = PgPushSubscriptionRepository::new(pool.clone());
+    let sujet = compte(&pool, "purge").await;
     let a = abonnement("purge");
 
     depot.enregistrer(&a, Some(sujet)).await.unwrap();
@@ -122,4 +164,43 @@ async fn security_la_purge_retire_reellement_la_donnee_personnelle() {
     assert!(depot.lister_par_sujet(sujet).await.unwrap().is_empty());
     // Deuxième suppression : idempotente, pas d'erreur.
     assert!(!depot.supprimer_par_endpoint(&a.endpoint).await.unwrap());
+    effacer_compte(&pool, sujet).await;
+}
+
+#[tokio::test]
+async fn negative_un_sujet_sans_compte_est_refuse() {
+    // La contrainte posée par V3 : sans elle, un abonnement pouvait pointer un
+    // compte inexistant, et personne ne l'apprenait avant le premier envoi.
+    let depot = depot().await;
+    let a = abonnement("orphelin");
+    let erreur = depot
+        .enregistrer(&a, Some(Uuid::new_v4()))
+        .await
+        .expect_err("un sujet inconnu doit être rejeté");
+    assert!(
+        matches!(
+            erreur,
+            klaar_application::ports::erreurs::RepositoryError::Contrainte(_)
+        ),
+        "une violation de clé étrangère est une contrainte, pas une indisponibilité : {erreur}"
+    );
+}
+
+#[tokio::test]
+async fn security_effacer_le_compte_efface_ses_abonnements() {
+    // ON DELETE CASCADE, et non SET NULL : un abonnement orphelin continuerait
+    // de recevoir les notifications d'un compte supprimé, ce que le droit à
+    // l'effacement interdit.
+    let pool = pool().await;
+    let depot = PgPushSubscriptionRepository::new(pool.clone());
+    let sujet = compte(&pool, "cascade").await;
+    let a = abonnement("cascade");
+
+    depot.enregistrer(&a, Some(sujet)).await.unwrap();
+    effacer_compte(&pool, sujet).await;
+
+    assert!(
+        !depot.supprimer_par_endpoint(&a.endpoint).await.unwrap(),
+        "l'abonnement aurait dû disparaître avec le compte"
+    );
 }
