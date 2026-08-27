@@ -1,0 +1,1022 @@
+# Epics & User Stories — Klaar
+
+*Livrable du Scrum Master · TOGAF Phase E · Phase 1 BMAD.
+Chaque story est un tour du cercle, dimensionné sur les deux axes (taille wall-clock S/M/L → coût superviseur ; tours → coût tokens).*
+
+```
+---
+projet: Klaar
+persona: Scrum Master (conception)
+date: 2026-07-18
+version: 2.1 (extension J11-J14, J12 → J12' Tauri/PWA ; équipe corrigée 1 indépendant, durée cœur ~7 mois — sprints à re-timeboxer)
+superviseur_validateur: [à valider pour passage Validateur]
+signature_humaine: PENDING
+brief_source: docs/bmad-livrables/01-Product-Brief.md v0.3
+prd_source: docs/bmad-livrables/02-PRD.md v0.3 (68 FR)
+architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
+---
+```
+
+> **Convention de dimensionnement foyer** :
+> - **Taille** = wall-clock (coût superviseur en binôme) : **S = 0,5 j** · **M = 0,75 j** · **L = 1 j**
+> - **Tours** = nombre d'itérations rouge→vert→bleu (coût tokens modèle, négligeable)
+> - **DoD** = tests 4×N verts (`@happy @negative @edge @security`) + quality gate + security gate + doc vivante à jour
+
+---
+
+## Sprint 0 — Fondations *(la story habilitante — précède tout)*
+
+> **Description foyer** : le Sprint 0 livre « la capacité de boucler ». Sa forme aboutie = **délivrabilité reproductible** : un `git clone` + commande agent reconstruit les 4 environnements + postes superviseur + enforcement. Aucune story métier ne peut boucler sans elle (point de concours Gantt).
+
+### Story 0.1 — Bootstrap workspace Cargo monorepo
+- **En tant que** équipe · **je veux** un workspace Cargo avec les 9 crates Domain + Application + Infra + API · **afin de** démarrer le dev
+- **Critères Gherkin** : `Étant donné` un clone neuf · `Quand` je lance `make bootstrap` · `Alors` tous les crates compilent, `cargo test` passe vert sur un test smoke
+- **4×N** : `@happy` build OK · `@negative` crate cassé détecté · `@edge` versions mismatch toolchain · `@security` dépendances bloquées par cargo-deny
+- **Couche(s)** : IaC + CI
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : `.tool-versions` figé (Rust 1.85+) · `cargo machete` propre · `make bootstrap` idempotent
+
+### Story 0.2 — Bootstrap Tauri 2.0 mobile + admin Astro
+- **En tant que** équipe · **je veux** `tauri-app/` + `admin-web/` initialisés · **afin de** démarrer le frontend
+- **Critères Gherkin** : `Étant donné` le workspace · `Quand` je lance `make frontend` · `Alors` Tauri iOS + Android + admin web build OK
+- **4×N** : `@happy` builds OK · `@negative` plugin manquant · `@edge` device non supporté · `@security` permissions Tauri allowlist stricte
+- **Couche(s)** : Frontend + IaC
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : `tauri dev` marche sur iOS sim + Android emu · `pnpm dev` admin OK
+
+### Story 0.3 — PostgreSQL + PostGIS + migrations refinery
+- **En tant que** équipe · **je veux** un PostgreSQL 16 + PostGIS sur OVH BE/EU en dev/integration · **afin de** démarrer les BC stateful
+- **Critères Gherkin** : `Étant donné` `docker compose up` · `Quand` l'app démarre · `Alors` les migrations s'appliquent idempotent, extension PostGIS active
+- **4×N** : `@happy` migrations OK · `@negative` migration cassée détectée · `@edge` rollback migration · `@security` secrets DB en vault
+- **Couche(s)** : IaC + Infra backend
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : `refinery` embarqué dans `klaar-api` · `sqlx-cli` configuré · backup quotidien
+
+### Story 0.4 — CI/CD pipeline (quality + security gate + tests + SBOM)
+- **En tant que** équipe · **je veux** un pipeline CI complet · **afin de** garantir la définition de faite (foyer `gates.md`)
+- **Critères Gherkin** : `Étant donné` une PR · `Quand` CI tourne · `Alors` fmt + clippy + cargo audit + cargo deny + gitleaks + trivy + tests + SBOM CycloneDX générés
+- **4×N** : `@happy` CI verte · `@negative` clippy warning détecté · `@edge` cache Cargo cassé · `@security` secret leak détecté par gitleaks
+- **Couche(s)** : CI/CD + Infra backend
+- **Taille** : **L** (1 j) · **Tours** : 4
+- **DoD** : CI < 10 min · hooks Git DRY avec CI · pre-commit + pre-push actifs
+
+### Story 0.5 — Harnais contrat API (utoipa + schemathesis) — *non optionnel*
+- **En tant que** équipe · **je veux** le harnais de contrat API · **afin de** garantir la matérialisation (foyer `contrat-api.md`, ADR-004)
+- **Critères Gherkin** : `Étant donné` le backend · `Quand` je lance `make contract-tests` · `Alors` `utoipa` génère `openapi.json`, `schemathesis` fuzz l'API et passe
+- **4×N** : `@happy` contrat généré + tests passent · `@negative` endpoint non documenté détecté · `@edge` OpenAPI 3.1 features · `@security` schémas stricts `deny_unknown_fields`
+- **Couche(s)** : Infra backend + CI
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : `/api/v1/openapi.json` + `/api/v1/docs` Swagger UI · `openapi-typescript` génère `@klaar/client` · `schemathesis` en CI obligatoire
+
+### Story 0.6 — Codegen TypeScript client partagé (`@klaar/client`)
+- **En tant que** équipe · **je veux** un client TS consommé par Tauri + admin · **afin de** DRY les types API
+- **Critères Gherkin** : `Étant donné` `openapi.json` · `Quand` CI publie · `Alors` `@klaar/client` package disponible
+- **4×N** : `@happy` package publié · `@negative` schéma breaking détecté · `@edge` consommateurs multiples · `@security` pas de secrets dans package
+- **Couche(s)** : Frontend + CI
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : package versionné semver · Tauri + admin consomment · breaking change = bump majeur
+
+### Story 0.7a — Terraform provisioning 4 environnements (dev/integration/staging/prod)
+- **En tant que** équipe · **je veux** 4 env provisionnés via Terraform · **afin de** respecter `bootstrap-delivrabilite.md`
+- **Critères Gherkin** : `Étant donné` un clone neuf · `Quand` je lance `make env-staging` · `Alors` l'env staging est joignable sur OVH BE/EU
+- **4×N** : `@happy` env OK · `@negative` quota OVH atteint · `@edge` multi-env parallèle · `@security` secrets en vault
+- **Couche(s)** : IaC
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 0.7b — salt-ssh durcissement CIS + idempotence
+- **En tant que** équipe · **je veux** les serveurs durcis (CIS benchmark) idempotent · **afin de** respecter CyFun Basic
+- **Critères Gherkin** : `Étant donné` un serveur Terraform · `Quand` salt-ssh apply · `Alors` durcissement appliqué idempotent (re-apply = 0 diff)
+- **4×N** : `@happy` idempotent · `@negative` drift détecté · `@edge` multi-OS · `@security` fail2ban, auditd, SSH durci
+- **Couche(s)** : IaC + Sécurité
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 0.7c — GitOps (ArgoCD ou Flux) réconciliateur
+- **En tant que** équipe · **je veux** GitOps (branche = source de vérité) · **afin de** automatiser le déploiement
+- **Critères Gherkin** : `Étant donné` une branche `release/x.y` · `Quand` elle est mergée · `Alors` ArgoCD déploie en staging automatiquement
+- **4×N** : `@happy` sync OK · `@negative` drift manuel détecté · `@edge` rollback automatique · `@security` protection branche
+- **Couche(s)** : IaC + CI/CD
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 0.8 — Observabilité (Prometheus + Loki + Tempo + Sentry EU)
+- **En tant que** ops · **je veux** l'observabilité complète · **afin de** détecter incidents et audits
+- **Critères Gherkin** : `Étant donné` une requête API · `Quand` elle s'exécute · `Alors` métrique + log + trace générés
+- **4×N** : `@happy` signaux collectés · `@negative` pipeline coupé · `@edge` forte charge · `@security` PII jamais loggées
+- **Couche(s)** : Infra backend + Monitoring
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : Grafana dashboards (API + DB + costs) · AlertManager règle basique · Sentry EU plugin
+
+### Story 0.9 — Hooks Git RED-first + secrets + format
+- **En tant que** équipe · **je veux** des hooks Git locaux DRY avec CI · **afin de** garantir L2 foyer (4 classes obligatoires, RED-first)
+- **Critères Gherkin** : `Étant donné` un commit avec code sans test · `Quand` pre-commit s'exécute · `Alors` le commit est bloqué
+- **4×N** : `@happy` commit avec test passe · `@negative` commit sans test bloqué · `@edge` fichier binaire ignoré · `@security` secret bloqué par gitleaks
+- **Couche(s)** : CI/CD + enforcement
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : hooks pre-commit + pre-push installés via `make hooks` · protection de branche configurée
+
+### Story 0.10 — SBOM CycloneDX + SLSA provenance + reporting incident 24 h
+- **En tant que** ops · **je veux** SBOM + provenance + runbook incident · **afin de** respecter CRA (obligations pleines déc. 2027) et NIS2 (reporting 24 h)
+- **Critères Gherkin** : `Étant donné` une release · `Quand` CI publie l'image · `Alors` SBOM CycloneDX généré + signature cosign (SLSA) + runbook `incident.md` accessible
+- **4×N** : `@happy` SBOM publié · `@negative` dépendance vulnérable détectée · `@edge` chaîne multi-images · `@security` provenance vérifiable
+- **Couche(s)** : CI/CD + Sécurité + Documentation
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : `cyclonedx-bom` + `cosign` en CI · runbook NIS2 testé (jeu de rôle ops)
+
+### Story 0.11 — Tile-server OpenStreetMap + Valhalla routing (ADR-006)
+- **En tant que** équipe · **je veux** tile-server OSM BE + routing Valhalla auto-hébergés OVH · **afin de** servir les cartes sans dépendance Mapbox
+- **Critères Gherkin** : `Étant donné` un User ouvre la carte · `Quand` il navigue · `Alors` les tiles proviennent du tile-server OVH, routing Valhalla calcule le trajet
+- **4×N** : `@happy` tiles + routing OK · `@negative` tile-server down · `@edge` MAJ données OSM hebdo · `@security` pas de fuite géoloc vers tiers
+- **Couche(s)** : IaC + Infra backend
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : tile-server + Valhalla déployés · MAJ OSM BE hebdo automatisée · P99 latence tiles < 200 ms
+
+### Story 0.12 — PoC push Tauri 2.0 Mobile (ADR-007)
+- **En tant que** Provider · **je veux** recevoir une notification push · **afin de** valider la maturité plugin Tauri 2.0
+- **Critères Gherkin** : `Étant donné` le PoC mobile · `Quand` backend envoie 1 push · `Alors` Provider le reçoit sur iOS sim + Android emu, click ouvre la Mission
+- **4×N** : `@happy` push delivered < 5 s · `@negative` plugin bug détecté · `@edge` app killed (background) · `@security` token device roté
+- **Couche(s)** : Infra (push adapter) + Frontend (Tauri plugin)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : PoC iOS sim + Android emu · si échec → déclencher plan B UnifiedPush (Story 1.11)
+
+**Sprint 0 total** : 12 stories · ~10,75 j wall-clock · ~44 tours
+
+---
+
+## Epic 1 — Identity & Access (IDN) · Priorité **Must**
+
+### Story 1.1 — Signup User (FR-001)
+- **En tant que** visiteur · **je veux** créer un compte email + password · **afin de** faire des Demandes
+- **Critères Gherkin** : voir PRD FR-001
+- **4×N** : PRD FR-001 (4 scénarios × 4 classes)
+- **Couche(s)** : Domain (User aggregate) + Application (SignupUserHandler) + Infra (sqlx repo, actix handler) + Frontend (page /signup Svelte 5)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : 4×N verts · gates · i18n FR/NL/EN · email vérification
+
+### Story 1.2 — Email vérification par token (FR-001)
+- **En tant que** User · **je veux** vérifier mon email · **afin d'** activer mon compte
+- **Critères Gherkin** : PRD FR-001 (scénario vérification)
+- **4×N** : token invalide / expiré / déjà utilisé / valide
+- **Couche(s)** : Domain + Application + Infra + Frontend
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 1.3 — Login email + password (FR-004)
+- **En tant que** User · **je veux** me login · **afin de** démarrer une session
+- **4×N** : PRD FR-004 (rotation refresh, binding UA/IP)
+- **Couche(s)** : Domain + Application + Infra
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 1.4 — Refresh token rotatif (FR-004)
+- **En tant que** User · **je veux** un refresh rotatif · **afin de** garder ma session sans re-login
+- **4×N** : refresh valide / expiré / révoqué / réutilisé (vol détecté)
+- **Couche(s)** : Application + Infra
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 1.5 — Auth itsme complet (FR-002)
+- **En tant que** User/Provider belge · **je veux** m'authentifier itsme · **afin de** vérifier mon identité eIDAS substantial
+- **4×N** : PRD FR-002 (5 scénarios)
+- **Couche(s)** : Infra (itsme adapter OIDC) + Application + Frontend
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **Dépendance** : sandbox itsme à demander (story amont)
+
+### Story 1.6 — Onboarding Provider KYC BCE (FR-003)
+- **En tant que** Provider candidat · **je veux** soumettre BCE + assurance + Skills · **afin de** recevoir des Demandes
+- **4×N** : PRD FR-003 (validation BCE, faillite, doublon)
+- **Couche(s)** : Domain (Provider aggregate) + Infra (KBO-BCE API + S3 + ClamAV) + Frontend (wizard onboarding)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 1.7 — Gestion méthode paiement User (FR-006)
+- **En tant que** User · **je veux** enregistrer ma carte via Stripe Elements · **afin de** accélérer mes Demandes
+- **4×N** : PRD FR-006
+- **Couche(s)** : Infra (Stripe adapter) + Frontend (iframe Stripe Elements)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 1.8 — Verrouillage brute-force (FR-007)
+- **En tant que** système · **je veux** verrouiller après 5 échecs · **afin de** mitiger brute-force
+- **4×N** : PRD FR-007
+- **Couche(s)** : Application + Infra
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 1.9 — RGPD effacement (FR-005)
+- **En tant que** User · **je veux** effacer mes données · **afin d'** exercer mon droit RGPD Art. 17
+- **4×N** : PRD FR-005 (Mission en cours, dette, window 7 j)
+- **Couche(s)** : Domain + Application + Infra (job async)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **Dépendance** : tous les autres BC doivent supporter l'anonymisation (consommateur de l'événement `UserErased`)
+
+### Story 1.10 — Logout + révocation refresh
+- **En tant que** User · **je veux** me logout · **afin de** sécuriser ma session
+- **4×N** : logout nominal / refresh déjà révoqué / multi-device
+- **Couche(s)** : Application + Infra
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+**Epic 1 total** : 10 stories · ~7,5 j wall-clock · ~38 tours
+
+---
+
+## Epic 2 — Catalog (CTL) · Priorité **Must**
+
+### Story 2.1 — Seed catalogue 5 secteurs MVP + i18n (FR-008)
+- **En tant que** ops · **je veux** le catalogue seed (plomberie, serrurerie, électricité, auto, livraison) · **afin de** démarrer
+- **4×N** : PRD FR-008
+- **Couche(s)** : Domain (Sector, Skill entities) + Infra (migration seed)
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 2.2 — API lecture catalogue + cache CDN (FR-008)
+- **En tant que** User · **je veux** consulter le catalogue · **afin de** choisir mon Secteur
+- **4×N** : PRD FR-008 (locale fallback, rate-limit)
+- **Couche(s)** : Application + Infra (actix handler)
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 2.3 — Prix indicatifs par Secteur (FR-009)
+- **En tant que** User · **je veux** une fourchette de prix · **afin d'** estimer mon budget
+- **4×N** : PRD FR-009 (IQR outliers, lancement sans data)
+- **Couche(s)** : Application (job calcul IQR) + Infra
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 2.4 — Admin catalogue (FR-010, post-MVP ready)
+- **En tant que** ops · **je veux** gérer le catalogue · **afin de** l'étendre
+- **4×N** : PRD FR-010 (4-eyes principle)
+- **Couche(s)** : Application + Frontend (admin web)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+**Epic 2 total** : 4 stories · ~2,5 j wall-clock · ~10 tours
+
+---
+
+## Epic 3 — Matching & Dispatch (MCH) · Priorité **Must** (cœur métier)
+
+### Story 3.1 — Soumission Demande (FR-011)
+- **En tant que** User · **je veux** soumettre une Demande · **afin de** déclencher le matching
+- **4×N** : PRD FR-011 (validations, doublon, rate-limit)
+- **Couche(s)** : Domain (Request aggregate) + Application + Infra (PostGIS) + Frontend (formulaire)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 3.2 — Recherche géoloc multi-Provider (FR-012)
+- **En tant que** système · **je veux** trouver Providers < 5 km + Skill · **afin de** notifier
+- **4×N** : PRD FR-012 (top-10, boundary 5 km, Trace AI Act)
+- **Couche(s)** : Application + Infra (PostGIS KNN query) + Domain (Match entity + criteria JSONB)
+- **Taille** : **L** (1 j) · **Tours** : 6
+
+### Story 3.3 — Notification push multi-Provider
+- **En tant que** Provider · **je veux** être notifié d'une Demande à proximité · **afin de** proposer un Devis
+- **4×N** : push delivered / refused / device unreachable / offline sync
+- **Couche(s)** : Infra (APNs + FCM adapter)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 3.4 — Acceptation Provider atomic CAS (FR-013)
+- **En tant que** Provider · **je veux** accepter une Demande · **afin de** devenir attribué
+- **4×N** : PRD FR-013 (race, déjà pris, provider busy)
+- **Couche(s)** : Application + Infra (Postgres atomic UPDATE...RETURNING)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 3.5 — Annulation User avant matching (FR-014)
+- **En tant que** User · **je veux** annuler ma Demande · **afin de** ne pas être facturé
+- **4×N** : PRD FR-014 (annulation en course)
+- **Couche(s)** : Domain + Application
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 3.6 — Timeout NO_MATCH + élargir rayon (FR-015)
+- **En tant que** système · **je veux** annoncer NO_MATCH après 30 s · **afin de** garder l'User informé
+- **4×N** : PRD FR-015 (élargissement max 3)
+- **Couche(s)** : Application (job cron) + Domain
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 3.7 — Disponibilité Provider ( Availability CRUD)
+- **En tant que** Provider · **je veux** gérer ma disponibilité (go/pause) · **afin de** contrôler le flux
+- **4×N** : go / pause / busy auto / multi-zone
+- **Couche(s)** : Domain (Availability) + Frontend
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 3.8 — Audit AI Act (Trace immuable + job audit biais semestriel)
+- **En tant que** ops · **je veux** audit anti-biais · **afin de** respecter AI Act Art. 12
+- **4×N** : trace immuable / queryable / audit OK / biais détecté
+- **Couche(s)** : Application + Infra (audit_logs) + Documentation
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+**Epic 3 total** : 8 stories · ~6,75 j wall-clock · ~32 tours
+
+---
+
+## Epic 4 — Intervention (INT) · Priorité **Must**
+
+### Story 4.1 — Envoi Devis Provider (FR-016)
+- **En tant que** Provider attribué · **je veux** envoyer un Devis · **afin de** contractualiser
+- **4×N** : PRD FR-016 (montant, délai, prix libre Invariant §10.2)
+- **Couche(s)** : Domain (Quote aggregate) + Application + Infra (Stripe pre-auth) + Frontend
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 4.2 — Acceptation Devis User + Escrow capture (FR-017)
+- **En tant que** User · **je veux** accepter le Devis · **afin de** déclencher la Mission
+- **4×N** : PRD FR-017 (3DS2, fonds insuffisants, devis expiré)
+- **Couche(s)** : Application + Infra (Stripe capture) + Frontend
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 4.3 — Machine à états Mission (FR-018)
+- **En tant que** Provider · **je veux** faire évoluer le statut Mission · **afin de** tracer
+- **4×N** : PRD FR-018 (transitions valides/interdites, offline sync)
+- **Couche(s)** : Domain (MissionStatus state machine) + Application + Infra (mission_statuses table)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 4.4 — Tracking géoloc temps réel (foreground MVP ; background conditionnel) (FR-019)
+- **En tant que** User · **je veux** voir la position Provider temps réel · **afin de** savoir quand il arrive
+- **Baseline MVP** : tracking **foreground** (app au premier plan pendant EN_ROUTE) — garanti sur Tauri **et** fallback PWA (Geolocation API)
+- **Enhancement conditionnel** : tracking **background continu** si le PoC plugin Tauri Mobile réussit (Story 0.12 / H-2) ; sinon fallback PWA foreground
+- **4×N** : PRD FR-019 (consentement, DPIA, purge post-Mission)
+- **Couche(s)** : Frontend (Tauri plugin **ou** PWA Geolocation API + Svelte map) + Infra (actix-web-actors WebSocket)
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **Dépendance** : H-2 Brief — maturité plugin Tauri Mobile géoloc background ; **fallback PWA foreground garanti** (pas de blocage MVP)
+
+### Story 4.5 — Preuves photos BEFORE/AFTER (FR-020)
+- **En tant que** Provider · **je veux** prendre photos avant/après · **afin de** documenter
+- **4×N** : PRD FR-020 (EXIF, hash, scan antivirus, chiffrement KMS)
+- **Couche(s)** : Infra (S3 + ClamAV + KMS) + Frontend (Tauri camera)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 4.6 — Validation fin Mission + libération Escrow (FR-021)
+- **En tant que** User · **je veux** valider la fin · **afin de** libérer l'Escrow
+- **4×N** : PRD FR-021 (validation manuelle / auto 72 h, > 500 € 4-eyes)
+- **Couche(s)** : Application + Infra (transaction atomique SQL)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 4.7 — Annulation Mission avec pénalités (FR-022)
+- **En tant que** User/Provider · **je veux** annuler une Mission · **afin de** sortir d'engagement
+- **4×N** : PRD FR-022 (pénalités, forfait déplacement, seuils fraude)
+- **Couche(s)** : Domain + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 4.8 — Re-programmation Mission (FR-023)
+- **En tant que** User · **je veux** re-programmer · **afin de** ne pas perdre le bénéfice
+- **4×N** : PRD FR-023
+- **Couche(s)** : Domain + Application
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+### Story 4.9 — WebSocket statut Mission temps réel
+- **En tant que** User · **je veux** le statut live · **afin de** suivre sans refresh
+- **4×N** : WebSocket OK / déconnecté / reconnect / multi-device
+- **Couche(s)** : Infra (actix-web-actors) + Frontend
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+**Epic 4 total** : 9 stories · ~7,75 j wall-clock · ~40 tours
+
+---
+
+## Epic 5 — Payment (PAY) · Priorité **Must**
+
+### Story 5.1 — Stripe Connect Onboarding Provider (FR-024)
+- **En tant que** Provider · **je veux** configurer Stripe Connect · **afin de** recevoir mes Payouts
+- **4×N** : PRD FR-024 (KYC Stripe, IBAN, account déjà lié)
+- **Couche(s)** : Infra (Stripe adapter + abstraction PaymentGateway) + Frontend
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 5.2 — Calcul Take-rate + Payout J+2 (FR-025)
+- **En tant que** système · **je veux** calculer Take + verser Payout · **afin de** rémunérer
+- **4×N** : PRD FR-025 (retry, IBAN clos, remboursement partiel)
+- **Couche(s)** : Domain + Application + Infra (Stripe transfer)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 5.3 — Factures TVA BE signées eIDAS (FR-026)
+- **En tant que** Provider · **je veux** facture auto · **afin de** tenir ma compta TVA
+- **4×N** : PRD FR-026 (TVA 21/6/12 %, credit note, archivage WORM)
+- **Couche(s)** : Application + Infra (générateur PDF + eIDAS + S3 Object Lock)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 5.4 — Remboursement total/partiel (FR-027)
+- **En tant que** ops · **je veux** rembourser · **afin de** résoudre un Litige
+- **4×N** : PRD FR-027 (4-eyes > 100 €, Payout exécuté)
+- **Couche(s)** : Application + Infra
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 5.5 — Webhooks Stripe (signature + idempotence) (FR-028)
+- **En tant que** système · **je veux** traiter webhooks Stripe idempotent · **afin de** garantir cohérence
+- **4×N** : PRD FR-028 (signature, ordre inversé, retry)
+- **Couche(s)** : Infra (endpoint public + signature verifier + stripe_events table)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 5.6 — Réconciliation quotidienne (FR-029)
+- **En tant que** ops · **je veux** rapport réconciliation Klaar ↔ Stripe · **afin de** détecter écarts
+- **4×N** : PRD FR-029 (écart, Stripe indispo)
+- **Couche(s)** : Application (job cron) + Infra
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+**Epic 5 total** : 6 stories · ~5,25 j wall-clock · ~26 tours
+
+---
+
+## Epic 6 — Messaging (MSG) · Priorité **Should**
+
+### Story 6.1 — Conversation in-app User ↔ Provider (FR-030)
+- **En tant que** User/Provider · **je veux** échanger messages · **afin de** préciser la Demande
+- **4×N** : PRD FR-030 (> 4000 chars, Mission close, offline sync)
+- **Couche(s)** : Domain + Application + Infra (actix-web-actors WebSocket) + Frontend
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 6.2 — Photos dans conversation (FR-031)
+- **En tant que** User · **je veux** envoyer photos · **afin de** montrer le problème
+- **4×N** : PRD FR-031 (> 5 Mo, EXIF strippé, quota 10)
+- **Couche(s)** : Infra (S3 + ClamAV) + Frontend
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 6.3 — Anti-circumvention (FR-032)
+- **En tant que** système · **je veux** bloquer phone/email dans messages · **afin de** empêcher la mise en relation hors plateforme
+- **4×N** : PRD FR-032 (regex sophistiquée, faux positifs)
+- **Couche(s)** : Application + Domain (modération IA légère)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+**Epic 6 total** : 3 stories · ~2,5 j wall-clock · ~12 tours
+
+---
+
+## Epic 7 — Trust & Moderation (TRU) · Priorité **Must**
+
+### Story 7.1 — Notation double-sens symétrique (FR-033)
+- **En tant que** User/Provider · **je veux** noter · **afin d'** aider la communauté
+- **4×N** : PRD FR-033 (double-sens, > 14 j, déjà noté)
+- **Couche(s)** : Domain + Application + Frontend
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 7.2 — Ouverture Litige (FR-034)
+- **En tant que** User/Provider · **je veux** ouvrir Litige · **afin de** contester
+- **4×N** : PRD FR-034 (> 14 j, motif vide, fraude 2/semaine)
+- **Couche(s)** : Domain (Dispute aggregate) + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 7.3 — Sanction auto + manuelle (FR-035)
+- **En tant que** ops/système · **je veux** appliquer Sanction · **afin de** protéger la communauté
+- **4×N** : PRD FR-035 (seuils, appel, 4-eyes BAN)
+- **Couche(s)** : Domain + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 7.4 — Médiation ops workflow (FR-036)
+- **En tant que** ops · **je veux** médiater un Litige · **afin de** trancher
+- **4×N** : PRD FR-036 (timeout 7 j, escalade 30 j)
+- **Couche(s)** : Application + Frontend (admin médiation UI)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 7.5 — Rating Wilson pondéré (FR-037)
+- **En tant que** système · **je veux** calcul Wilson score · **afin de** éviter le biais faible échantillon
+- **4×N** : PRD FR-037
+- **Couche(s)** : Application (job)
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+
+**Epic 7 total** : 5 stories · ~3,5 j wall-clock · ~18 tours
+
+---
+
+## Epic 8 — Ops & Admin (OPS) · Priorité **Must**
+
+### Story 8.1 — KYC review console (FR-038)
+- **En tant que** ops · **je veux** valider KYC Providers · **afin de** sécuriser la plateforme
+- **4×N** : PRD FR-038 (4-eyes, motif, Provider annule)
+- **Couche(s)** : Application + Frontend (admin web console)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 8.2 — Exports régulateurs RGPD/NIS2/TVA (FR-039)
+- **En tant que** ops · **je veux** générer exports signés · **afin de** répondre aux autorités
+- **4×N** : PRD FR-039 (période, > 100k lignes asynchrone)
+- **Couche(s)** : Application + Infra (PGP + eIDAS signature)
+- **Taille** : **L** (1 j) · **Tours** : 5
+
+### Story 8.3 — Dashboard temps réel KPI (FR-040)
+- **En tant que** ops · **je veux** dashboard · **afin de** piloter
+- **4×N** : PRD FR-040 (backend down, empty state, RBAC)
+- **Couche(s)** : Application + Frontend (Svelte 5 dashboard)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 8.4 — RBAC ops + MFA TOTP (FR-041)
+- **En tant que** super-admin · **je veux** gérer ops users + rôles · **afin de** sécuriser admin
+- **4×N** : PRD FR-041 (MFA, auto-révocation 90 j)
+- **Couche(s)** : Domain + Application + Frontend
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+### Story 8.5 — Audit log consultable + immuable (FR-042)
+- **En tant que** ops · **je veux** consulter audit log · **afin d'** auditer
+- **4×N** : PRD FR-042 (WORM, recherche, > 10M lignes)
+- **Couche(s)** : Infra (table partitionnée mensuellement) + Frontend
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+
+**Epic 8 total** : 5 stories · ~4,25 j wall-clock · ~22 tours
+
+---
+
+## Epic 9 — i18n · Priorité **Must**
+
+### Story 9.1 — i18n FR/NL/EN toutes surfaces (FR-043)
+- **En tant que** User · **je veux** choisir ma langue · **afin d'** utiliser l'app confortablement
+- **4×N** : PRD FR-043
+- **Couche(s)** : Frontend (catalogues compilés) + Backend (emails)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+### Story 9.2 — i18n factures + emails (FR-044)
+- **En tant que** User/Provider · **je veux** docs dans ma langue · **afin de** comprendre
+- **4×N** : PRD FR-044 (mix destinataires)
+- **Couche(s)** : Application + Infra (template PDF multilingue)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+
+**Epic 9 total** : 2 stories · ~1,5 j wall-clock · ~6 tours
+
+---
+
+## Epic 10 — E1 Densification secteurs (C11, J11) · Priorité **Post-MVP**
+
+> Activable lorsque le gate **fill rate > 60 %** sur les 5 secteurs pilotes est franchi. Onboarding séquentiel : 1 secteur à la fois, max 2 par an (mitigation H-14). Sous-capacités CBS E1.1-E1.6 — `00-Capability-Breakdown-Estimation.md` §Partie 2 · J11. Référence PRD §7 module E1 (FR-045 à FR-050).
+
+### Story 10.1 — Moteur Skills & attestations réglementées (FR-045)
+- **En tant que** Provider candidat sur secteur réglementé · **je veux** attester mes agréments légaux · **afin de** respecter l'Invariant §10.8 (pas d'Intervention sans agrément valide)
+- **Critères Gherkin** : voir PRD FR-045
+- **4×N** : PRD FR-045 (submission PDF, validation, 2e compétence, échecs, edge fédération, anti-falsification)
+- **Couche(s)** : Domain (`Skill`, `SkillAttestation` aggregates) + Application (`SubmitSkillAttestationHandler`) + Infra (`klaar-skills` crate, S3 + ClamAV + KMS) + Frontend (wizard attestation)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : tests 4×N verts · hash SHA-256 WORM · i18n FR/NL/EN · doc vivante (DPIA sectoriel)
+
+### Story 10.2 — Attestation B2V/VR électricité (FR-045)
+- **En tant que** Provider électricien · **je veux** soumettre mon B2V/VR · **afin d'** opérer sur le secteur réglementé électricité
+- **Critères Gherkin** : PRD FR-045 (scénarios `B2V-2026-12345`, fédération AIB-Vincotte)
+- **4×N** : happy B2V valide · negative format/expiré · edge fédération indispo · security anti-corruption BCE↔attestation
+- **Couche(s)** : Infra (`klaar-authority-adapter` AIB-Vincotte) + Application + Domain
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : adapter fédération mocké en integration · cross-check job nightly
+
+### Story 10.3 — Attestation plomberie gaz BE (FR-045)
+- **En tant que** plombier · **je veux** attester mon agréation gaz naturel PEB · **afin de** respecter la réglementation gaz BE
+- **Critères Gherkin** : PRD FR-045 (scénario `agreation_gaz_PEB`)
+- **4×N** : happy PEB · negative numéro invalide · edge renouvellement · security hash
+- **Couche(s)** : Infra (adapter fédération gaz PEB) + Domain
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : réutilise harnais Story 10.1 · i18n
+
+### Story 10.4 — Attestation chauffage Class1 (FR-045)
+- **En tant que** chauffagiste · **je veux** attester ma certification Class1 · **afin d'** étendre mon activité chauffage
+- **Critères Gherkin** : PRD FR-045 (extension 2e compétence, rating conservé)
+- **4×N** : happy Class1 · negative expiré · edge secteur combiné · security
+- **Couche(s)** : Infra (adapter fédération Class1) + Domain
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : réutilise harnais Story 10.1
+
+### Story 10.5 — Onboarding multi-secteur (FR-046)
+- **En tant que** Provider actif · **je veux** étendre à un nouveau secteur · **afin de** diversifier sans recommencer le KYC de base
+- **Critères Gherkin** : PRD FR-046
+- **4×N** : PRD FR-046 (extension réglementé/non-réglementé, blocages, parallèle, réactivation, anti-circumvention)
+- **Couche(s)** : Domain (`ProviderSkill`) + Application (`ExtendProviderToSector`) + Infra + Frontend (wizard extension secteur)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : workflow 4-eyes ops · audit_log par secteur · quota 5 secteurs
+
+### Story 10.6 — Règles KYC par Skill (FR-046)
+- **En tant que** système · **je veux** exiger le KYC additionnel spécifique au Skill visé · **afin de** respecter les exigences réglementaires par secteur
+- **Critères Gherkin** : PRD FR-046 (scénario secteur réglementé déclenche FR-045)
+- **4×N** : happy KYC minime bricolage · negative BASE_KYC_EXPIRED · edge simultané · security anti-resurrection
+- **Couche(s)** : Domain (`KycRequirements` per Skill) + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : règles configurables ops · doc vivante par secteur
+
+### Story 10.7 — Catalogue extensible ops (FR-047)
+- **En tant que** ops admin · **je veux** ajouter un nouveau secteur au catalogue · **afin de** déployer dans de nouveaux domaines avec gouvernance 4-eyes
+- **Critères Gherkin** : PRD FR-047
+- **4×N** : PRD FR-047 (création 4-eyes, validations, rollback, période pic, RBAC, intégrité référentielle)
+- **Couche(s)** : Domain (`Sector` aggregate étendu) + Application (`AddSectorToCatalog`) + Frontend (admin web catalogue UI) + Infra (audit WORM)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : 4-eyes enforced · gate fill rate check · soft delete seulement
+
+### Story 10.8 — i18n par défaut nouveaux secteurs (FR-047)
+- **En tant que** User · **je veux** les libellés secteur dans ma langue · **afin de** naviguer confortablement
+- **Critères Gherkin** : PRD FR-047 (scénario libellés FR/NL/EN par défaut, fallback EN)
+- **4×N** : happy 3 locales · negative libellé manquant · edge locale non couverte · security
+- **Couche(s)** : Infra (i18n catalogue compilé) + Frontend
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : validation libellés FR+NL+EN obligatoire à la création secteur
+
+### Story 10.9 — Calibration prix IQR bootstrapping (FR-048)
+- **En tant que** ops admin · **je veux** initialiser et recalibrer les prix indicatifs par secteur · **afin d'** informer les Users sans imposer de prix (Invariant §10.2)
+- **Critères Gherkin** : PRD FR-048
+- **4×N** : PRD FR-048 (IQR nominale, bootstrap manuel, concentration risque, surge transitoire, override, TVA, anti-manipulation)
+- **Couche(s)** : Application (`CalibrateIndicativePrices` job nightly) + Infra (`indicative_prices` table)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : médiane mobile 90 j · outliers exclus · UI "prix indicatif, non contractuel" · audit WORM
+
+### Story 10.10 — Bulk import BCE + skills mapping (FR-049)
+- **En tant que** ops admin · **je veux** importer en masse des Providers BCE · **afin d'** accélérer la densification d'un nouveau secteur (mitigation H-4)
+- **Critères Gherkin** : PRD FR-049
+- **4×N** : PRD FR-049 (CSV nominal, complétion onboarding, lignes invalides, doublons, token expiré, consentement RGPD, rate-limit)
+- **Couche(s)** : Application (`BulkImportProviders`) + Infra (CSV parser + email sender + KBO-BCE) + Frontend (admin import UI)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : invitations JWT 7 j · consentement explicite · mapping skills audit log
+
+### Story 10.11 — Cross-check automatique BCE/INASTI/fédérations (FR-050)
+- **En tant que** système · **je veux** vérifier quotidiennement agréments et BCE · **afin de** détecter expirations/radiations sans attendre un incident
+- **Critères Gherkin** : PRD FR-050
+- **4×N** : PRD FR-050 (vérification OK, rappel ≤ 30 j, anomalies, suspension auto, API KBO-BCE down, kill-switch, privacy by design)
+- **Couche(s)** : Application (`VerifySkillAttestation`, `AutoExpireSkillAttestations` jobs nightly) + Infra (adapters KBO-BCE, INASTI, fédérations) + Domain
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : job nightly 03:00 UTC · 200 Providers vérifiables · kill-switch super_admin · DPIA sectoriel
+
+### Story 10.12 — Audit AI Act extension secteurs (FR-050)
+- **En tant que** ops/DPO · **je veux** auditer les décisions d'attestation · **afin de** respecter AI Act Art. 12 et Platform Work
+- **Critères Gherkin** : PRD FR-050 (scénarios journalisation immuable, kill-switch, privacy by design)
+- **4×N** : happy audit consultable · negative modification tentative · edge fraude fédération · security WORM 5 ans
+- **Couche(s)** : Infra (audit_logs partitionné) + Documentation (DPIA sectoriel vivant)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : export DPO signé eIDAS · doc vivante à jour · k-anonymité
+
+**Epic 10 total** : 12 stories · ~9,5 j wall-clock · ~40 tours
+
+---
+
+## Epic 11 — E2' Enhancement Tauri/PWA (C12, J12') · Priorité **Post-MVP**
+
+> Remplace le jalon J12 originel « Native premium RN/Flutter ». Décision superviseur v0.3 : **pas de natif, Tauri 2.0 + PWA uniquement** (ADR-008). Budget 100-200 h au lieu de 1000-1600 h. Sous-capacités CBS E2'.1-E2'.5 (révisées) — voir `00-Capability-Breakdown-Estimation.md` §Partie 2 · J12'. Référence PRD §7 module E2' (FR-051 à FR-055).
+
+### Story 11.1 — Push rich media + actions inline (FR-051)
+- **En tant que** User/Provider · **je veux** des notifications enrichies avec actions inline (accepter/refuser un Devis en 1 tap) · **afin de** réagir sans ouvrir l'app
+- **Critères Gherkin** : PRD FR-051
+- **4×N** : PRD FR-051 (notif Devis actions, deep-link, preview tronqué, échecs envoi, action invalide, device offline, multi-device, payload chiffré, anti-spoofing, no tracking)
+- **Couche(s)** : Infra (extension push adapter APNs/FCM avec categories + actions) + Frontend (Tauri `notification` v2 plugin + handlers) + Application
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : P95 delivery < 10 s · JWT short-lived actions inline · payload AES-256-GCM
+
+### Story 11.2 — Deep-linking vers Mission (FR-051)
+- **En tant que** User · **je veux** qu'une notif m'ouvre directement la Mission ciblée · **afin de** gagner du temps
+- **Critères Gherkin** : PRD FR-051 (scénario deep-link `mission_id`)
+- **4×N** : happy ouverture /mission/M-1234 · negative mission inconnue · edge auth required · security pas de fuite données
+- **Couche(s)** : Frontend (routeur Svelte + Tauri `deep-link` plugin) + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : auth vérifiée avant affichage · universal links iOS + app links Android
+
+### Story 11.3 — Secure storage biométrie FaceID/TouchID (FR-052)
+- **En tant que** User · **je veux** protéger refresh token + paiements ≥ 100 € via biométrie native · **afin de** sécuriser les actions sensibles (DSP2 SCA renforcée)
+- **Critères Gherkin** : PRD FR-052
+- **4×N** : PRD FR-052 (refresh Keychain/Keystore, SCA ≥ 100 €, échecs, < 100 € sans biométrie, opt-out, migration device, jailbreak, audit)
+- **Couche(s)** : Infra (Tauri `biometric` + `stronghold` plugins) + Frontend (prompts biométriques) + Application (hooks refresh + payment)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : aucune donnée biométrique serveur · SafetyNet/DT-Tap · audit_log 13 mois (DSP2)
+
+### Story 11.4 — PoC géoloc background plugin Tauri (FR-053)
+- **En tant que** Provider en Mission · **je veux** partager ma position en arrière-plan · **afin que** le User me suive en continu sans intervention manuelle
+- **Critères Gherkin** : PRD FR-053
+- **4×N** : PRD FR-053 (tracking bg nominal, arrêt auto fin Mission, refus permission, fallback PWA, mode avion, Mission > 4 h, aucune collecte hors Mission, suppression RGPD étendue)
+- **Couche(s)** : Frontend (Tauri `geolocation` background plugin) + Infra (batch receiver) + Application (start/stop tracking)
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **DoD** : gate J12' PoC validé · opt-in explicite · DPIA étendu · stop auto à COMPLETED
+
+### Story 11.5 — Fallback PWA foreground permanent (FR-053)
+- **En tant que** Provider dont le device ne supporte pas le background · **je veux** un mode foreground dégradé · **afin de** garantir le tracking minimum
+- **Critères Gherkin** : PRD FR-053 (scénario fallback PWA foreground + Story 4.4 baseline MVP)
+- **4×N** : happy bascule transparente · negative permission révoquée · edge batterie faible · security
+- **Couche(s)** : Frontend (PWA Geolocation API fallback) + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : warning "MODE_DÉGRADÉ" · rapport telemetry · fréquence adaptative
+
+### Story 11.6 — Re-submission stores automatisée (FR-054)
+- **En tant que** ops release manager · **je veux** publier une nouvelle version sur App Store + Play Store avec rollback OTA · **afin de** réagir en < 1 h sans attendre la review
+- **Critères Gherkin** : PRD FR-054
+- **4×N** : PRD FR-054 (submission simultanée, hotfix OTA, rejets store, rollback lent Apple, doublon version, cert expiré, signature, anti-rollback, SBOM)
+- **Couche(s)** : Infra (CI/CD release pipeline + Tauri Updater + stores APIs) + Frontend (Tauri Updater client)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : 2 soumissions simultanées · OTA < 1 h · signature code obligatoire · SBOM CycloneDX joint
+
+### Story 11.7 — PWA grand public alternative (FR-055)
+- **En tant que** User sans app installée · **je veux** accéder à Klaar via navigateur · **afin de** tester puis installer l'app si besoin
+- **Critères Gherkin** : PRD FR-055
+- **4×N** : PRD FR-055 (accès sans install, création Demande, install après 2 sessions, dégradations PWA, navigateur non supporté, offline, migration PWA→native, HTTPS, service worker integrity, ops PWA interdit)
+- **Couche(s)** : Frontend (`pwa-public/` Svelte 5 + service worker dédié) + Infra (CDN + HSTS)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : feature parity matrix documentée · P95 home < 3 s · HTTPS/HSTS strict · CSP strict-dynamic
+
+**Epic 11 total** : 7 stories · ~5,5 j wall-clock · ~31 tours
+
+---
+
+## Epic 12 — E3 Intelligence, monétisation & ouverture (C13, J13) · Priorité **Post-MVP**
+
+> Activable après stabilisation des secteurs pilotes (J11 + J12' fructueux). Sous-capacités CBS E3.1-E3.7 — `00-Capability-Breakdown-Estimation.md` §Partie 2 · J13. Conformité AI Act renforcée pour E3.1 (matching IA) et E3.2 (surge) — Brief §15 H-15. Référence PRD §7 module E3 (FR-056 à FR-063).
+
+### Story 12.1 — Matching IA features store (FR-056)
+- **En tant que** ops/data engineer · **je veux** un feature store pour le matching IA · **afin de** calculer features distance × rating × fiabilité × prix
+- **Critères Gherkin** : PRD FR-056 (features input traçables)
+- **4×N** : happy features calculées pour 5 Providers · negative feature manquante · edge cold-start · security anti-poisoning
+- **Couche(s)** : Infra (`klaar-ml-adapter` feature store + PostgreSQL read replica) + Domain (`MatchCriteria` étendu)
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **DoD** : features versionnées · refresh ≤ 1 h · Trace AI Art. 12 enrichie
+
+### Story 12.2 — Modèle ranking Rust candle-core (FR-056)
+- **En tant que** système · **je veux** ranker les Providers par modèle IA supervisé en Rust · **afin d'** optimiser le fill rate (au-delà du moteur règles C3)
+- **Critères Gherkin** : PRD FR-056
+- **4×N** : PRD FR-056 (score IA top 3, fallback règles, anomalies, drift kill-switch, cold-start secteur, Provider nouveau, faible candidats, audit biais, Trace immuable, anti-poisoning, supervision humaine)
+- **Couche(s)** : Infra (`candle-core` Rust + `RankProvidersByIA` use case) + Domain + Application
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **DoD** : modèle versionné MLOps · canary 10 % · kill-switch `DISABLE_IA_MATCHER` · supervision humaine Art. 14
+
+### Story 12.3 — A/B testing matching IA (FR-056)
+- **En tant que** ops · **je veux** un A/B testing progressif · **afin de** valider l'IA vs règles avant généralisation
+- **Critères Gherkin** : PRD FR-056 (canary 10 % → 50 % → 100 %, kill-switch drift > 20 %)
+- **4×N** : happy canary 10 % · negative drift détecté · edge bascule 50 % · security audit
+- **Couche(s)** : Application (middleware A/B) + Infra (feature flag service)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : kill-switch auto si drift > 20 % · métriques comparatives dashboard
+
+### Story 12.4 — Audit biais semestriel AI Act (FR-056)
+- **En tant que** DPO · **je veux** un audit biais semestriel · **afin de** respecter AI Act Art. 10-15
+- **Critères Gherkin** : PRD FR-056 (scénarios audit biais, droit explication User)
+- **4×N** : happy rapport équité · negative biais détecté · edge kill-switch · security WORM 5 ans
+- **Couche(s)** : Application (`AuditBiasSemestriel` job) + Infra (rapports signés) + Documentation
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : métriques demographic parity/equal opportunity · rapport DPO · kill-switch automatique
+
+### Story 12.5 — Surge rule engine (FR-057)
+- **En tant que** plateforme · **je veux** appliquer un coefficient d'urgence variable par zone/heure · **afin d'** équilibrer offre/demande sans imposer de prix (Invariant §10.2)
+- **Critères Gherkin** : PRD FR-057
+- **4×N** : PRD FR-057 (surge nominal, retour normale, contesté, prix plancher interdit, cap max 3.0, surge négatif discount, jamais imposé au Devis, audit rétrospectif, anti-discrimination géo)
+- **Couche(s)** : Domain (`SurgeZone`, `SurgeCoefficient`) + Application (`ApplySurgeToRequest` + rule engine) + Infra (`klaar-surge` crate)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : job 5 min · cap 3.0 · transparence Platform Work · audit Platform Work
+
+### Story 12.6 — Transparence surge UI User (FR-057)
+- **En tant que** User · **je veux** voir le coefficient d'urgence affiché · **afin de** comprendre le prix
+- **Critères Gherkin** : PRD FR-057 (scénarios "Prix d'urgence ×1.5" + justification)
+- **4×N** : happy affichage · negative coef tardif · edge cap atteint · security audit
+- **Couche(s)** : Frontend (UI prix avec badge surge) + Application (`DiscloseSurgeToUser`)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : justification horodatée · cache < 5 min · i18n
+
+### Story 12.7 — Contestation surge (FR-057)
+- **En tant que** User · **je veux** contester un coefficient · **afin d'** exercer mon droit Platform Work
+- **Critères Gherkin** : PRD FR-057 (scénario contestation, refund partiel, nullité bug)
+- **4×N** : happy annulation 2 min · negative contestation infondée · edge coef > 5 · security audit
+- **Couche(s)** : Application + Domain (`SurgeContestation`)
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : annulation sans frais 2 min · refund partiel si prouvé · nullité si bug
+
+### Story 12.8 — Subscription Pro Stripe (FR-058)
+- **En tant que** Provider · **je veux** souscrire un abonnement Pro · **afin d'** accéder à Demandes prioritaires, CRM léger et analytics avancées
+- **Critères Gherkin** : PRD FR-058
+- **4×N** : PRD FR-058 (souscription 29 €, renouvellement auto, paiements échouent, quota dépassé, rétrogradation, BAN, migration Pro→Premium prorata, pas d'exclusivité, audit DSP2, anti-contournement)
+- **Couche(s)** : Domain (`Subscription`, `Tier`) + Application (`SubscribeProvider`, `RenewSubscription` job) + Infra (`klaar-subscription` crate + Stripe billing récurrent) + Frontend (wizard souscription)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : Stripe 3DS2 initial + MIT · résiliable sans lock-in ·Invariant §10.3 (pas d'exclusivité)
+
+### Story 12.9 — Quotas Subscription (FR-058)
+- **En tant que** système · **je veux** appliquer les quotas par tier · **afin de** différencier Free/Pro/Premium sans bridage core
+- **Critères Gherkin** : PRD FR-058 (scénario quota 10/jour Pro, 50 Premium)
+- **4×N** : happy quota respecté · negative 429 QUOTA_EXCEEDED · edge reset daily · security anti-évasion
+- **Couche(s)** : Application (`ApplyQuotaLimits`) + Infra (Redis)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : Demandes standards toujours disponibles Free · quota prioritaire only
+
+### Story 12.10 — CRM Provider analytics (FR-058)
+- **En tant que** Provider Pro · **je veux** un CRM léger · **afin de** gérer ma clientèle récurrente
+- **Critères Gherkin** : PRD FR-058 (scénario accès CRM + comparaison Free/Pro)
+- **4×N** : happy CRM actif · negative Free en read-only 30 j · edge migration · security
+- **Couche(s)** : Domain (`ProviderCRM`) + Application + Frontend (CRM Provider UI)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : CRM read-only 30 j après rétrogradation · pas de PII externes
+
+### Story 12.11 — Assurance intégrée partenaire (FR-059)
+- **En tant que** Provider non couvert · **je veux** souscrire assurance RC pro via Klaar · **afin de** respecter Invariant §10.8 et démarrer rapidement
+- **Critères Gherkin** : PRD FR-059
+- **4×N** : PRD FR-059 (souscription immédiate, renouvellement, échecs, quote > 1000 €, rétractation 14 j, sinistre Mission, assurance externe valide, mTLS, données minimisées, audit)
+- **Couche(s)** : Domain (`InsurancePolicy`) + Application (`SubscribeInsurance`) + Infra (`klaar-insurance-adapter` Baloise/AG + mTLS) + Frontend (wizard souscription assurance)
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **DoD** : mTLS partenaire · quote < 1000 € auto · rétractation 14 j · DPIA assurance-integrée
+
+### Story 12.12 — API publique OAuth2 (FR-060)
+- **En tant que** partenaire tiers · **je veux** intégrer Klaar via API publique OAuth2 · **afin d'** enrichir mes services avec catalogue et historique public
+- **Critères Gherkin** : PRD FR-060
+- **4×N** : PRD FR-060 (OAuth2 client_credentials, lecture catalogue, requêtes invalides, quota dépassé, versioning, partenaire suspendu, pic trafic, rate-limit DOS, audit, PII absente, mTLS Enterprise)
+- **Couche(s)** : Domain (`ApiClient`, `Tier`) + Application (`AuthenticatePartner`) + Infra (`klaar-public-api` crate + OAuth2 server + Redis rate-limit) + Frontend (Swagger UI public)
+- **Taille** : **L** (1 j) · **Tours** : 6
+- **DoD** : OAuth2 client_credentials · rate-limit par tier · mTLS Enterprise · DPIA api-publique
+
+### Story 12.13 — Rate-limiting tier (FR-060)
+- **En tant que** système · **je veux** un rate-limiting strict par tier · **afin de** protéger l'API publique anti-DOS
+- **Critères Gherkin** : PRD FR-060 (scénario burst 1000 req/s plafonné 100)
+- **4×N** : happy sous quota · negative 429 · edge burst prolongé · security alerte ops
+- **Couche(s)** : Infra (Redis + middleware `RateLimitRequest`)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : retry-after header · alerte burst > 30 min · quota Enterprise 1 M/jour
+
+### Story 12.14 — Documentation Swagger publique + SDK (FR-060)
+- **En tant que** partenaire · **je veux** une documentation publique + SDK · **afin d'** intégrer rapidement
+- **Critères Gherkin** : PRD FR-060 (OpenAPI public publié, header Deprecation/Sunset)
+- **4×N** : happy docs consultables · negative v1 dépréciée · edge sunset 6 mois · security
+- **Couche(s)** : Frontend (site docs publique + SDK TS/Python) + Infra (génération utoipa)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : OpenAPI public versionné · v1 supportée 6 mois minimum · SDK TS + Python
+
+### Story 12.15 — Webhooks partenaires (FR-061)
+- **En tant que** partenaire · **je veux** recevoir des events webhook temps réel · **afin de** synchroniser sans polling
+- **Critères Gherkin** : PRD FR-061
+- **4×N** : PRD FR-061 (mission_completed envoyé, ack < 5 s, échecs livraison, signature invalide, URL injoignable DLQ, multi-env, burst batch, HTTPS obligatoire, secret rotation 90 j, replay attack)
+- **Couche(s)** : Domain (`Webhook`, `WebhookEvent`) + Application (`EmitWebhook`) + Infra (`klaar-public-api` webhook emitter + DLQ) + Documentation
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : HMAC SHA-256 · retry 1/5/30 min/4 h/24 h · DLQ · rotation secret 90 j · anti-replay 5 min
+
+### Story 12.16 — Analytics avancé ops (FR-062)
+- **En tant que** ops admin · **je veux** des dashboards avancés (funnel, unit economics, heatmap) · **afin d'** identifier secteurs/zones à densifier
+- **Critères Gherkin** : PRD FR-062
+- **4×N** : PRD FR-062 (funnel fill rate, unit economics, données insuffisantes, export raw forbidden, pic 100 ops, comparaison villes, temps réel vs batch, k-anonymité, RBAC, audit, anti-inference)
+- **Couche(s)** : Application (job agrégation nightly) + Infra (PostgreSQL read replica / DuckDB) + Frontend (admin analytics dashboards Svelte 5)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : refresh ≤ 1 h · k-anonymité ≥ 100 · RBAC analytics_viewer/analyst · audit log
+
+### Story 12.17 — Provider dashboard analytics (FR-063)
+- **En tant que** Provider · **je veux** un dashboard revenus/ratings/taux acceptation · **afin d'** optimiser mon activité
+- **Critères Gherkin** : PRD FR-063
+- **4×N** : PRD FR-063 (dashboard mensuel, insight temps réponse, données insuffisantes, Free sans bridage core, multi-secteurs, 1re mission, sanction visible, pas de concurrents identifiés, données personnelles, anti-évasion fiscale, audit)
+- **Couche(s)** : Application (agrégation Provider) + Frontend (Provider analytics UI Svelte 5)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : Wilson score · médiane secteur anonymisée · export CSV RGPD Art. 20 · Free core metrics
+
+### Story 12.18 — Pipeline ML CI/CD transverse (FR-056)
+- **En tant que** data engineer · **je veux** un pipeline ML CI/CD · **afin de** versionner, entraîner et déployer les modèles IA avec audit
+- **Critères Gherkin** : PRD FR-056 (versioning MLOps, anti-poisoning entraînement)
+- **4×N** : happy modèle déployé · negative drift détecté en CI · edge rollback modèle · security anti-poisoning
+- **Couche(s)** : Infra (`klaar-ml-adapter` pipeline + MLOps CI/CD) + Documentation
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : versioning modèles · CI tests biais · CD canary · kill-switch · doc vivante MLOps
+
+**Epic 12 total** : 18 stories · ~14 j wall-clock · ~75 tours
+
+---
+
+## Epic 13 — E4 Expansion géographique (C14, J14) · Priorité **Post-MVP (par ville)**
+
+> Activable par ville après gate **rentabilité RBC prouvée > 12 mois** (Brief §19.3). Sous-capacités CBS E4.1-E4.3 — `00-Capability-Breakdown-Estimation.md` §Partie 2 · J14. Coût indicatif 13-23 k€/ville. Référence PRD §7 module E4 (FR-064 à FR-068). Les stories ci-dessous sont à reproduire par ville activée.
+
+### Story 13.1 — Process activation ville (FR-064)
+- **En tant que** ops admin · **je veux** activer une nouvelle ville dans Klaar · **afin d'** étendre le périmètre géographique (Anvers, Liège, Gand, Charleroi)
+- **Critères Gherkin** : PRD FR-064
+- **4×N** : PRD FR-064 (activation complète, soft launch, blocages, gate rentabilité, rollback, 2 phases, chevauchement, audit launch, RBAC super_admin, registre APD)
+- **Couche(s)** : Domain (`City` aggregate) + Application (`ActivateCity` use case 4-eyes super_admin) + Infra (`klaar-region-adapter`) + Frontend (admin activation UI)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : gate rentabilité check · ≥ 100 Providers BCE · 4-eyes super_admin · audit WORM
+
+### Story 13.2 — Configuration géographique (FR-064)
+- **En tant que** ops · **je veux** configurer les limites géographiques de la ville · **afin de** restreindre le matching aux Providers locaux
+- **Critères Gherkin** : PRD FR-064 (scénarios activation par quartier, chevauchement frontalière)
+- **4×N** : happy config polygons · negative zone hors scope · edge chevauchement · security
+- **Couche(s)** : Domain (`CityGeometry` PostGIS) + Application + Frontend (admin geo UI)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : soft launch par quartier · fallback "Service pas encore disponible"
+
+### Story 13.3 — Campaign marketing régional (FR-065)
+- **En tant que** ops · **je veux** lancer une campagne ciblée par ville · **afin d'** atteindre la densité critique ≥ 100 Providers BCE locaux
+- **Critères Gherkin** : PRD FR-065 (campaign Meta/Google + landing page + tracking)
+- **4×N** : happy campagne ciblée · negative conversion < 2 % · edge pic signups · security anti-fraude BCE
+- **Couche(s)** : Frontend (landing page `/pro/<city>`) + Infra (tracking UTM audit) · **Exécution = marketing externe (story catalogue)**
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : tracking UTM audit · pause auto si conversion < 2 % · consentement marketing séparé
+
+### Story 13.4 — Onboarding accéléré Providers locaux (FR-065)
+- **En tant que** Provider local invité · **je veux** un parcours simplifié (3 étapes au lieu de 5) · **afin de** démarrer rapidement
+- **Critères Gherkin** : PRD FR-065 (scénario onboarding accéléré + KYC prioritaire gratuit)
+- **4×N** : happy parcours 3 étapes · negative doublon inter-ville · edge Provider RBC déménage · security anti-fraude
+- **Couche(s)** : Frontend (wizard onboarding accéléré) + Application
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : SLA review 24 h · KYC gratuit subventionné · ops dédié par ville
+
+### Story 13.5 — Tiles/routing régionaux (FR-066)
+- **En tant que** système · **je veux** étendre tile-server OSM et Valhalla à la nouvelle ville · **afin de** garantir matching géoloc et ETA précis
+- **Critères Gherkin** : PRD FR-066
+- **4×N** : PRD FR-066 (activation routing, tiles CDN, défaillances, routing incomplet, pic launch, chevauchement routing, piéton vs voiture, pas de PII tiles, backup Mapbox, audit extract OSM)
+- **Couche(s)** : Infra (`klaar-geo-adapter` étendu + extract Geofabrik + Valhalla config régional) + IaC (k8s HPA)
+- **Taille** : **L** (1 j) · **Tours** : 5
+- **DoD** : ETA < 5 % erreur vs Google · P95 tiles < 200 ms · audit provenance OSM
+
+### Story 13.6 — CDN régional OVH (FR-066)
+- **En tant que** ops · **je veux** un CDN OVH régional · **afin de** réduire la latence tiles pour la nouvelle ville
+- **Critères Gherkin** : PRD FR-066 (scénario tiles servies CDN, fallback Mapbox)
+- **4×N** : happy cache hit 90 % · negative CDN down · edge pic · security
+- **Couche(s)** : IaC (CDN OVH config régional)
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : cache hit 90 % · bande passante backend < 10 Mbps · ADR-006 confirmé
+
+### Story 13.7 — Déclaration APD/GBA régionale (FR-067)
+- **En tant que** DPO · **je veux** déclarer l'activation aux APD régionaux · **afin de** respecter les obligations hors RBC
+- **Critères Gherkin** : PRD FR-067 (scénario déclaration GBA flamand/APD wallon)
+- **4×N** : happy registre obtenu · negative APD non déclarée · edge région frontalière · security WORM 10 ans
+- **Couche(s)** : Documentation (DPIA étendu vivant) + Infra (`regulatory_registrations` table) · **Exécution = juridique externe (story catalogue)**
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : numéro registre stocké · DPIA validé par DPO · archivage WORM
+
+### Story 13.8 — Conformité TVA régionale (FR-067)
+- **En tant que** système · **je veux** appliquer la TVA BE correcte par secteur et région · **afin de** rester conforme fiscalement
+- **Critères Gherkin** : PRD FR-067 (TVA 6/12/21 %, bascule taux, intracommunautaire)
+- **4×N** : happy TVA 6 % rénovation · negative TVA incorrecte · edge bascule en cours · security audit fiscal
+- **Couche(s)** : Application (extension moteur facturation Story 5.3) + Domain (`VatRule` par région)
+- **Taille** : **M** (0,75 j) · **Tours** : 3
+- **DoD** : TVA BE 21/6/12 % correcte · archivage WORM 10 ans · audit fiscal signé eIDAS
+
+### Story 13.9 — Dashboard multi-villes (FR-068)
+- **En tant que** ops admin · **je veux** un dashboard multi-villes comparatif · **afin de** piloter l'expansion géographique
+- **Critères Gherkin** : PRD FR-068
+- **4×N** : PRD FR-068 (vue d'ensemble, comparaison side-by-side, drill-down par ville)
+- **Couche(s)** : Application (extension analytics Story 12.16) + Frontend (`/admin/analytics/cities.astro` Svelte 5)
+- **Taille** : **M** (0,75 j) · **Tours** : 4
+- **DoD** : ≥ 2 villes activées · sparkline 30 j · RBAC multi_city_viewer
+
+### Story 13.10 — Alertes multi-villes (FR-068)
+- **En tant que** ops · **je veux** des alertes sur dérive par ville (fill rate, NPS, GMV) · **afin de** réagir rapidement
+- **Critères Gherkin** : PRD FR-068 (scénario alerte dérive + drill-down)
+- **4×N** : happy alerte fill rate · negative false positive · edge 1 ville en rollback · security
+- **Couche(s)** : Application (règles alerting) + Infra (AlertManager)
+- **Taille** : **S** (0,5 j) · **Tours** : 2
+- **DoD** : alertes sur seuils configurables · notification ops temps réel
+
+**Epic 13 total (par ville)** : 10 stories · ~7,5 j wall-clock/ville · ~33 tours/ville
+
+---
+
+## Stories transverses
+
+### Documentation Vivante
+- **Story T.1** — E2E happy path complet (Playwright + Maestro) — **L** (1 j) · 5 tours
+- **Story T.2** — E2E Litige complet — **M** (0,75 j) · 4 tours
+- **Story T.3** — E2E Onboarding Provider complet — **M** (0,75 j) · 4 tours
+
+### Stories ITIL (pré-prod)
+- **Story T.4** — Runbook incident NIS2 (reporting 24 h) — **M** (0,75 j) · 2 tours
+- **Story T.5** — DPIA géoloc document vivant — **S** (0,5 j) · 2 tours
+- **Story T.6** — Procédure backup/restore testée mensuellement — **S** (0,5 j) · 2 tours
+
+### Déploiement stores
+- **Story T.15** — Submission App Store + Play Store + provisioning (certificats Apple Developer 99 €/an, compte Google Play 25 $ one-shot) — **L** (1 j) · 3 tours
+
+### Audit juridique (H-3 critique, pre-S5)
+- **Story J.1** — Audit juridique Platform Work par avocat BE (loi 26/04/2024 + directive UE 2024/2831 transposée 2 déc 2026) · revue invariants §10.1-10.3 · revue contrat Provider — **M** (0,75 j) · 0 tour (mission externe avocat, ~3 k€ budget à prévoir)
+
+### Émergence (~20 % réserve validée — alignée recommandation foyer)
+- **Story T.7 à T.18** — réserve pour imprévu (~12 j wall-clock cumulés, 20 % du total MVP)
+
+**Stories transverses total** : ~12 stories · ~18 j wall-clock · ~36 tours
+
+---
+
+## Sprint Plan MVP — 14 sprints × 2 semaines *(re-timeboxé v2.1, intervenant unique)*
+
+> ⚠️ Le tableau ci-dessous conserve le **séquencement d'origine** à titre historique. Le **plan opposable** est celui du `06-Chef-de-projet.md` §2 — 14 sprints, 40 h et ~20 passes d'agent par sprint, gates par jalon.
+
+| Sprint | Epics / stories | Wall-clock |
+|---|---|---|
+| S0 (semaines 1-2) | Sprint 0 complet | 8 j |
+| S1 (3-4) | Epic 1 IDN stories 1.1-1.5 | 3,5 j |
+| S2 (5-6) | Epic 1 IDN stories 1.6-1.10 + Epic 2 CTL | 7,5 j |
+| S3 (7-8) | Epic 3 MCH complet | 6,75 j |
+| S4 (9-10) | Epic 4 INT stories 4.1-4.5 | 4,75 j |
+| S5 (11-12) | Epic 4 INT stories 4.6-4.9 + Epic 5 PAY 5.1-5.2 | 5,5 j |
+| S6 (13-14) | Epic 5 PAY 5.3-5.6 + Epic 6 MSG complet | 5,5 j |
+| S7 (15-16) | Epic 7 TRU + Epic 9 i18n | 5,0 j |
+| S8 (17-18) | Epic 8 OPS + Transverses T.1-T.3 | 7,75 j |
+| S9 (19-20) | Transverses T.4-T.14 (émergence + ITIL) + UAT | 5,0 j |
+
+**Durée MVP** : **28 semaines (~7 mois) sur 14 sprints** — re-timeboxé v2.1. L'indépendant étant unique (lead dev = superviseur foyer), la capacité soutenable est de ~80 h/mois, soit **40 h et ~20 passes d'agent par sprint**. Les 548 h du cœur donnent 13,7 → **14 sprints (S0-S13)**. Le séquencement des epics et le chemin critique sont inchangés ; seule la cadence l'est. Découpage détaillé et Gantt par passes d'agent : `06-Chef-de-projet.md` §2.
+
+---
+
+## Suggested Sprint Plan Extension (J11-J14, post-MVP au fil de l'eau)
+
+> Déclenchés au fil de l'eau selon les gates go/no-go. Pas de calendrier imposé. Chaque jalon est indépendant des autres.
+
+| Sprint | Epics / stories | Wall-clock |
+|---|---|---|
+| S10 (J11a) | E1.1-E1.4 Skills + attestations (FR-045) | 4,5 j |
+| S11 (J11b) | E1.5-E1.6 Onboarding multi-secteur (FR-046) | 3 j |
+| S12 (J11c) | E1.7-E1.12 Catalogue extensible + bulk import + cross-check (FR-047-050) | 6 j |
+| S13 (J12'a) | E2'.1-E2'.2 Push rich + deep-linking (FR-051) | 3,5 j |
+| S14 (J12'b) | E2'.3 Biométrie + secure storage (FR-052) | 2 j |
+| S15 (J12'c) | E2'.4 PoC géoloc background + fallback PWA (FR-053) | 3 j |
+| S16 (J12'd) | E2'.5 Re-submission stores + PWA grand public (FR-054-055) | 3 j |
+| S17 (J13a) | E3.1-E3.4 Matching IA (FR-056) | 5 j |
+| S18 (J13b) | E3.5-E3.7 Surge pricing (FR-057) | 3 j |
+| S19 (J13c) | E3.8-E3.10 Subscription Pro (FR-058) | 3 j |
+| S20 (J13d) | E3.11 Assurance intégrée (FR-059) | 2 j |
+| S21 (J13e) | E3.12-E3.14 API publique + OAuth2 + SDK (FR-060) | 4 j |
+| S22 (J13f) | E3.15 Webhooks partenaires (FR-061) | 2 j |
+| S23 (J13g) | E3.16-E3.17 Analytics avancés (FR-062-063) + pipeline ML | 3 j |
+| S24+ (J14) | E4 par ville (itératif) | ~7,5 j/ville |
+
+**Durée totale extension** : ~48 j wall-clock classiques (~384 h classiques) au rythme choisi, hors expansion géographique.
+
+---
+
+## Risques spécifiques découpage (H-1, H-2)
+
+- **H-1 scope MVP** : 76 stories est ambitieux pour ~7 mois en **solo** (pas de binôme humain — bus factor 1). Mitigation : stories Should (Epic 6 MSG, Epic 9 i18n) peuvent basculer post-MVP si dépassement.
+- **H-2 Tauri Mobile** : si plugins immatures en S0, plan B = PWA restreinte (sans background tracking). **v0.3 : pas de bascule RN/Flutter, Tauri 2.0 + PWA uniquement** (ADR-008) — fallback PWA foreground garanti.
+- **H-3 Platform Work** : jurisprudence APD possible entre S5 et S8 (loi 26 avril 2024 + directive 2 déc 2026) — story habilitante juridique à prévoir.
+- **H-9 courbe Rust** : risque de glissement S1-S2 (team freelance découvre la codebase) — pair programming obligatoire (Brief conviction 8).
+- **H-13 géoloc background** : si plugin Tauri insuffisant, fallback PWA foreground (Story 11.5) — pas de blocage J12'.
+- **H-14 surcharge KYC** : activation séquentielle secteurs et villes (1 secteur/2 par an max), bulk import capé 1000 lignes.
+- **H-15 AI Act matching IA** : canary 10 % → 50 % → 100 %, kill-switch drift > 20 %, audit biais semestriel (Story 12.4).
+
+---
+
+## Questions ouvertes pour le superviseur (avant Validateur)
+
+1. **One mission per Provider** (FR-013) : à confirmer ou assouplir (impact Epic 3 + 4)
+2. **Story T.7-T.14 réserve émergence** : 6 j soit ~10 % du total — suffisant ou ajuster à 20 % (12 j) ?
+3. **Sprint 0 durée** : 8 j est optimiste pour 9 stories complexes — étendre à 3 semaines ?
+5. **Plan B Tauri** : à décider quand déclencher (Sprint 0 PoC) si plugins immatures ? **v0.3 : fallback PWA uniquement, pas de RN/Flutter.**
+6. **Gate J11 fill rate > 60 %** : seuil validé ou ajuster ? Même question pour gate J14 rentabilité RBC > 12 mois.
+7. **Activation E2' (J12')** : budget 100-200 h confirmé vs J12 original 1000-1600 h ?
+8. **Partenaires assurance (J13)** : Baloise vs AG vs autre — pré-validation commerciale avant Story 12.11 ?
+
+---
+
+*Dérivé du Manifeste Maury (CC BY-SA 4.0). Méthode Foyer. Version 2.0 — 76 stories cœur + ~47 stories extension = **123 stories** pour 14 capacités (J0-J14). Roadmap continue par capacité. En attente de validation superviseur (signature humaine PENDING) avant passage au Validateur.*

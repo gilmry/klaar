@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Quality + security gate (foyer/skills/gates.md) — même jeu de vérifications
+# qu'en CI (Story 0.4, DRY). Bloque le commit si une vérification échoue.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)/klaar"
+
+echo "[pre-commit] cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "[pre-commit] cargo clippy -D warnings"
+cargo clippy --workspace --all-targets -- -D warnings
+
+if command -v gitleaks >/dev/null 2>&1; then
+    echo "[pre-commit] gitleaks detect"
+    gitleaks detect --source "$(git rev-parse --show-toplevel)" --no-git -v
+else
+    echo "[pre-commit] gitleaks non installé localement — vérifié en CI (Story 0.4), ne bloque pas ici"
+fi
+
+echo "[pre-commit] OK"

@@ -1,0 +1,14 @@
+{
+  "name": "@klaar/client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Client TypeScript généré depuis l'OpenAPI de klaar-api (Story 0.6, ADR-004). Consommé par tauri-app et admin-web (Story 0.2).",
+  "type": "module",
+  "types": "src/schema.d.ts",
+  "scripts": {
+    "generate": "openapi-typescript ./openapi.json -o ./src/schema.d.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7"
+  }
+}

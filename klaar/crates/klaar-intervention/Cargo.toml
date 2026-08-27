@@ -1,0 +1,10 @@
+[package]
+name = "klaar-intervention"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }

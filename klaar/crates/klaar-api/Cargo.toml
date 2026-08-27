@@ -1,0 +1,38 @@
+[package]
+name = "klaar-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+klaar-application = { path = "../klaar-application", version = "0.0.0" }
+klaar-sqlx-repos = { path = "../klaar-sqlx-repos", version = "0.0.0" }
+klaar-stripe-adapter = { path = "../klaar-stripe-adapter", version = "0.0.0" }
+klaar-itsme-adapter = { path = "../klaar-itsme-adapter", version = "0.0.0" }
+klaar-geo-adapter = { path = "../klaar-geo-adapter", version = "0.0.0" }
+klaar-push-adapter = { path = "../klaar-push-adapter", version = "0.0.0" }
+klaar-storage-adapter = { path = "../klaar-storage-adapter", version = "0.0.0" }
+klaar-av-adapter = { path = "../klaar-av-adapter", version = "0.0.0" }
+klaar-audit-adapter = { path = "../klaar-audit-adapter", version = "0.0.0" }
+klaar-email-adapter = { path = "../klaar-email-adapter", version = "0.0.0" }
+refinery = { version = "0.8", features = ["tokio-postgres"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio-postgres = "0.7"
+actix-web = "4"
+serde.workspace = true
+utoipa = { version = "5", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-actix-web = "0.7"
+actix-web-prom = "0.9"
+
+[[bin]]
+name = "klaar-api"
+path = "src/main.rs"
+
+[[bin]]
+name = "klaar-migrate"
+path = "src/bin/migrate.rs"

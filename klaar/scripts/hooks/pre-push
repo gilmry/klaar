@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Bloque le push si la suite de tests ne passe pas (RED-first, foyer/skills/gates.md).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)/klaar"
+
+echo "[pre-push] cargo test --workspace"
+cargo test --workspace
+
+echo "[pre-push] OK"

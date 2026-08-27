@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: klaar
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality-gate:
+    name: Quality gate (fmt, clippy, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: klaar
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  security-gate:
+    name: Security gate (audit, deny, secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: klaar
+      - name: cargo audit (vulnérabilités connues)
+        # RUSTSEC-2026-0258 (h2 < 0.4.16, DoS par frames DATA vides) ignorée :
+        # transitive via actix-http (toute la branche h2 0.3.x d'actix-web v4
+        # en hérite, pas de version corrigée disponible en amont à ce jour).
+        # klaar-api n'est pas encore exposé publiquement (Sprint 0). À retirer
+        # dès qu'actix-web publie un correctif — revoir à chaque bump de
+        # dépendance (voir klaar/README.md).
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --ignore RUSTSEC-2026-0258
+      - name: cargo deny (licences, bans, sources)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: klaar/Cargo.toml
+      - name: gitleaks (secrets)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  contract-tests:
+    name: Contrat API (schemathesis)
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: klaar
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install schemathesis
+      - name: Compile klaar-api à l'avance (le run à froid en CI dépasse le délai d'attente de schemathesis)
+        run: cargo build -p klaar-api --bin klaar-api
+      - name: Démarre klaar-api en arrière-plan
+        run: cargo run -p klaar-api --bin klaar-api &
+      - name: Fuzz le contrat API (schemathesis, ADR-004)
+        # unsupported_method exclu : actix-web renvoie 404 (pas 405) sur une
+        # méthode non déclarée pour un chemin donné — limitation connue de
+        # son routage macro, à traiter quand le contrat aura plusieurs
+        # endpoints par chemin (cf. klaar/README.md).
+        # --wait-for-schema : laisse le temps au binaire de démarrer (déjà
+        # compilé à l'étape précédente, donc quelques secondes suffisent).
+        run: st run http://127.0.0.1:8080/api/v1/openapi.json --wait-for-schema=30 --checks all --exclude-checks unsupported_method
+
+  codegen:
+    name: Codegen TS client (@klaar/client)
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: klaar
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bash scripts/codegen.sh
+      - name: Vérifie que le client a bien été régénéré
+        run: test -s packages/klaar-client/src/schema.d.ts
+
+  sbom:
+    name: SBOM CycloneDX + provenance
+    runs-on: ubuntu-latest
+    needs: [quality-gate, security-gate]
+    # id-token: write — signature cosign keyless (Sigstore/Fulcio via OIDC
+    # GitHub), pas de clé privée à gérer ni de secret à faire fuiter.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: klaar
+      - name: Génère le SBOM (ADR-005, préparation CRA — Story 0.10)
+        run: |
+          cargo install cargo-cyclonedx --locked
+          cargo cyclonedx --all --format json
+      - uses: sigstore/cosign-installer@v3
+      - name: Signe chaque SBOM (provenance style SLSA)
+        run: |
+          for f in $(find . -name '*.cdx.json'); do
+            cosign sign-blob --yes --output-signature "$f.sig" --output-certificate "$f.pem" "$f"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: |
+            klaar/**/*.cdx.json
+            klaar/**/*.cdx.json.sig
+            klaar/**/*.cdx.json.pem
