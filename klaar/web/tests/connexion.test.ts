@@ -25,6 +25,7 @@ const CODES: CodeErreurConnexion[] = [
   "PASSWORD_TOO_LONG",
   "INVALID_CREDENTIALS",
   "ACCOUNT_NOT_VERIFIED",
+  "ACCOUNT_LOCKED",
   "RATE_LIMIT_EXCEEDED",
   "REFRESH_MISSING",
   "REFRESH_INVALID",
@@ -90,6 +91,19 @@ describe("@negative", () => {
       "ACCOUNT_NOT_VERIFIED",
     );
     expect(messageErreur("fr", "ACCOUNT_NOT_VERIFIED")).toMatch(/courriel/i);
+  });
+
+  it("distingue le verrouillage de compte de la limitation par adresse", () => {
+    // Deux protections différentes, deux messages différents : l'une se lève
+    // en quinze minutes, l'autre en une heure, et l'utilisateur a besoin de
+    // savoir laquelle le concerne.
+    expect(codeDepuisErreur(new ApiError(423, '{"code":"ACCOUNT_LOCKED"}'))).toBe(
+      "ACCOUNT_LOCKED",
+    );
+    expect(messageErreur("fr", "ACCOUNT_LOCKED")).not.toBe(
+      messageErreur("fr", "RATE_LIMIT_EXCEEDED"),
+    );
+    expect(messageErreur("fr", "ACCOUNT_LOCKED")).toMatch(/quart d'heure/i);
   });
 
   it("reconnaît la limitation de débit et la coupure réseau", () => {

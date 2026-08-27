@@ -122,6 +122,27 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Verrouillage anti-brute-force (Story 1.8, FR-007)
+
+Cinq échecs dans une fenêtre glissante de dix minutes verrouillent le compte quinze
+minutes, avec une entrée d'audit `ACCOUNT_LOCKED` et une alerte au titulaire.
+
+**Écart avec FR-007** : le `423 ACCOUNT_LOCKED` n'est renvoyé qu'à un appelant ayant donné
+le bon mot de passe. Le FR le demande « correct ou non », mais exige au scénario suivant
+qu'aucune information ne fuite sur l'existence du compte — or un `423` sur une adresse au
+hasard révèle qu'elle a un compte. Un mauvais mot de passe sur un compte verrouillé rend la
+même réponse qu'une adresse inconnue, avec le même temps de traitement.
+
+**Le verrou est aussi une arme retournable** : un tiers peut fermer le compte d'autrui en
+échouant cinq fois sur son adresse. Trois choix limitent la portée — durée courte et
+réouverture automatique, fenêtre glissante qui ne compte pas cinq oublis étalés, et le
+verrou en cours qui n'est jamais prolongé par les tentatives suivantes. La limitation par
+adresse IP reste la première ligne : depuis une source unique, le verrou n'est pas
+atteignable.
+
+**Non fourni** : le déverrouillage manuel par le support, et toute mesure d'escalade
+au-delà de quinze minutes.
+
 ## Limites connues de la limitation de débit
 
 Le compteur des cinq inscriptions par heure et par adresse vit **en mémoire du processus**

@@ -38,6 +38,7 @@ export type CodeErreurConnexion =
   | "PASSWORD_TOO_LONG"
   | "INVALID_CREDENTIALS"
   | "ACCOUNT_NOT_VERIFIED"
+  | "ACCOUNT_LOCKED"
   | "RATE_LIMIT_EXCEEDED"
   // Refus de rafraîchissement (Story 1.4). Rarement affichés : la reprise de
   // session échoue en silence. `REFRESH_REUSED` fait exception — il signifie
@@ -62,6 +63,8 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurConnexion, string>> = {
     INVALID_CREDENTIALS: "Adresse ou mot de passe incorrect.",
     ACCOUNT_NOT_VERIFIED:
       "Votre adresse n'est pas encore confirmée. Ouvrez le lien reçu par courriel.",
+    ACCOUNT_LOCKED:
+      "Votre compte est temporairement verrouillé après plusieurs tentatives ratées. Réessayez dans un quart d'heure.",
     RATE_LIMIT_EXCEEDED: "Trop de tentatives depuis cette connexion. Réessayez dans une heure.",
     REFRESH_MISSING:
       "Votre session a expiré. Reconnectez-vous.",
@@ -86,6 +89,8 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurConnexion, string>> = {
     INVALID_CREDENTIALS: "Onjuist adres of wachtwoord.",
     ACCOUNT_NOT_VERIFIED:
       "Uw adres is nog niet bevestigd. Open de link uit uw e-mail.",
+    ACCOUNT_LOCKED:
+      "Uw account is tijdelijk vergrendeld na meerdere mislukte pogingen. Probeer het over een kwartier opnieuw.",
     RATE_LIMIT_EXCEEDED:
       "Te veel pogingen vanaf deze verbinding. Probeer het over een uur opnieuw.",
     REFRESH_MISSING:
@@ -111,6 +116,8 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurConnexion, string>> = {
     INVALID_CREDENTIALS: "Incorrect address or password.",
     ACCOUNT_NOT_VERIFIED:
       "Your address is not confirmed yet. Open the link from your email.",
+    ACCOUNT_LOCKED:
+      "Your account is temporarily locked after several failed attempts. Try again in fifteen minutes.",
     RATE_LIMIT_EXCEEDED: "Too many attempts from this connection. Try again in an hour.",
     REFRESH_MISSING:
       "Your session has expired. Sign in again.",

@@ -8,7 +8,9 @@ use klaar_application::ports::erreurs::RepositoryError;
 use klaar_application::ports::utilisateur_repository::{
     JetonAConserver, ResultatJeton, UtilisateurRepository,
 };
-use klaar_identity::{EmpreinteJeton, EmpreinteMotDePasse, StatutUtilisateur, Utilisateur};
+use klaar_identity::{
+    EmpreinteJeton, EmpreinteMotDePasse, StatutUtilisateur, Utilisateur, Verrouillage,
+};
 use klaar_shared_kernel::{Email, Locale};
 
 use crate::erreur;
@@ -47,10 +49,16 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Utilisateur, Repository
         locale: Locale::parse(&locale)
             .map_err(|e| RepositoryError::Contrainte(format!("locale en base illisible : {e}")))?,
         cree_le: ligne.get("cree_le"),
+        verrouillage: Verrouillage {
+            echecs_consecutifs: ligne.get("echecs_consecutifs"),
+            dernier_echec_le: ligne.get("dernier_echec_le"),
+            verrouille_jusqu_a: ligne.get("verrouille_jusqu_a"),
+        },
     })
 }
 
-const COLONNES: &str = "id, email, empreinte_mot_de_passe, statut, locale, cree_le";
+const COLONNES: &str = "id, email, empreinte_mot_de_passe, statut, locale, cree_le, \
+     echecs_consecutifs, dernier_echec_le, verrouille_jusqu_a";
 
 impl UtilisateurRepository for PgUtilisateurRepository {
     async fn creer_si_absent(
@@ -174,6 +182,29 @@ impl UtilisateurRepository for PgUtilisateurRepository {
 
         tx.commit().await.map_err(erreur)?;
         Ok(ResultatJeton::Consomme { utilisateur_id })
+    }
+
+    async fn mettre_a_jour_verrouillage(
+        &self,
+        utilisateur_id: Uuid,
+        verrouillage: &Verrouillage,
+    ) -> Result<(), RepositoryError> {
+        // Seules ces trois colonnes sont écrites : un échec d'authentification
+        // ne doit pas pouvoir écraser un profil modifié entre-temps par un
+        // autre chemin.
+        sqlx::query(
+            "UPDATE utilisateur
+             SET echecs_consecutifs = $1, dernier_echec_le = $2, verrouille_jusqu_a = $3
+             WHERE id = $4",
+        )
+        .bind(verrouillage.echecs_consecutifs)
+        .bind(verrouillage.dernier_echec_le)
+        .bind(verrouillage.verrouille_jusqu_a)
+        .bind(utilisateur_id)
+        .execute(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(())
     }
 
     async fn par_email(&self, email: &Email) -> Result<Option<Utilisateur>, RepositoryError> {

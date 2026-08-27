@@ -193,6 +193,30 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Côté PWA, recharger la page ne déconnecte plus. Un test e2e le vérifie sans jamais lire le
   cookie, qui reste `HttpOnly`.
 
+- **1.8** — **Verrouillage anti-brute-force** (FR-007) : cinq échecs dans une fenêtre glissante de dix minutes ferment le compte quinze minutes, avec audit `ACCOUNT_LOCKED` et alerte au titulaire.
+
+  **Un `423` ne part qu'à qui connaît déjà le mot de passe.** FR-007 le demande « correct ou
+  non », et exige au scénario suivant qu'aucune information ne fuite sur l'existence du
+  compte : un `423` sur une adresse au hasard révélerait qu'elle a un compte. Le mot de
+  passe est donc vérifié d'abord — même coût dans les deux cas — et un mauvais mot de passe
+  sur un compte verrouillé rend exactement la réponse d'une adresse inconnue.
+
+  **Un défaut trouvé par un test, pas par relecture** : le premier jet repoussait la fin du
+  verrou à chaque nouvelle tentative, ce qui permettait à un tiers de garder un compte fermé
+  indéfiniment — l'attaque même que le verrou prétend arrêter. Le commentaire décrivait déjà
+  l'intention ; la condition manquait dans le code. Un verrou expiré peut en revanche être
+  suivi d'un nouveau si les échecs continuent, et un test le fixe explicitement.
+
+  Une seule alerte par verrouillage, au franchissement du seuil : une alerte par échec ferait
+  du service un relais de courriels vers une adresse non sollicitée. Un compte inexistant
+  n'en déclenche aucune, pour la même raison, et ne crée aucune ligne en base.
+
+  La limitation par adresse IP (5 par heure) tape avant le verrou : depuis une source unique
+  on ne l'atteint pas, comme le montre le contrôle manuel (cinq `401` puis un `429`). Le
+  verrou vise l'attaque distribuée, que les tests reproduisent en variant l'adresse source.
+
+- **1.10** — **Déconnexion et révocation** : livrée avec la Story 1.4.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

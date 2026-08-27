@@ -274,11 +274,32 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Infra (Stripe adapter) + Frontend (iframe Stripe Elements)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 
-### Story 1.8 — Verrouillage brute-force (FR-007)
+### Story 1.8 — Verrouillage brute-force (FR-007) — *faite*
 - **En tant que** système · **je veux** verrouiller après 5 échecs · **afin de** mitiger brute-force
 - **4×N** : PRD FR-007
 - **Couche(s)** : Application + Infra
 - **Taille** : **S** (0,5 j) · **Tours** : 2
+
+> **Un `423` ne part qu'à qui connaît le mot de passe.** FR-007 demande `423 ACCOUNT_LOCKED`
+> « correct ou non », et exige au scénario suivant qu'« aucune information ne fuit sur
+> l'existence du compte » : les deux ne tiennent pas ensemble, un `423` sur une adresse au
+> hasard révélant qu'elle a un compte. Le mot de passe est donc vérifié d'abord, ce qui
+> coûte le même temps dans les deux cas. Un mauvais mot de passe sur un compte verrouillé
+> rend exactement la même réponse qu'une adresse inconnue.
+>
+> **Le verrou en cours n'est jamais prolongé.** Le premier jet le repoussait à chaque
+> tentative, ce qui offrait à un tiers le moyen de garder un compte fermé indéfiniment —
+> l'attaque même que le verrou prétend arrêter. C'est un test qui l'a montré, le commentaire
+> décrivant déjà l'intention que le code ne tenait pas. Un nouveau verrou peut en revanche
+> succéder à un verrou expiré si les échecs continuent.
+>
+> **Une seule alerte par verrouillage**, au franchissement du seuil. Une alerte par échec
+> ferait du service un relais de courriels vers une adresse non sollicitée. Un compte
+> inexistant n'en déclenche aucune, pour la même raison.
+>
+> La limitation par adresse IP (5 par heure) tape avant le verrou (5 échecs) : depuis une
+> source unique, on ne l'atteint pas. Le verrou vise l'attaque distribuée, ce que les tests
+> reproduisent en variant l'adresse source.
 
 ### Story 1.9 — RGPD effacement (FR-005)
 - **En tant que** User · **je veux** effacer mes données · **afin d'** exercer mon droit RGPD Art. 17
@@ -287,7 +308,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Taille** : **L** (1 j) · **Tours** : 5
 - **Dépendance** : tous les autres BC doivent supporter l'anonymisation (consommateur de l'événement `UserErased`)
 
-### Story 1.10 — Logout + révocation refresh
+### Story 1.10 — Logout + révocation refresh — *couverte par la Story 1.4*
 - **En tant que** User · **je veux** me logout · **afin de** sécuriser ma session
 - **4×N** : logout nominal / refresh déjà révoqué / multi-device
 - **Couche(s)** : Application + Infra

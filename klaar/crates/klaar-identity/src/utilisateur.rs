@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::jeton_verification::{EmpreinteJeton, JetonVerification, VALIDITE_HEURES};
 use crate::mot_de_passe::EmpreinteMotDePasse;
+use crate::verrouillage::Verrouillage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatutUtilisateur {
@@ -49,6 +50,8 @@ pub struct Utilisateur {
     pub statut: StatutUtilisateur,
     pub locale: Locale,
     pub cree_le: DateTime<Utc>,
+    /// Compteur d'échecs et verrou éventuel (FR-007).
+    pub verrouillage: Verrouillage,
 }
 
 /// Jeton fraîchement émis : la valeur en clair à envoyer, et ce qu'il faut
@@ -85,6 +88,7 @@ impl Utilisateur {
             statut: StatutUtilisateur::EnAttenteVerificationEmail,
             locale,
             cree_le: maintenant,
+            verrouillage: Verrouillage::default(),
         }
     }
 

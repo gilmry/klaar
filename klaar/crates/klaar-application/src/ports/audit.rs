@@ -21,6 +21,8 @@ pub enum CodeAudit {
     SessionReuseDetected,
     /// Refresh présenté depuis un autre contexte. Signalé, pas bloquant.
     SessionContextChanged,
+    /// Compte verrouillé après échecs répétés (FR-007).
+    AccountLocked,
 }
 
 impl CodeAudit {
@@ -35,6 +37,7 @@ impl CodeAudit {
             Self::SessionRefreshed => "SESSION_REFRESHED",
             Self::SessionReuseDetected => "SESSION_REUSE_DETECTED",
             Self::SessionContextChanged => "SESSION_CONTEXT_CHANGED",
+            Self::AccountLocked => "ACCOUNT_LOCKED",
         }
     }
 }

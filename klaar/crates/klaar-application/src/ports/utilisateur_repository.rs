@@ -1,7 +1,7 @@
 //! Port de persistance des comptes utilisateur (FR-001).
 
 use chrono::{DateTime, Utc};
-use klaar_identity::{EmpreinteJeton, Utilisateur};
+use klaar_identity::{EmpreinteJeton, Utilisateur, Verrouillage};
 use klaar_shared_kernel::Email;
 use uuid::Uuid;
 
@@ -64,6 +64,17 @@ pub trait UtilisateurRepository {
         empreinte: &EmpreinteJeton,
         maintenant: DateTime<Utc>,
     ) -> Result<ResultatJeton, RepositoryError>;
+
+    /// Écrit l'état de verrouillage (FR-007).
+    ///
+    /// Séparé du reste du compte : un échec d'authentification ne doit toucher
+    /// que ce compteur. Réécrire l'agrégat entier risquerait d'écraser une
+    /// modification concurrente du profil par un chemin qui n'a rien à y voir.
+    async fn mettre_a_jour_verrouillage(
+        &self,
+        utilisateur_id: Uuid,
+        verrouillage: &Verrouillage,
+    ) -> Result<(), RepositoryError>;
 
     async fn par_email(&self, email: &Email) -> Result<Option<Utilisateur>, RepositoryError>;
 

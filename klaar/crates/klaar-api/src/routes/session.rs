@@ -138,6 +138,7 @@ pub async fn login(
         etat.journal.as_ref(),
         etat.horloge.as_ref(),
         etat.jetons.as_ref(),
+        etat.courriel.as_ref(),
         etat.argon2,
         nouveau.expose(),
         contexte(&requete).as_deref(),
@@ -158,11 +159,22 @@ pub async fn login(
                 jeton_acces: session.jeton_acces,
                 expire_dans: session.expire_dans_secondes,
             }),
+        // 423 Locked, avec le délai réel restant. Ce refus n'est atteignable
+        // qu'avec le bon mot de passe : il ne révèle donc rien à qui ne le
+        // connaît pas — voir l'arbitrage sur le cas d'usage.
+        Err(ErreurConnexion::CompteVerrouille { retry_after }) => {
+            HttpResponse::build(actix_web::http::StatusCode::LOCKED)
+                .insert_header(("Retry-After", retry_after.to_string()))
+                .json(ErreurValidationDto {
+                    code: "ACCOUNT_LOCKED".to_string(),
+                })
+        }
         Err(e) => {
             let statut = match &e {
                 ErreurConnexion::Email(_) | ErreurConnexion::MotDePasse(_) => {
                     actix_web::http::StatusCode::BAD_REQUEST
                 }
+                ErreurConnexion::CompteVerrouille { .. } => unreachable!("traité au-dessus"),
                 ErreurConnexion::IdentifiantsInvalides => actix_web::http::StatusCode::UNAUTHORIZED,
                 // 403 et non 401 : les identifiants sont bons, c'est l'état du
                 // compte qui bloque. Un 401 inviterait le client à redemander

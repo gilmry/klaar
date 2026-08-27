@@ -36,8 +36,26 @@ pub enum CourrielInscription {
     CompteDejaExistant,
 }
 
+/// Alerte de sécurité adressée au titulaire d'un compte.
+#[derive(Debug, Clone, Copy)]
+pub enum CourrielSecurite {
+    /// Compte verrouillé après des échecs répétés (FR-007).
+    ///
+    /// Ne porte aucun lien : ce message part à quelqu'un qui n'a probablement
+    /// rien demandé, et tout lien qu'il contiendrait ferait des tentatives
+    /// ratées un moyen de lui expédier une action à cliquer.
+    CompteVerrouille { minutes: i64 },
+}
+
 #[allow(async_fn_in_trait)]
 pub trait EnvoiCourriel {
+    async fn envoyer_securite(
+        &self,
+        destinataire: &Email,
+        locale: Locale,
+        contenu: CourrielSecurite,
+    ) -> Result<(), ErreurEnvoi>;
+
     async fn envoyer_inscription(
         &self,
         destinataire: &Email,

@@ -8,7 +8,9 @@
 mod jeton_verification;
 mod mot_de_passe;
 mod utilisateur;
+mod verrouillage;
 
 pub use jeton_verification::{EmpreinteJeton, JetonVerification};
 pub use mot_de_passe::{EmpreinteMotDePasse, MotDePasse, MotDePasseError, ParametresArgon2};
 pub use utilisateur::{JetonEmis, StatutUtilisateur, Utilisateur};
+pub use verrouillage::{Verrouillage, DUREE_VERROU_MINUTES, FENETRE_ECHECS_MINUTES, MAX_ECHECS};

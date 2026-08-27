@@ -5,7 +5,7 @@
 //! et le compilateur garantit ici qu'aucune combinaison n'est oubliée, ce
 //! qu'un fichier `.po` incomplet ne ferait pas.
 
-use klaar_application::ports::courriel::CourrielInscription;
+use klaar_application::ports::courriel::{CourrielInscription, CourrielSecurite};
 use klaar_shared_kernel::Locale;
 
 pub struct MessageCourriel {
@@ -108,5 +108,67 @@ pub fn corps_inscription(
             ),
         }
         .to_string(),
+    }
+}
+
+pub fn sujet_securite(locale: Locale, contenu: &CourrielSecurite) -> String {
+    match (locale, contenu) {
+        (Locale::Fr, CourrielSecurite::CompteVerrouille { .. }) => {
+            "Votre compte Klaar a été temporairement verrouillé"
+        }
+        (Locale::Nl, CourrielSecurite::CompteVerrouille { .. }) => {
+            "Uw Klaar-account is tijdelijk vergrendeld"
+        }
+        (Locale::En, CourrielSecurite::CompteVerrouille { .. }) => {
+            "Your Klaar account has been temporarily locked"
+        }
+    }
+    .to_string()
+}
+
+/// Corps de l'alerte de sécurité.
+///
+/// Aucun lien, ici non plus : ce message part à quelqu'un qui n'a rien demandé,
+/// et un lien y ferait des tentatives ratées un moyen de lui expédier une
+/// action à cliquer. Il dit ce qui s'est passé, combien de temps cela dure, et
+/// quoi faire — rien de plus.
+pub fn corps_securite(locale: Locale, contenu: &CourrielSecurite) -> String {
+    let CourrielSecurite::CompteVerrouille { minutes } = contenu;
+    match locale {
+        Locale::Fr => format!(
+            concat!(
+                "Bonjour,\n\n",
+                "Plusieurs tentatives de connexion à votre compte Klaar ont échoué. ",
+                "Par précaution, il est verrouillé pendant {} minutes ; il se rouvrira ",
+                "ensuite tout seul, sans démarche de votre part.\n\n",
+                "Si ces tentatives venaient de vous, il n'y a rien à faire d'autre ",
+                "qu'attendre. Sinon, changez votre mot de passe dès la réouverture : ",
+                "quelqu'un connaît votre adresse et cherche le mot de passe qui va avec."
+            ),
+            minutes
+        ),
+        Locale::Nl => format!(
+            concat!(
+                "Hallo,\n\n",
+                "Er zijn meerdere mislukte aanmeldpogingen op uw Klaar-account geweest. ",
+                "Uit voorzorg is het {} minuten vergrendeld; daarna gaat het vanzelf ",
+                "weer open.\n\n",
+                "Kwamen die pogingen van u, dan hoeft u niets te doen. Zo niet, wijzig ",
+                "dan uw wachtwoord zodra het account weer open is."
+            ),
+            minutes
+        ),
+        Locale::En => format!(
+            concat!(
+                "Hello,\n\n",
+                "Several sign-in attempts on your Klaar account have failed. As a ",
+                "precaution, it is locked for {} minutes; it will reopen on its own ",
+                "afterwards.\n\n",
+                "If those attempts were yours, there is nothing else to do but wait. ",
+                "Otherwise, change your password as soon as it reopens: someone knows ",
+                "your address and is looking for the password that goes with it."
+            ),
+            minutes
+        ),
     }
 }

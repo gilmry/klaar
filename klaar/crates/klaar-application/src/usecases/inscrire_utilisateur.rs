@@ -246,6 +246,14 @@ mod tests {
             unreachable!("hors du périmètre de ce cas d'usage")
         }
 
+        async fn mettre_a_jour_verrouillage(
+            &self,
+            _: Uuid,
+            _: &klaar_identity::Verrouillage,
+        ) -> Result<(), RepositoryError> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
         async fn par_email(&self, email: &Email) -> Result<Option<Utilisateur>, RepositoryError> {
             Ok(self
                 .comptes
@@ -276,6 +284,15 @@ mod tests {
     }
 
     impl EnvoiCourriel for BoiteAuxLettres {
+        async fn envoyer_securite(
+            &self,
+            _: &Email,
+            _: Locale,
+            _: crate::ports::courriel::CourrielSecurite,
+        ) -> Result<(), crate::ports::courriel::ErreurEnvoi> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
         async fn envoyer_inscription(
             &self,
             destinataire: &Email,
@@ -560,6 +577,15 @@ mod tests {
     async fn security_un_echec_d_envoi_ne_defait_pas_l_inscription() {
         struct BoiteEnPanne;
         impl EnvoiCourriel for BoiteEnPanne {
+            async fn envoyer_securite(
+                &self,
+                _: &Email,
+                _: Locale,
+                _: crate::ports::courriel::CourrielSecurite,
+            ) -> Result<(), crate::ports::courriel::ErreurEnvoi> {
+                unreachable!("hors du périmètre de ce cas d'usage")
+            }
+
             async fn envoyer_inscription(
                 &self,
                 _: &Email,

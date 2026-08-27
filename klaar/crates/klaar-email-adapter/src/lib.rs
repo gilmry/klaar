@@ -7,12 +7,16 @@
 //! respecté, si bien que brancher un relais SMTP revient à écrire un second
 //! `impl EnvoiCourriel` sans toucher au cas d'usage.
 
-use klaar_application::ports::courriel::{CourrielInscription, EnvoiCourriel, ErreurEnvoi};
+use klaar_application::ports::courriel::{
+    CourrielInscription, CourrielSecurite, EnvoiCourriel, ErreurEnvoi,
+};
 use klaar_shared_kernel::{Email, Locale};
 
 mod messages;
 
-pub use messages::{corps_inscription, sujet_inscription, MessageCourriel};
+pub use messages::{
+    corps_inscription, corps_securite, sujet_inscription, sujet_securite, MessageCourriel,
+};
 
 /// Adaptateur de développement : compose puis journalise.
 pub struct CourrielJournalise {
@@ -52,6 +56,27 @@ impl CourrielJournalise {
 }
 
 impl EnvoiCourriel for CourrielJournalise {
+    async fn envoyer_securite(
+        &self,
+        _destinataire: &Email,
+        locale: Locale,
+        contenu: CourrielSecurite,
+    ) -> Result<(), ErreurEnvoi> {
+        let message = MessageCourriel {
+            sujet: sujet_securite(locale, &contenu),
+            corps: corps_securite(locale, &contenu),
+        };
+        // Ni destinataire ni détail du verrou : le couple « adresse + alerte »
+        // dirait à qui lit les journaux quels comptes sont attaqués.
+        tracing::warn!(
+            genre = "securite",
+            locale = locale.as_str(),
+            octets_corps = message.corps.len(),
+            "alerte de sécurité composée (adaptateur de journalisation, non expédiée)"
+        );
+        Ok(())
+    }
+
     async fn envoyer_inscription(
         &self,
         _destinataire: &Email,

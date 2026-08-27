@@ -15,12 +15,16 @@
 //! où un mot de passe faux en prend cinquante : le chronomètre distinguerait
 //! ce que la réponse tait. Une empreinte leurre est donc vérifiée dans le vide.
 
-use klaar_identity::{EmpreinteMotDePasse, MotDePasse, MotDePasseError, ParametresArgon2};
+use klaar_identity::{
+    EmpreinteMotDePasse, MotDePasse, MotDePasseError, ParametresArgon2, Verrouillage,
+    DUREE_VERROU_MINUTES,
+};
 use klaar_shared_kernel::{Email, EmailError};
 use std::fmt;
 use uuid::Uuid;
 
 use crate::ports::audit::{CodeAudit, EntreeAudit, JournalAudit};
+use crate::ports::courriel::{CourrielSecurite, EnvoiCourriel};
 use crate::ports::erreurs::RepositoryError;
 use crate::ports::horloge::Horloge;
 use crate::ports::jeton_acces::{ClaimsAcces, EmetteurJetonAcces, VALIDITE_ACCES_SECONDES};
@@ -56,6 +60,11 @@ pub enum ErreurConnexion {
     IdentifiantsInvalides,
     /// Compte existant, mot de passe correct, adresse non encore confirmée.
     CompteNonVerifie,
+    /// Compte verrouillé après échecs répétés (FR-007). N'est renvoyé qu'à
+    /// quelqu'un ayant donné le bon mot de passe.
+    CompteVerrouille {
+        retry_after: i64,
+    },
     Indisponible(String),
 }
 
@@ -67,6 +76,7 @@ impl ErreurConnexion {
             Self::MotDePasse(e) => e.code(),
             Self::IdentifiantsInvalides => "INVALID_CREDENTIALS",
             Self::CompteNonVerifie => "ACCOUNT_NOT_VERIFIED",
+            Self::CompteVerrouille { .. } => "ACCOUNT_LOCKED",
             Self::Indisponible(_) => "SERVICE_UNAVAILABLE",
         }
     }
@@ -83,6 +93,9 @@ impl fmt::Display for ErreurConnexion {
             Self::MotDePasse(e) => write!(f, "{e}"),
             Self::IdentifiantsInvalides => write!(f, "identifiants invalides"),
             Self::CompteNonVerifie => write!(f, "compte non vérifié"),
+            Self::CompteVerrouille { retry_after } => {
+                write!(f, "compte verrouillé, réessayer dans {retry_after} s")
+            }
             Self::Indisponible(d) => write!(f, "service indisponible : {d}"),
         }
     }
@@ -107,12 +120,13 @@ fn empreinte_leurre(parametres: ParametresArgon2) -> Option<EmpreinteMotDePasse>
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn connecter<R, S, J, H, E>(
+pub async fn connecter<R, S, J, H, E, C>(
     depot: &R,
     sessions: &S,
     journal: &J,
     horloge: &H,
     emetteur: &E,
+    courriel: &C,
     parametres: ParametresArgon2,
     refresh_en_clair: &str,
     contexte: Option<&str>,
@@ -127,6 +141,7 @@ where
     // format du jeton se choisit à la composition et non à la compilation du
     // cas d'usage.
     E: EmetteurJetonAcces + ?Sized,
+    C: EnvoiCourriel,
 {
     let email = Email::parse(&commande.email).map_err(ErreurConnexion::Email)?;
     // La longueur du mot de passe est validée ici comme à l'inscription : une
@@ -147,16 +162,67 @@ where
         return Err(ErreurConnexion::IdentifiantsInvalides);
     };
 
+    // Le mot de passe est vérifié **avant** l'état du verrou, contrairement à
+    // ce que décrit FR-007 (« il tente un login, correct ou non, → 423 »).
+    // Répondre 423 à qui ne connaît pas le mot de passe apprendrait à un
+    // attaquant que l'adresse existe, ce que le scénario `@security` du même FR
+    // interdit. Vérifier d'abord coûte le même temps dans les deux cas et ne
+    // révèle rien : pour obtenir un 423, il faut déjà avoir le mot de passe.
     if !compte.empreinte_mot_de_passe.verifier(&mot_de_passe) {
+        let precedent = compte.verrouillage;
+        let apres = precedent.apres_echec(maintenant);
+        depot.mettre_a_jour_verrouillage(compte.id, &apres).await?;
+
+        if apres.vient_de_verrouiller(&precedent) {
+            journal
+                .consigner(EntreeAudit {
+                    code: CodeAudit::AccountLocked,
+                    // Ici l'identifiant est légitime : l'événement concerne le
+                    // compte lui-même, pas la tentative, et un titulaire doit
+                    // pouvoir retrouver quand son compte a été bloqué.
+                    sujet_id: Some(compte.id),
+                    horodatage: maintenant,
+                })
+                .await?;
+            // Une alerte par échec transformerait le service en relais de
+            // courriels vers une adresse non sollicitée : seul le
+            // franchissement du seuil en déclenche une.
+            if let Err(e) = courriel
+                .envoyer_securite(
+                    &compte.email,
+                    compte.locale,
+                    CourrielSecurite::CompteVerrouille {
+                        minutes: DUREE_VERROU_MINUTES,
+                    },
+                )
+                .await
+            {
+                tracing::error!(erreur = %e, "alerte de verrouillage non envoyée");
+            }
+        }
+
         journal_echec(journal, maintenant).await?;
         return Err(ErreurConnexion::IdentifiantsInvalides);
     }
 
+    // À partir d'ici, l'appelant a prouvé qu'il connaît le mot de passe : les
+    // refus suivants ne révèlent donc rien qu'il ne sache déjà.
+    if let Some(retry_after) = compte.verrouillage.secondes_restantes(maintenant) {
+        journal_echec(journal, maintenant).await?;
+        return Err(ErreurConnexion::CompteVerrouille { retry_after });
+    }
+
     if !compte.est_actif() {
-        // Consigné sans identifiant : le compte existe, mais l'échec n'est pas
-        // de son fait et le relier alimenterait le journal en tentatives.
         journal_echec(journal, maintenant).await?;
         return Err(ErreurConnexion::CompteNonVerifie);
+    }
+
+    // Le compteur repart de zéro : sans cela, quatre oublis suivis d'une
+    // connexion réussie laisseraient le compte à un échec du verrou.
+    if compte.verrouillage != Verrouillage::default() {
+        depot
+            .mettre_a_jour_verrouillage(compte.id, &Verrouillage::apres_succes())
+            .await?;
     }
 
     let expire_le = maintenant + chrono::Duration::seconds(VALIDITE_ACCES_SECONDES);
@@ -243,6 +309,32 @@ mod tests {
         en_panne: bool,
     }
 
+    #[derive(Default)]
+    struct BoiteAuxLettres {
+        alertes: RefCell<Vec<CourrielSecurite>>,
+    }
+
+    impl EnvoiCourriel for BoiteAuxLettres {
+        async fn envoyer_securite(
+            &self,
+            _: &Email,
+            _: Locale,
+            contenu: CourrielSecurite,
+        ) -> Result<(), crate::ports::courriel::ErreurEnvoi> {
+            self.alertes.borrow_mut().push(contenu);
+            Ok(())
+        }
+
+        async fn envoyer_inscription(
+            &self,
+            _: &Email,
+            _: Locale,
+            _: crate::ports::courriel::CourrielInscription,
+        ) -> Result<(), crate::ports::courriel::ErreurEnvoi> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+    }
+
     impl DepotMemoire {
         fn avec_compte(actif: bool) -> (Self, Uuid) {
             let mdp = MotDePasse::parse(MDP).unwrap();
@@ -293,6 +385,22 @@ mod tests {
 
         async fn par_id(&self, id: Uuid) -> Result<Option<Utilisateur>, RepositoryError> {
             Ok(self.comptes.borrow().iter().find(|u| u.id == id).cloned())
+        }
+
+        async fn mettre_a_jour_verrouillage(
+            &self,
+            utilisateur_id: Uuid,
+            verrouillage: &klaar_identity::Verrouillage,
+        ) -> Result<(), RepositoryError> {
+            if let Some(compte) = self
+                .comptes
+                .borrow_mut()
+                .iter_mut()
+                .find(|u| u.id == utilisateur_id)
+            {
+                compte.verrouillage = *verrouillage;
+            }
+            Ok(())
         }
     }
 
@@ -363,6 +471,7 @@ mod tests {
         depot: DepotMemoire,
         sessions: SessionsMemoire,
         journal: JournalMemoire,
+        boite: BoiteAuxLettres,
     }
 
     impl Bac {
@@ -373,6 +482,7 @@ mod tests {
                     depot,
                     sessions: SessionsMemoire::default(),
                     journal: JournalMemoire::default(),
+                    boite: BoiteAuxLettres::default(),
                 },
                 id,
             )
@@ -383,12 +493,22 @@ mod tests {
             email: &str,
             mot_de_passe: &str,
         ) -> Result<Session, ErreurConnexion> {
+            self.connecter_a(email, mot_de_passe, instant()).await
+        }
+
+        async fn connecter_a(
+            &self,
+            email: &str,
+            mot_de_passe: &str,
+            maintenant: DateTime<Utc>,
+        ) -> Result<Session, ErreurConnexion> {
             connecter(
                 &self.depot,
                 &self.sessions,
                 &self.journal,
-                &HorlogeFigee(instant()),
+                &HorlogeFigee(maintenant),
                 &EmetteurFactice,
+                &self.boite,
                 P,
                 REFRESH,
                 None,
@@ -476,6 +596,7 @@ mod tests {
             },
             sessions: SessionsMemoire::default(),
             journal: JournalMemoire::default(),
+            boite: BoiteAuxLettres::default(),
         };
         let e = bac.connecter("marie@example.eu", MDP).await.unwrap_err();
         assert_eq!(e.code(), "SERVICE_UNAVAILABLE");
@@ -503,6 +624,159 @@ mod tests {
             bac.sessions.ouvertes.borrow()[0].expire_le,
             instant() + chrono::Duration::days(30)
         );
+    }
+
+    #[tokio::test]
+    async fn happy_cinq_echecs_verrouillent_et_alertent_une_fois() {
+        let (bac, id) = Bac::neuf(true);
+        for i in 0..5 {
+            let e = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await
+                .unwrap_err();
+            assert_eq!(e.code(), "INVALID_CREDENTIALS", "échec {i}");
+        }
+
+        assert_eq!(bac.boite.alertes.borrow().len(), 1, "une seule alerte");
+        let verrouillages: Vec<_> = bac
+            .journal
+            .entrees
+            .borrow()
+            .iter()
+            .filter(|e| e.code == CodeAudit::AccountLocked)
+            .map(|e| e.sujet_id)
+            .collect();
+        assert_eq!(verrouillages, vec![Some(id)]);
+    }
+
+    #[tokio::test]
+    async fn negative_le_bon_mot_de_passe_sur_compte_verrouille_donne_423() {
+        let (bac, _) = Bac::neuf(true);
+        for _ in 0..5 {
+            let _ = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+
+        let e = bac.connecter("marie@example.eu", MDP).await.unwrap_err();
+        match e {
+            ErreurConnexion::CompteVerrouille { retry_after } => {
+                assert_eq!(retry_after, 15 * 60, "FR-007 : verrou de 15 minutes");
+            }
+            autre => panic!("attendu un verrou, obtenu {autre:?}"),
+        }
+        assert!(bac.sessions.ouvertes.borrow().is_empty());
+    }
+
+    #[tokio::test]
+    async fn happy_le_verrou_expire_et_la_connexion_repasse() {
+        let (bac, _) = Bac::neuf(true);
+        for _ in 0..5 {
+            let _ = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+        let apres = instant() + chrono::Duration::minutes(16);
+        assert!(bac
+            .connecter_a("marie@example.eu", MDP, apres)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn happy_une_connexion_reussie_remet_le_compteur_a_zero() {
+        // Sans cela, quatre oublis suivis d'une connexion réussie laisseraient
+        // le compte à un seul échec du verrou.
+        let (bac, id) = Bac::neuf(true);
+        for _ in 0..4 {
+            let _ = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+        bac.connecter("marie@example.eu", MDP).await.unwrap();
+
+        let comptes = bac.depot.comptes.borrow();
+        let compte = comptes.iter().find(|u| u.id == id).unwrap();
+        assert_eq!(compte.verrouillage.echecs_consecutifs, 0);
+        assert_eq!(compte.verrouillage.verrouille_jusqu_a, None);
+    }
+
+    #[tokio::test]
+    async fn edge_quatre_echecs_ne_verrouillent_pas_et_n_alertent_pas() {
+        let (bac, _) = Bac::neuf(true);
+        for _ in 0..4 {
+            let _ = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+        assert!(bac.boite.alertes.borrow().is_empty());
+        assert!(bac.connecter("marie@example.eu", MDP).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn security_un_mauvais_mot_de_passe_sur_compte_verrouille_reste_un_401() {
+        // Le coeur de l'arbitrage FR-007 : répondre 423 à qui ne connaît pas le
+        // mot de passe apprendrait que l'adresse existe, ce que le scénario
+        // `@security` du même FR interdit.
+        let (bac, _) = Bac::neuf(true);
+        for _ in 0..5 {
+            let _ = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+
+        let verrouille = bac
+            .connecter("marie@example.eu", "EncoreUnAutre@2026")
+            .await
+            .unwrap_err();
+        let inconnue = bac
+            .connecter("personne@example.eu", "EncoreUnAutre@2026")
+            .await
+            .unwrap_err();
+        assert_eq!(verrouille, inconnue);
+        assert_eq!(verrouille.code(), "INVALID_CREDENTIALS");
+    }
+
+    #[tokio::test]
+    async fn security_marteler_un_compte_verrouille_ne_prolonge_pas_le_verrou() {
+        let (bac, id) = Bac::neuf(true);
+        for _ in 0..5 {
+            let _ = bac
+                .connecter_a("marie@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+        let fin = bac.depot.comptes.borrow()[0]
+            .verrouillage
+            .verrouille_jusqu_a;
+
+        for minute in 1..10 {
+            let _ = bac
+                .connecter_a(
+                    "marie@example.eu",
+                    "Marie@2026Secur3",
+                    instant() + chrono::Duration::minutes(minute),
+                )
+                .await;
+        }
+
+        let comptes = bac.depot.comptes.borrow();
+        let compte = comptes.iter().find(|u| u.id == id).unwrap();
+        assert_eq!(compte.verrouillage.verrouille_jusqu_a, fin);
+        // Et toujours une seule alerte, quel que soit le nombre de tentatives.
+        assert_eq!(bac.boite.alertes.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn security_un_compte_inexistant_ne_declenche_aucune_alerte() {
+        // Sinon, un attaquant se servirait du service pour expédier des
+        // courriels vers des adresses de son choix.
+        let (bac, _) = Bac::neuf(true);
+        for _ in 0..10 {
+            let _ = bac
+                .connecter_a("personne@example.eu", "Marie@2026Secur3", instant())
+                .await;
+        }
+        assert!(bac.boite.alertes.borrow().is_empty());
     }
 
     #[tokio::test]

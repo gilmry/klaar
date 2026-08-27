@@ -207,6 +207,14 @@ mod tests {
             })
         }
 
+        async fn mettre_a_jour_verrouillage(
+            &self,
+            _: Uuid,
+            _: &klaar_identity::Verrouillage,
+        ) -> Result<(), RepositoryError> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
         async fn par_email(&self, _: &Email) -> Result<Option<Utilisateur>, RepositoryError> {
             Ok(None)
         }
