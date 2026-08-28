@@ -421,6 +421,42 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   La `Mission` n'a qu'un statut, `ASSIGNED` : sa machine à états appartient à
   FR-018. Il n'existe pas encore d'interface prestataire.
 
+- **3.6** — **Fin de tour et élargissement** : `POST /api/v1/requests/{id}/expand-radius`,
+  plus le binaire `klaar-expirer`.
+
+  **Contradiction du PRD tranchée sans arbitrage.** FR-013 refusait une
+  acceptation après cinq minutes, FR-015 annonce `NO_MATCH` après trente
+  secondes. Trente secondes l'emportent, et le choix ne coûte rien : cette règle
+  rejette **aussi** tout ce que la règle à cinq minutes rejetait. L'inverse est
+  faux — attendre cinq minutes priverait le demandeur de la réponse que FR-015
+  lui promet en trente secondes, alors qu'il est devant une fuite.
+
+  Le délai court depuis le **début du tour** et non depuis la création : un
+  élargissement rouvre une fenêtre entière, sinon la deuxième chance serait déjà
+  écoulée au moment où on l'offre.
+
+  **L'échelle s'arrête à vingt kilomètres parce que la Région s'arrête là.**
+  5 → 10 → 15 → 20 km : depuis n'importe quel point de la Région de
+  Bruxelles-Capitale, vingt kilomètres la couvrent entièrement. Le quatrième
+  essai **annule** la Demande (FR-015) : laisser un `NO_MATCH` entretiendrait
+  l'idée que quelque chose peut encore arriver.
+
+  Le score se normalise désormais sur le rayon du tour. Sans cela, après un
+  élargissement, tout candidat au-delà de cinq kilomètres marquait zéro de
+  proximité et le classement n'ordonnait plus rien. Le test de signature AI Act
+  a échoué à l'ajout du paramètre, ce qui est son rôle : `rayon_metres` vaut
+  pareil pour tous les candidats d'un même tour, donc il n'en distingue aucun.
+
+  `klaar-expirer` est un binaire à lancer toutes les dix secondes, pas une tâche
+  de fond — même raison que `klaar-effacer`. Son `UPDATE … RETURNING …
+  FOR UPDATE SKIP LOCKED` garantit qu'aucun demandeur n'est prévenu deux fois.
+  Un retard du balayage ne laisse rien passer : l'expiration se constate aussi à
+  la lecture, donc personne ne peut accepter une Demande échue entre deux
+  passages.
+
+  Limite : l'avis de fin de tour part en français quel que soit le compte, et il
+  n'existe toujours pas d'interface prestataire ni de bouton « élargir ».
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

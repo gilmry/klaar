@@ -40,7 +40,9 @@ fn statut(e: &ErreurAcceptation) -> actix_web::http::StatusCode {
         ErreurAcceptation::Introuvable => StatusCode::NOT_FOUND,
         // 409 : la Demande existe, c'est son état qui refuse. Le prestataire
         // n'a rien à corriger et rien à réessayer.
-        ErreurAcceptation::DejaAttribuee | ErreurAcceptation::Occupe => StatusCode::CONFLICT,
+        ErreurAcceptation::DejaAttribuee
+        | ErreurAcceptation::Annulee
+        | ErreurAcceptation::Occupe => StatusCode::CONFLICT,
         // 410 et non 404 : la Demande a existé, et le dire évite de faire
         // chercher une erreur de saisie là où il n'y a qu'un retard.
         ErreurAcceptation::Expiree => StatusCode::GONE,
@@ -60,8 +62,8 @@ fn statut(e: &ErreurAcceptation) -> actix_web::http::StatusCode {
         (status = 401, description = "Jeton absent ou invalide"),
         (status = 403, description = "Prestataire non éligible", body = ErreurValidationDto),
         (status = 404, description = "Demande introuvable", body = ErreurValidationDto),
-        (status = 409, description = "Déjà attribuée, ou prestataire déjà en Mission", body = ErreurValidationDto),
-        (status = 410, description = "Fenêtre de diffusion écoulée", body = ErreurValidationDto),
+        (status = 409, description = "Déjà attribuée, annulée, ou prestataire déjà en Mission", body = ErreurValidationDto),
+        (status = 410, description = "Tour de diffusion écoulé, ou Demande sans réponse", body = ErreurValidationDto),
         (status = 429, description = "Trop d'acceptations", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),

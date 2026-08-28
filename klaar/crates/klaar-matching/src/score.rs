@@ -20,7 +20,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Rayon du premier tour, en mètres (FR-012).
-pub const RAYON_METRES: f64 = 5_000.0;
+///
+/// Conservé pour les appelants qui n'ont pas de Demande sous la main ; le rayon
+/// réel d'un tour vit sur la Demande et change à chaque élargissement
+/// (`RAYONS_METRES`, FR-015).
+pub const RAYON_METRES: f64 = crate::demande::RAYONS_METRES[0];
 
 /// Nombre maximal de prestataires notifiés par tour (FR-012 `@edge`).
 ///
@@ -79,13 +83,34 @@ pub struct Score {
 /// `note` est attendue entre 0 et 5, comme une note d'étoiles. Toute valeur
 /// hors bornes est ramenée dedans plutôt que refusée : un score n'a pas à
 /// faire échouer un matching parce qu'une moyenne a débordé d'un millième.
-pub fn calculer(distance_metres: f64, anciennete_kyc_jours: f64, note: Option<f64>) -> Score {
+///
+/// `rayon_metres` est celui du **tour en cours** et non une constante. Après un
+/// élargissement (FR-015), normaliser sur cinq kilomètres donnerait zéro de
+/// proximité à tout le monde au-delà, et le classement du tour élargi
+/// n'ordonnerait plus rien — précisément quand il en a le plus besoin.
+///
+/// La signature reste ce qu'elle était sur le fond : quatre nombres, aucun
+/// attribut protégé. C'est toujours elle qui porte la garantie de FR-012.
+pub fn calculer(
+    distance_metres: f64,
+    rayon_metres: f64,
+    anciennete_kyc_jours: f64,
+    note: Option<f64>,
+) -> Score {
     // Proximité linéaire décroissante sur le rayon : à zéro mètre elle vaut 1,
     // au bord du rayon elle vaut 0. Un candidat exactement au bord marque donc
     // zéro sur ce critère sans être exclu — c'est le rayon qui exclut, pas le
     // score.
+    //
+    // Un rayon nul ou négatif ne peut venir que d'une donnée corrompue ; on
+    // retombe sur le rayon du premier tour plutôt que de diviser par zéro.
+    let rayon = if rayon_metres > 0.0 {
+        rayon_metres
+    } else {
+        RAYON_METRES
+    };
     let proximite = Contribution {
-        valeur: (1.0 - (distance_metres.max(0.0) / RAYON_METRES)).clamp(0.0, 1.0),
+        valeur: (1.0 - (distance_metres.max(0.0) / rayon)).clamp(0.0, 1.0),
         poids: POIDS_PROXIMITE,
     };
 
@@ -126,10 +151,62 @@ pub fn calculer(distance_metres: f64, anciennete_kyc_jours: f64, note: Option<f6
 mod tests {
     use super::*;
 
+    /// Calcule au rayon du premier tour.
+    ///
+    /// La quasi-totalité de ces cas raisonnent sur le tour initial ; passer
+    /// `RAYON_METRES` à chaque appel noierait ce qu'ils vérifient. Les cas qui
+    /// portent sur le rayon lui-même appellent `calculer` directement.
+    fn au_rayon_initial(distance_metres: f64, anciennete_jours: f64, note: Option<f64>) -> Score {
+        calculer(distance_metres, RAYON_METRES, anciennete_jours, note)
+    }
+
+    #[test]
+    fn happy_la_proximite_se_normalise_sur_le_rayon_du_tour() {
+        // Après un élargissement (FR-015), normaliser sur cinq kilomètres
+        // donnerait zéro de proximité à tout le monde au-delà, et le classement
+        // du tour élargi n'ordonnerait plus rien — précisément quand il en a le
+        // plus besoin.
+        let a_huit_km = 8_000.0;
+        assert_eq!(
+            calculer(a_huit_km, crate::demande::RAYONS_METRES[0], 0.0, None)
+                .proximite
+                .valeur,
+            0.0
+        );
+        assert!(
+            calculer(a_huit_km, crate::demande::RAYONS_METRES[1], 0.0, None)
+                .proximite
+                .valeur
+                > 0.0
+        );
+    }
+
+    #[test]
+    fn happy_l_ordre_des_candidats_survit_a_un_elargissement() {
+        // Deux candidats hors du premier rayon doivent rester distinguables
+        // dans le tour élargi.
+        let large = crate::demande::RAYONS_METRES[1];
+        let proche = calculer(6_000.0, large, 0.0, None);
+        let lointain = calculer(9_000.0, large, 0.0, None);
+        assert!(proche.total > lointain.total);
+    }
+
+    #[test]
+    fn edge_un_rayon_nul_retombe_sur_le_rayon_initial_sans_diviser_par_zero() {
+        // Ne peut venir que d'une donnée corrompue ; mieux vaut un score
+        // plausible qu'un `NaN` qui contaminerait tout le tri.
+        let s = calculer(1_000.0, 0.0, 0.0, None);
+        assert!(s.total.is_finite());
+        assert_eq!(
+            s.proximite.valeur,
+            au_rayon_initial(1_000.0, 0.0, None).proximite.valeur
+        );
+    }
+
     #[test]
     fn happy_le_plus_proche_marque_le_plus() {
-        let ici = calculer(0.0, 0.0, None);
-        let loin = calculer(4_000.0, 0.0, None);
+        let ici = au_rayon_initial(0.0, 0.0, None);
+        let loin = au_rayon_initial(4_000.0, 0.0, None);
         assert!(ici.total > loin.total);
         assert!(
             (ici.total - 1.0).abs() < 1e-9,
@@ -143,7 +220,7 @@ mod tests {
         for distance in [0.0, 100.0, 2_500.0, RAYON_METRES, 50_000.0] {
             for anciennete in [0.0, 30.0, 400.0, 10_000.0] {
                 for note in [None, Some(0.0), Some(2.5), Some(5.0)] {
-                    let s = calculer(distance, anciennete, note);
+                    let s = au_rayon_initial(distance, anciennete, note);
                     assert!(
                         (0.0..=1.0).contains(&s.total),
                         "{distance}/{anciennete}/{note:?} → {}",
@@ -156,8 +233,8 @@ mod tests {
 
     #[test]
     fn happy_un_controle_recent_vaut_mieux_qu_un_controle_ancien() {
-        let recent = calculer(1_000.0, 0.0, None);
-        let ancien = calculer(1_000.0, 300.0, None);
+        let recent = au_rayon_initial(1_000.0, 0.0, None);
+        let ancien = au_rayon_initial(1_000.0, 300.0, None);
         assert!(recent.total > ancien.total);
     }
 
@@ -166,7 +243,7 @@ mod tests {
         // Un score n'a pas à faire échouer un matching parce qu'une moyenne a
         // débordé d'un millième.
         for note in [-1.0, 5.5, f64::MAX] {
-            let s = calculer(1_000.0, 0.0, Some(note));
+            let s = au_rayon_initial(1_000.0, 0.0, Some(note));
             assert!((0.0..=1.0).contains(&s.total), "note {note} → {}", s.total);
         }
     }
@@ -175,8 +252,8 @@ mod tests {
     fn negative_une_distance_negative_est_traitee_comme_nulle() {
         // PostGIS n'en rend pas, mais un appelant futur pourrait.
         assert_eq!(
-            calculer(-10.0, 0.0, None).total,
-            calculer(0.0, 0.0, None).total
+            au_rayon_initial(-10.0, 0.0, None).total,
+            au_rayon_initial(0.0, 0.0, None).total
         );
     }
 
@@ -184,7 +261,7 @@ mod tests {
     fn edge_au_bord_du_rayon_la_proximite_est_nulle_sans_exclure() {
         // C'est le rayon qui exclut, pas le score : un candidat au bord marque
         // zéro sur ce critère et reste candidat.
-        let bord = calculer(RAYON_METRES, 0.0, None);
+        let bord = au_rayon_initial(RAYON_METRES, 0.0, None);
         assert_eq!(bord.proximite.valeur, 0.0);
         assert!(bord.total > 0.0, "il marque encore sur le contrôle");
     }
@@ -195,8 +272,8 @@ mod tests {
         // prestataire mal noté : n'avoir pas encore travaillé n'est pas avoir
         // mal travaillé. Sinon aucun nouveau venu ne reçoit rien, et le
         // classement se fige sur les premiers arrivés.
-        let sans = calculer(1_000.0, 0.0, None);
-        let mal_note = calculer(1_000.0, 0.0, Some(1.0));
+        let sans = au_rayon_initial(1_000.0, 0.0, None);
+        let mal_note = au_rayon_initial(1_000.0, 0.0, Some(1.0));
         assert!(
             sans.total > mal_note.total,
             "sans note {} vs mal noté {}",
@@ -210,7 +287,7 @@ mod tests {
         // Le poids manquant est redistribué : sans cela, tous les scores
         // seraient plafonnés à 0,8 et deux prestataires sans historique
         // seraient indistinguables de deux mal notés.
-        let parfait_sans_note = calculer(0.0, 0.0, None);
+        let parfait_sans_note = au_rayon_initial(0.0, 0.0, None);
         assert!((parfait_sans_note.total - 1.0).abs() < 1e-9);
         assert!(parfait_sans_note.note.is_none());
     }
@@ -225,9 +302,9 @@ mod tests {
         // l'absence de note. C'est faux, et le calcul avait raison : cinq
         // étoiles valent mieux que la moyenne des autres critères, donc tirent
         // le score vers le haut.
-        let sans = calculer(1_000.0, 10.0, None);
-        let zero = calculer(1_000.0, 10.0, Some(0.0));
-        let cinq = calculer(1_000.0, 10.0, Some(5.0));
+        let sans = au_rayon_initial(1_000.0, 10.0, None);
+        let zero = au_rayon_initial(1_000.0, 10.0, Some(0.0));
+        let cinq = au_rayon_initial(1_000.0, 10.0, Some(5.0));
 
         assert!(zero.total < sans.total, "une mauvaise note doit coûter");
         assert!(
@@ -242,15 +319,33 @@ mod tests {
     }
 
     #[test]
-    fn security_le_calcul_ne_voit_que_trois_nombres() {
+    fn security_le_calcul_ne_voit_que_quatre_nombres() {
         // La réponse à l'AI Act n'est pas une promesse, c'est la signature :
         // `calculer` ne reçoit ni nom, ni adresse, ni langue, ni photo. Un
         // biais sur un attribut protégé demanderait d'abord de changer cette
         // signature.
         //
-        // Ce test fixe l'intention et échouera si un paramètre s'ajoute.
-        let s: fn(f64, f64, Option<f64>) -> Score = calculer;
-        let _ = s(1_000.0, 0.0, None);
+        // Ce test fixe l'intention et échoue dès qu'un paramètre s'ajoute. Il a
+        // fait exactement cela quand la Story 3.6 a introduit `rayon_metres` —
+        // un paramètre du **tour** et non du candidat, qui vaut pareil pour
+        // tout le monde dans un même tour et ne peut donc en distinguer aucun.
+        // C'est ce qui l'a rendu admissible, et c'est le raisonnement qu'il
+        // faudra refaire au prochain ajout.
+        let s: fn(f64, f64, f64, Option<f64>) -> Score = calculer;
+        let _ = s(1_000.0, RAYON_METRES, 0.0, None);
+    }
+
+    #[test]
+    fn security_le_rayon_ne_distingue_aucun_candidat() {
+        // Le corollaire du test précédent : à rayon égal, deux candidats à la
+        // même distance obtiennent le même score. Si un jour le rayon variait
+        // d'un candidat à l'autre, il cesserait d'être un paramètre de tour et
+        // deviendrait un levier de discrimination.
+        for rayon in crate::demande::RAYONS_METRES {
+            let a = calculer(1_500.0, rayon, 42.0, None);
+            let b = calculer(1_500.0, rayon, 42.0, None);
+            assert_eq!(a.total, b.total, "rayon {rayon}");
+        }
     }
 
     #[test]
@@ -258,12 +353,12 @@ mod tests {
         // C'est ce que FR-012 appelle la Trace, et ce que l'AI Act exige de
         // pouvoir produire quand quelqu'un demande pourquoi il n'a pas été
         // retenu.
-        let s = calculer(1_000.0, 30.0, None);
+        let s = au_rayon_initial(1_000.0, 30.0, None);
         assert_eq!(s.proximite.poids, POIDS_PROXIMITE);
         assert_eq!(s.controle.poids, POIDS_CONTROLE);
         assert!(s.note.is_none(), "l'absence de note doit être visible");
 
-        let avec = calculer(1_000.0, 30.0, Some(4.2));
+        let avec = au_rayon_initial(1_000.0, 30.0, Some(4.2));
         assert_eq!(avec.note.map(|n| n.poids), Some(POIDS_NOTE));
     }
 
@@ -273,8 +368,8 @@ mod tests {
         // et personne ne pourrait expliquer un refus.
         for _ in 0..10 {
             assert_eq!(
-                calculer(1_234.5, 42.0, Some(4.2)),
-                calculer(1_234.5, 42.0, Some(4.2))
+                au_rayon_initial(1_234.5, 42.0, Some(4.2)),
+                au_rayon_initial(1_234.5, 42.0, Some(4.2))
             );
         }
     }
@@ -285,7 +380,7 @@ mod tests {
         // cesse silencieusement d'être un classement.
         for distance in [0.0, f64::MAX, -0.0] {
             for anciennete in [0.0, f64::MAX] {
-                let s = calculer(distance, anciennete, Some(f64::MAX));
+                let s = au_rayon_initial(distance, anciennete, Some(f64::MAX));
                 assert!(!s.total.is_nan(), "{distance}/{anciennete}");
             }
         }

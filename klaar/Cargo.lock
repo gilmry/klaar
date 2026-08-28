@@ -1453,6 +1453,7 @@ dependencies = [
  "klaar-geo-adapter",
  "klaar-identity",
  "klaar-itsme-adapter",
+ "klaar-matching",
  "klaar-push-adapter",
  "klaar-shared-kernel",
  "klaar-sqlx-repos",

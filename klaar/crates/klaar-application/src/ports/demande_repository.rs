@@ -38,6 +38,41 @@ pub trait DemandeRepository {
         maintenant: DateTime<Utc>,
     ) -> Result<(), RepositoryError>;
 
+    /// Éteint les Demandes dont le tour de diffusion est écoulé (FR-015).
+    ///
+    /// Rend celles qui viennent d'être éteintes, et elles seules : c'est ce qui
+    /// permet à plusieurs balayages concurrents de tourner sans notifier deux
+    /// fois le même demandeur. La sélection et l'écriture sont une seule
+    /// opération, pour la même raison que l'attribution l'est.
+    ///
+    /// `limite` borne un passage : sans elle, un rattrapage après une longue
+    /// interruption tenterait de tout traiter d'un coup.
+    async fn expirer_echues(
+        &self,
+        avant: DateTime<Utc>,
+        limite: i64,
+    ) -> Result<Vec<Demande>, RepositoryError>;
+
+    /// Réécrit rayon, compteur d'élargissements, statut et début de tour.
+    ///
+    /// Rend `false` si la Demande n'était plus dans l'état depuis lequel
+    /// l'élargissement a été calculé. C'est un compare-and-swap sur le
+    /// **compteur d'élargissements**, et non sur le statut : le statut ne
+    /// suffirait pas, puisqu'une Demande échue mais pas encore balayée est
+    /// encore `BROADCASTING` et doit pouvoir être relancée. Le compteur, lui,
+    /// distingue toujours deux clics successifs sur « élargir ».
+    async fn relancer(&self, demande: &Demande) -> Result<bool, RepositoryError>;
+
+    /// Annule une Demande à la demande de son auteur (FR-014, FR-015).
+    ///
+    /// Distinct de `changer_statut`, qui ne quitte que `BROADCASTING` : une
+    /// annulation part aussi de `NO_MATCH`, et c'est précisément le cas du
+    /// quatrième élargissement refusé.
+    ///
+    /// Rend `false` si la Demande était déjà attribuée : à ce stade, c'est la
+    /// Mission qu'il faut annuler (FR-023).
+    async fn annuler(&self, id: Uuid) -> Result<bool, RepositoryError>;
+
     /// Demandes du compte sur la dernière heure (FR-011 `@edge`).
     async fn compter_depuis_une_heure(
         &self,

@@ -4,6 +4,8 @@
 pub mod accepter;
 pub mod connecter;
 pub mod effacer;
+pub mod elargir;
+pub mod expirer;
 pub mod inscrire_utilisateur;
 pub mod matcher;
 pub mod notifier;

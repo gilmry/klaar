@@ -260,7 +260,11 @@ async fn edge_un_prestataire_multi_secteur_n_apparait_qu_une_fois() {
             &secteur("plomberie"),
             Geo::new(CENTRE.0, CENTRE.1).unwrap(),
             5_000.0,
-            50,
+            // Large, et non cinquante : la base garde les prestataires des
+            // exécutions précédentes, tous posés au même point. Avec une limite
+            // serrée, la cible finissait par tomber hors des premiers rendus et
+            // le cas échouait sans qu'aucune duplication n'ait eu lieu.
+            1_000,
         )
         .await
         .unwrap();

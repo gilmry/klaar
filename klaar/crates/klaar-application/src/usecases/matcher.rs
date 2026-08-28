@@ -12,7 +12,7 @@
 //! notifié et veut savoir pourquoi.
 
 use chrono::{DateTime, Utc};
-use klaar_matching::{calculer_score, Demande, Score, StatutDemande, CANDIDATS_MAX, RAYON_METRES};
+use klaar_matching::{calculer_score, Demande, Score, StatutDemande, CANDIDATS_MAX};
 use std::fmt;
 use uuid::Uuid;
 
@@ -110,7 +110,10 @@ where
         .proches(
             &demande.secteur,
             demande.position,
-            RAYON_METRES,
+            // Le rayon du tour en cours, et non une constante : après un
+            // élargissement (FR-015), chercher dans cinq kilomètres
+            // rendrait l'élargissement sans effet.
+            demande.rayon_metres,
             CANDIDATS_EXAMINES_MAX,
         )
         .await?;
@@ -132,6 +135,7 @@ where
             distance_metres: p.distance_metres,
             score: calculer_score(
                 p.distance_metres,
+                demande.rayon_metres,
                 anciennete_jours(p.provider.kyc_verifie_le, maintenant),
                 // La note n'existe pas : le bounded context Trust arrive plus
                 // tard. `None` et non zéro — voir `klaar_matching::score`.
@@ -183,7 +187,7 @@ mod tests {
     use chrono::{Duration, TimeZone};
     use klaar_catalog::CodeCatalogue;
     use klaar_identity::{NumeroBce, OrigineKyc, Provider, StatutProvider};
-    use klaar_matching::Urgence;
+    use klaar_matching::{Urgence, RAYONS_METRES};
     use klaar_shared_kernel::Geo;
     use std::cell::RefCell;
 
@@ -288,6 +292,19 @@ mod tests {
             _: Uuid,
             _: DateTime<Utc>,
         ) -> Result<i64, RepositoryError> {
+            unreachable!()
+        }
+        async fn expirer_echues(
+            &self,
+            _: DateTime<Utc>,
+            _: i64,
+        ) -> Result<Vec<Demande>, RepositoryError> {
+            unreachable!()
+        }
+        async fn annuler(&self, _: Uuid) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
+        async fn relancer(&self, _: &Demande) -> Result<bool, RepositoryError> {
             unreachable!()
         }
         async fn changer_statut(
@@ -431,11 +448,11 @@ mod tests {
 
     #[tokio::test]
     async fn edge_un_candidat_exactement_au_bord_du_rayon_est_retenu() {
-        // FR-012 `@edge` : à 5 000 m, il est inclus. Le rayon est inclusif, et
+        // FR-012 `@edge` : au bord du rayon, il est inclus. Le rayon est inclusif, et
         // c'est le dépôt qui l'applique — ce cas vérifie que le score ne
         // l'exclut pas ensuite en lui donnant zéro.
         let d = demande();
-        let (r, _, _) = matcher(vec![proche(RAYON_METRES, 0)], &d).await;
+        let (r, _, _) = matcher(vec![proche(RAYONS_METRES[0], 0)], &d).await;
         let ResultatMatching::Candidats(candidats) = r.unwrap() else {
             panic!("le candidat au bord doit être retenu");
         };

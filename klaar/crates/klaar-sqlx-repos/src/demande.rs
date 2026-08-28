@@ -28,7 +28,8 @@ impl PgDemandeRepository {
 /// `ST_Y`/`ST_X` plutôt que le type `geography` brut : sqlx ne sait pas le
 /// décoder sans dépendance supplémentaire, et deux réels suffisent au domaine,
 /// qui ne connaît que `Geo`.
-const COLONNES: &str = "id, demandeur_id, secteur_code, description, urgence, statut, cree_le, \
+const COLONNES: &str = "id, demandeur_id, secteur_code, description, urgence, statut, \
+     rayon_metres, elargissements, diffuse_depuis, cree_le, \
      ST_Y(position::geometry) AS lat, ST_X(position::geometry) AS lon";
 
 fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Demande, RepositoryError> {
@@ -49,6 +50,12 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Demande, RepositoryErro
             .ok_or_else(|| RepositoryError::Contrainte(format!("urgence inconnue : {urgence}")))?,
         statut: StatutDemande::parse(&statut)
             .ok_or_else(|| RepositoryError::Contrainte(format!("statut inconnu : {statut}")))?,
+        rayon_metres: ligne.get("rayon_metres"),
+        // `SMALLINT` se lit en `i16` ; le domaine compte en `u8` parce qu'un
+        // nombre d'élargissements négatif n'existe pas. La conversion est
+        // bornée par la contrainte de la base.
+        elargissements: ligne.get::<i16, _>("elargissements").clamp(0, 255) as u8,
+        diffuse_depuis: ligne.get("diffuse_depuis"),
         cree_le: ligne.get("cree_le"),
     })
 }
@@ -57,8 +64,10 @@ impl DemandeRepository for PgDemandeRepository {
     async fn creer(&self, demande: &Demande) -> Result<(), RepositoryError> {
         sqlx::query(
             "INSERT INTO demande
-                 (id, demandeur_id, secteur_code, description, position, urgence, statut, cree_le)
-             VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, $7, $8, $9)",
+                 (id, demandeur_id, secteur_code, description, position, urgence, statut,
+                  rayon_metres, elargissements, diffuse_depuis, cree_le)
+             VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography,
+                     $7, $8, $9, $10, $11, $12)",
         )
         .bind(demande.id)
         .bind(demande.demandeur_id)
@@ -71,6 +80,9 @@ impl DemandeRepository for PgDemandeRepository {
         .bind(demande.position.lat())
         .bind(demande.urgence.as_str())
         .bind(demande.statut.as_str())
+        .bind(demande.rayon_metres)
+        .bind(i16::from(demande.elargissements))
+        .bind(demande.diffuse_depuis)
         .bind(demande.cree_le)
         .execute(&self.pool)
         .await
@@ -136,6 +148,87 @@ impl DemandeRepository for PgDemandeRepository {
             .await
             .map_err(erreur)?;
         Ok(())
+    }
+
+    async fn expirer_echues(
+        &self,
+        avant: DateTime<Utc>,
+        limite: i64,
+    ) -> Result<Vec<Demande>, RepositoryError> {
+        // Sélection et écriture en une seule instruction : deux balayages
+        // concurrents ne peuvent pas éteindre la même Demande, donc pas
+        // notifier deux fois le même demandeur. Un `SELECT` puis un `UPDATE`
+        // laisserait cette fenêtre ouverte.
+        let lignes = sqlx::query(&format!(
+            "UPDATE demande SET statut = 'NO_MATCH'
+             WHERE id IN (
+                 SELECT id FROM demande
+                 WHERE statut = 'BROADCASTING' AND diffuse_depuis <= $1
+                 ORDER BY diffuse_depuis
+                 LIMIT $2
+                 -- Sans ce saut, deux balayages simultanés s'attendraient l'un
+                 -- l'autre sur les mêmes lignes au lieu de se partager le
+                 -- travail.
+                 FOR UPDATE SKIP LOCKED
+             )
+             RETURNING {COLONNES}"
+        ))
+        .bind(avant)
+        .bind(limite)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(erreur)?;
+
+        lignes.iter().map(depuis_ligne).collect()
+    }
+
+    async fn relancer(&self, demande: &Demande) -> Result<bool, RepositoryError> {
+        // Compare-and-swap sur le compteur d'élargissements. Le statut ne
+        // suffirait pas : une Demande échue que le balayage n'a pas encore
+        // touchée est toujours `BROADCASTING`, et le demandeur a le droit de
+        // l'élargir sans attendre le prochain passage. Le compteur, lui,
+        // distingue toujours deux clics successifs — le second présenterait la
+        // même valeur attendue que le premier vient de consommer.
+        //
+        // Le filtre sur le statut reste, mais pour une autre raison : une
+        // Demande attribuée ou annulée entre la lecture et l'écriture ne doit
+        // pas repartir en diffusion.
+        let resultat = sqlx::query(
+            "UPDATE demande
+             SET statut = $1, rayon_metres = $2, elargissements = $3, diffuse_depuis = $4
+             WHERE id = $5
+               AND statut IN ('BROADCASTING', 'NO_MATCH')
+               AND elargissements = $6",
+        )
+        .bind(demande.statut.as_str())
+        .bind(demande.rayon_metres)
+        .bind(i16::from(demande.elargissements))
+        .bind(demande.diffuse_depuis)
+        .bind(demande.id)
+        // La valeur d'où part cet élargissement : le domaine vient de
+        // l'incrémenter, la garde porte donc sur celle d'avant.
+        .bind(i16::from(demande.elargissements.saturating_sub(1)))
+        .execute(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(resultat.rows_affected() > 0)
+    }
+
+    async fn annuler(&self, id: Uuid) -> Result<bool, RepositoryError> {
+        // Deux statuts de départ, et pas un : le quatrième élargissement refusé
+        // annule une Demande qui est en `NO_MATCH`, pas en diffusion.
+        // `MATCHED` en est exclu — à ce stade, c'est la Mission qu'il faut
+        // annuler, et effacer la Demande laisserait un prestataire en route
+        // sans que rien ne le dise.
+        let resultat = sqlx::query(
+            "UPDATE demande SET statut = 'CANCELLED'
+             WHERE id = $1 AND statut IN ('BROADCASTING', 'NO_MATCH')",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(resultat.rows_affected() > 0)
     }
 
     async fn compter_depuis_une_heure(

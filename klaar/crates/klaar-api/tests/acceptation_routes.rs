@@ -94,23 +94,25 @@ async fn prestataire_du_secteur(
 /// Insère une Demande diffusée directement, avec l'âge voulu.
 ///
 /// Passer par l'API imposerait de dater la Demande à `now`, alors que le cas
-/// de l'expiration a besoin d'une Demande d'il y a dix minutes. Le SQL est ici
-/// le chemin honnête : il pose l'état de départ sans mimer un scénario que
-/// personne ne jouerait.
-async fn demande_diffusee(pool: &PoolPg, minutes: i64) -> Uuid {
+/// de l'expiration a besoin d'un tour déjà écoulé. Le SQL est ici le chemin
+/// honnête : il pose l'état de départ sans mimer une attente de trente
+/// secondes que personne ne veut voir dans une suite de tests.
+async fn demande_diffusee(pool: &PoolPg, secondes: i64) -> Uuid {
     let (demandeur_id, _) = compte_actif(pool, "demandeur").await;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO demande
-             (id, demandeur_id, secteur_code, description, position, urgence, statut, cree_le)
+             (id, demandeur_id, secteur_code, description, position, urgence, statut,
+              diffuse_depuis, cree_le)
          VALUES ($1, $2, 'plomberie', 'Fuite sous l''évier',
-                 ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, 'HIGH', 'BROADCASTING', $5)",
+                 ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography, 'HIGH', 'BROADCASTING',
+                 $5, $5)",
     )
     .bind(id)
     .bind(demandeur_id)
     .bind(LON)
     .bind(LAT)
-    .bind(Utc::now() - Duration::minutes(minutes))
+    .bind(Utc::now() - Duration::seconds(secondes))
     .execute(pool)
     .await
     .expect("Demande de test");
@@ -329,13 +331,14 @@ async fn security_une_traversee_de_chemin_ne_touche_jamais_le_handler() {
 }
 
 #[actix_web::test]
-async fn edge_une_demande_de_plus_de_cinq_minutes_recoit_410() {
-    // Quelqu'un qui attend depuis dix minutes a rappelé ailleurs.
+async fn edge_un_tour_de_diffusion_ecoule_recoit_410() {
+    // Passé trente secondes, le demandeur s'est vu proposer d'élargir ou
+    // d'annuler (FR-015) : l'accept tardif arrive après cette bifurcation.
     let pool = pool().await;
     let app = bac!(pool);
     let (_, email) = prestataire(&pool, "tardif-410", true).await;
     let jeton = jeton(&app, &email).await;
-    let demande_id = demande_diffusee(&pool, 10).await;
+    let demande_id = demande_diffusee(&pool, 40).await;
 
     let reponse =
         test::call_service(&app, accept(&jeton, &demande_id.to_string()).to_request()).await;

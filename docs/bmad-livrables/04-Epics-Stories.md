@@ -627,11 +627,72 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain + Application
 - **Taille** : **S** (0,5 j) · **Tours** : 2
 
-### Story 3.6 — Timeout NO_MATCH + élargir rayon (FR-015)
+### Story 3.6 — Timeout NO_MATCH + élargir rayon (FR-015) — *faite*
 - **En tant que** système · **je veux** annoncer NO_MATCH après 30 s · **afin de** garder l'User informé
 - **4×N** : PRD FR-015 (élargissement max 3)
 - **Couche(s)** : Application (job cron) + Domain
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **Contradiction du PRD, tranchée sans arbitrage.** FR-013 `@edge` refuse une
+> acceptation « après 5 min », FR-015 `@happy` annonce `NO_MATCH` « après 30 s ».
+> Trente secondes l'emportent, et le choix ne coûte rien : une règle à trente
+> secondes rejette **aussi** tout ce que la règle à cinq minutes rejetait, donc
+> elle satisfait les deux scénarios. L'inverse est faux — attendre cinq minutes
+> priverait le demandeur de la réponse que FR-015 lui promet en trente
+> secondes, alors qu'il est devant une fuite.
+>
+> **Le délai court depuis le début du tour, pas depuis la création.** Un
+> élargissement rouvre une fenêtre entière ; la faire courir depuis `cree_le`
+> la rendrait déjà écoulée au moment où on l'offre. D'où la colonne
+> `diffuse_depuis`, distincte de `cree_le`.
+>
+> **L'échelle des rayons s'arrête à vingt kilomètres parce que la Région
+> s'arrête là.** 5 → 10 → 15 → 20 km : depuis n'importe quel point de la Région
+> de Bruxelles-Capitale, vingt kilomètres la couvrent entièrement, et un
+> quatrième élargissement n'atteindrait personne de plus. C'est ce qui borne la
+> liste, et non un chiffre rond. `ELARGISSEMENTS_MAX` est **dérivé** de la
+> longueur de l'échelle : les deux ne peuvent pas diverger.
+>
+> **Le quatrième essai annule la Demande** (FR-015 `@security`). Laisser un
+> `NO_MATCH` après le refus entretiendrait l'idée que quelque chose peut encore
+> arriver ; mieux vaut le dire et rendre au demandeur sa liberté d'appeler
+> ailleurs.
+>
+> **Ajout au FR : le score se normalise sur le rayon du tour.** `calculer`
+> prenait le rayon comme constante ; après un élargissement, tout candidat
+> au-delà de cinq kilomètres marquait zéro de proximité et le classement du tour
+> élargi n'ordonnait plus rien — précisément quand il en a le plus besoin. Le
+> test de signature AI Act a échoué à l'ajout du paramètre, ce qui est
+> exactement son rôle : `rayon_metres` est un paramètre du **tour**, identique
+> pour tous les candidats d'un même tour, donc incapable d'en distinguer aucun.
+> Un second test fixe ce raisonnement pour le prochain ajout.
+>
+> **Deux gardes distinctes, découvertes par les tests.** La relance est un
+> compare-and-swap sur le **compteur d'élargissements** et non sur le statut :
+> une Demande échue que le balayage n'a pas encore touchée est encore
+> `BROADCASTING` et doit pouvoir être relancée, alors que deux clics successifs
+> doivent être distingués. Et l'auto-annulation a dû quitter `changer_statut`,
+> qui ne part que de `BROADCASTING`, pour un `annuler` qui part aussi de
+> `NO_MATCH` — le cas exact du quatrième refus. Les deux défauts ont été
+> attrapés par les tests d'intégration, pas par relecture.
+>
+> **Le balayage est un binaire, pas une tâche de fond.** Même raison que
+> `klaar-effacer` : une tâche de fond s'exécute autant de fois qu'il y a
+> d'exemplaires du serveur. `klaar-expirer` se lance toutes les dix secondes,
+> et son `UPDATE … RETURNING … FOR UPDATE SKIP LOCKED` garantit qu'aucune
+> Demande n'est rendue deux fois — donc qu'aucun demandeur n'est notifié deux
+> fois. Vérifié par deux balayages réellement concurrents.
+>
+> **Un retard du balayage ne laisse rien passer.** L'expiration se constate
+> aussi à la lecture (`Demande::est_acceptable`), donc aucun prestataire ne peut
+> accepter une Demande échue même si le balayage n'est pas encore passé. Ce que
+> le balayage apporte, c'est l'**avis** au demandeur. Cela lève la dette
+> signalée en Story 3.4.
+>
+> **Limites assumées.** L'avis de fin de tour part en français quel que soit le
+> compte : lire la langue du demandeur demanderait un dépôt de plus au binaire
+> pour un message de deux lignes. Et il n'existe toujours pas d'interface : le
+> bouton « élargir » que FR-015 décrit reste à écrire, la route existe.
 
 ### Story 3.7 — Disponibilité Provider ( Availability CRUD)
 - **En tant que** Provider · **je veux** gérer ma disponibilité (go/pause) · **afin de** contrôler le flux

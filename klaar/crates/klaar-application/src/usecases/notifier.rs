@@ -118,6 +118,55 @@ pub fn composer_match_pris(demande: &Demande, locale: Locale) -> PushMessage {
     }
 }
 
+/// Compose l'avis « personne n'a répondu » adressé au demandeur (FR-015).
+///
+/// Il s'affiche sur **son** écran verrouillé à lui : il peut donc nommer le
+/// secteur, mais toujours pas la description ni l'adresse — un écran verrouillé
+/// reste lisible par qui passe à côté, y compris chez soi.
+///
+/// Le message dit ce qu'il reste à faire. Un « personne n'a répondu » sans
+/// suite laisserait quelqu'un devant une fuite sans savoir s'il doit attendre
+/// ou appeler ailleurs.
+pub fn composer_sans_reponse(demande: &Demande, locale: Locale) -> PushMessage {
+    let (titre, corps) = match locale {
+        Locale::Fr => (
+            "Personne n'a répondu",
+            "Élargissez la zone de recherche ou annulez",
+        ),
+        Locale::Nl => (
+            "Niemand heeft geantwoord",
+            "Vergroot de zoekzone of annuleer",
+        ),
+        Locale::En => ("Nobody responded", "Widen the search area or cancel"),
+    };
+    PushMessage {
+        titre: format!("{titre} — {}", demande.secteur),
+        corps: corps.to_string(),
+        url: format!("/demande?id={}", demande.id),
+        tag: Some(format!("demande-{}", demande.id)),
+    }
+}
+
+/// Prévient le demandeur que son tour s'est terminé sans réponse (FR-015).
+pub async fn notifier_sans_reponse<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    demande: &Demande,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[demande.demandeur_id],
+        &composer_sans_reponse(demande, locale),
+    )
+    .await
+}
+
 /// Prévient les candidats qu'un autre a pris la Demande (FR-013 `@happy`).
 ///
 /// Séparé de l'attribution elle-même : une panne du service de push ne doit pas
@@ -134,7 +183,30 @@ where
     A: PushSubscriptionRepository,
     N: PushNotifier,
 {
-    let message = composer_match_pris(demande, locale);
+    envoyer_a(
+        abonnements,
+        notifieur,
+        comptes,
+        &composer_match_pris(demande, locale),
+    )
+    .await
+}
+
+/// Envoie un même message à une liste de comptes.
+///
+/// Le corps commun de tous les tours de notification : un abonnement déclaré
+/// disparu est supprimé, une panne de transport n'interrompt pas le tour. Le
+/// factoriser évite qu'un de ces deux comportements se perde dans une copie.
+async fn envoyer_a<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    comptes: &[Uuid],
+    message: &PushMessage,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
     let mut bilan = BilanNotification::default();
 
     for compte in comptes {
@@ -144,16 +216,19 @@ where
             continue;
         }
         for appareil in appareils {
-            match notifieur.envoyer(&appareil.abonnement, &message).await {
+            match notifieur.envoyer(&appareil.abonnement, message).await {
                 Ok(()) => bilan.notifies += 1,
                 Err(PushError::AbonnementExpire) => {
+                    // 410 : garder la ligne conserverait une donnée personnelle
+                    // sans finalité, et ferait réessayer sans fin.
                     abonnements
                         .supprimer_par_endpoint(&appareil.abonnement.endpoint)
                         .await?;
                     bilan.purges += 1;
                 }
                 Err(e) => {
-                    tracing::warn!(erreur = %e, "avis de Demande prise non délivré");
+                    // Les autres destinataires n'y sont pour rien.
+                    tracing::warn!(erreur = %e, "notification non délivrée");
                 }
             }
         }
@@ -243,7 +318,12 @@ mod tests {
             provider_id: Uuid::new_v4(),
             utilisateur_id,
             distance_metres: distance,
-            score: klaar_matching::calculer_score(distance, 0.0, None),
+            score: klaar_matching::calculer_score(
+                distance,
+                klaar_matching::RAYONS_METRES[0],
+                0.0,
+                None,
+            ),
         }
     }
 
@@ -658,7 +738,8 @@ mod tests {
         // inviterait à l'optimiser plutôt qu'à bien travailler.
         let d = demande(Urgence::Haute);
         let m = composer(&d, 1_200.0, Locale::Fr);
-        let _: Score = klaar_matching::calculer_score(1_200.0, 0.0, None);
+        let _: Score =
+            klaar_matching::calculer_score(1_200.0, klaar_matching::RAYONS_METRES[0], 0.0, None);
         assert!(!format!("{} {}", m.titre, m.corps).contains("score"));
     }
 }

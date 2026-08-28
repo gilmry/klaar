@@ -57,6 +57,13 @@ path = "src/bin/vapid.rs"
 name = "klaar-effacer"
 path = "src/bin/effacer.rs"
 
+# Story 3.6 — fin des tours de diffusion (FR-015). À lancer toutes les dix
+# secondes : un tour dure trente secondes, et un balayage trop espacé laisserait
+# des demandeurs attendre une nouvelle qui tient en une phrase.
+[[bin]]
+name = "klaar-expirer"
+path = "src/bin/expirer.rs"
+
 # Story 1.6 (partielle) — prestataires de démonstration, sans contrôle BCE.
 # Un binaire hors ligne et non un endpoint : une route d'activation, même
 # protégée, serait une route qu'on peut oublier d'enlever.
@@ -65,6 +72,10 @@ name = "klaar-prestataires-demo"
 path = "src/bin/prestataires_demo.rs"
 
 [dev-dependencies]
+# Les constantes du domaine — rayons successifs, limite d'élargissements — pour
+# que les tests d'API assertent sur elles plutôt que sur des chiffres recopiés
+# qui divergeraient sans que rien ne le signale.
+klaar-matching = { path = "../klaar-matching", version = "0.0.0" }
 actix-rt = "2"
 # Pour lancer deux requêtes réellement concurrentes sur le même jeton et
 # vérifier que le verrou tient.

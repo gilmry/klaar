@@ -16,6 +16,7 @@
 
 use klaar_identity::StatutProvider;
 use klaar_intervention::Mission;
+use klaar_matching::StatutDemande;
 use std::fmt;
 use uuid::Uuid;
 
@@ -35,7 +36,10 @@ pub enum ErreurAcceptation {
     NonEligible,
     Introuvable,
     DejaAttribuee,
+    /// Le tour de diffusion est écoulé, ou la Demande est déjà `NO_MATCH`.
     Expiree,
+    /// Le demandeur l'a retirée (FR-014, FR-015 `@security`).
+    Annulee,
     /// Une Mission en cours occupe déjà le prestataire (FR-013 `@edge`).
     Occupe,
     Indisponible(String),
@@ -49,6 +53,7 @@ impl ErreurAcceptation {
             Self::Introuvable => "REQUEST_NOT_FOUND",
             Self::DejaAttribuee => "REQUEST_ALREADY_MATCHED",
             Self::Expiree => "REQUEST_EXPIRED",
+            Self::Annulee => "REQUEST_CANCELLED",
             Self::Occupe => "PROVIDER_BUSY",
             Self::Indisponible(_) => "SERVICE_UNAVAILABLE",
         }
@@ -62,6 +67,7 @@ impl fmt::Display for ErreurAcceptation {
             Self::Introuvable => write!(f, "Demande introuvable"),
             Self::DejaAttribuee => write!(f, "Demande déjà attribuée"),
             Self::Expiree => write!(f, "Demande expirée"),
+            Self::Annulee => write!(f, "Demande annulée par son auteur"),
             Self::Occupe => write!(f, "une Mission est déjà en cours"),
             Self::Indisponible(d) => write!(f, "service indisponible : {d}"),
         }
@@ -141,10 +147,22 @@ where
         return Err(ErreurAcceptation::NonEligible);
     }
 
-    // Avant l'attribution atomique, et séparément d'elle : l'expiration ne se
-    // lit pas dans le statut, aucune tâche de fond ne l'y écrit.
-    if demande.est_expiree(maintenant) {
-        return Err(ErreurAcceptation::Expiree);
+    // Avant l'attribution atomique, et séparément d'elle. L'ordre des cas
+    // compte : une Demande dont le tour est écoulé n'est pas « déjà prise », et
+    // dire l'un pour l'autre enverrait le prestataire chercher un concurrent
+    // qui n'existe pas.
+    //
+    // `NO_MATCH` répond `REQUEST_EXPIRED` et non `REQUEST_ALREADY_MATCHED` :
+    // c'est ce que demande FR-015 `@edge`, et c'est aussi la vérité — le tour
+    // s'est terminé sans personne.
+    match demande.statut {
+        StatutDemande::SansReponse => return Err(ErreurAcceptation::Expiree),
+        StatutDemande::Annulee => return Err(ErreurAcceptation::Annulee),
+        StatutDemande::Attribuee => return Err(ErreurAcceptation::DejaAttribuee),
+        StatutDemande::Diffusion if demande.est_expiree(maintenant) => {
+            return Err(ErreurAcceptation::Expiree)
+        }
+        StatutDemande::Diffusion => {}
     }
 
     match missions
@@ -172,7 +190,7 @@ mod tests {
     use chrono::{Duration, TimeZone};
     use klaar_catalog::CodeCatalogue;
     use klaar_identity::{NumeroBce, OrigineKyc, Provider};
-    use klaar_matching::{Demande, StatutDemande, Urgence, DUREE_DIFFUSION_MINUTES};
+    use klaar_matching::{Demande, Urgence, DUREE_DIFFUSION_SECONDES};
     use klaar_shared_kernel::Geo;
     use std::cell::RefCell;
 
@@ -281,6 +299,19 @@ mod tests {
         ) -> Result<(), RepositoryError> {
             unreachable!()
         }
+        async fn expirer_echues(
+            &self,
+            _: DateTime<Utc>,
+            _: i64,
+        ) -> Result<Vec<Demande>, RepositoryError> {
+            unreachable!()
+        }
+        async fn annuler(&self, _: Uuid) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
+        async fn relancer(&self, _: &Demande) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
         async fn compter_depuis_une_heure(
             &self,
             _: Uuid,
@@ -377,7 +408,7 @@ mod tests {
     #[tokio::test]
     async fn happy_la_mission_porte_l_instant_de_l_acceptation() {
         // Et non celui de la Demande : c'est l'acceptation qui engage.
-        let plus_tard = instant() + Duration::minutes(2);
+        let plus_tard = instant() + Duration::seconds(10);
         let r = tenter(
             Some(provider(StatutProvider::Actif)),
             Some(demande()),
@@ -486,12 +517,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edge_une_demande_de_plus_de_cinq_minutes_rend_expiree() {
+    async fn edge_un_tour_ecoule_rend_expiree() {
         let e = tenter(
             Some(provider(StatutProvider::Actif)),
             Some(demande()),
             attribuee(),
-            instant() + Duration::minutes(DUREE_DIFFUSION_MINUTES),
+            instant() + Duration::seconds(DUREE_DIFFUSION_SECONDES),
         )
         .await
         .unwrap_err();
@@ -499,10 +530,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn negative_une_demande_sans_reponse_rend_expiree() {
+        // FR-015 `@edge` : l'accept tardif est rejeté en 410, pas en 409. Le
+        // tour s'est terminé sans personne, il n'y a pas de concurrent à aller
+        // chercher.
+        let mut d = demande();
+        d.statut = StatutDemande::SansReponse;
+        let e = tenter(
+            Some(provider(StatutProvider::Actif)),
+            Some(d),
+            attribuee(),
+            instant(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(e.code(), "REQUEST_EXPIRED");
+    }
+
+    #[tokio::test]
+    async fn negative_une_demande_annulee_le_dit() {
+        let mut d = demande();
+        d.statut = StatutDemande::Annulee;
+        let e = tenter(
+            Some(provider(StatutProvider::Actif)),
+            Some(d),
+            attribuee(),
+            instant(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(e.code(), "REQUEST_CANCELLED");
+    }
+
+    #[tokio::test]
+    async fn negative_une_demande_deja_attribuee_le_dit_sans_toucher_la_base() {
+        let missions = MissionsMemoire::rendant(attribuee());
+        let p = provider(StatutProvider::Actif);
+        let mut d = demande();
+        d.statut = StatutDemande::Attribuee;
+        let compte = p.utilisateur_id;
+        let cible = d.id;
+        let e = accepter(
+            &PrestatairesMemoire { fiche: Some(p) },
+            &DemandesMemoire { demande: Some(d) },
+            &missions,
+            &HorlogeFigee(instant()),
+            compte,
+            cible,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(e.code(), "REQUEST_ALREADY_MATCHED");
+        assert_eq!(*missions.appels.borrow(), 0);
+    }
+
+    #[tokio::test]
     async fn edge_expiree_et_deja_prise_repond_expiree() {
         // L'ordre compte : la fenêtre se vérifie avant l'attribution, sinon une
-        // Demande vieille d'une heure serait attribuable tant que personne ne
-        // l'a prise.
+        // Demande d'hier serait attribuable tant que personne ne l'a prise.
         let mut d = demande();
         d.statut = StatutDemande::Diffusion;
         let e = tenter(

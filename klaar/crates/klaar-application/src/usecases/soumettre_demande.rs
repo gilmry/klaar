@@ -217,6 +217,19 @@ mod tests {
                 .cloned())
         }
 
+        async fn expirer_echues(
+            &self,
+            _: DateTime<Utc>,
+            _: i64,
+        ) -> Result<Vec<Demande>, RepositoryError> {
+            unreachable!()
+        }
+        async fn annuler(&self, _: Uuid) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
+        async fn relancer(&self, _: &Demande) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
         async fn changer_statut(
             &self,
             _: Uuid,

@@ -123,6 +123,37 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Fin de tour et élargissement (Story 3.6, FR-015)
+
+**Contradiction du PRD tranchée.** FR-013 refusait une acceptation après cinq
+minutes, FR-015 annonce `NO_MATCH` après trente secondes. Trente secondes
+l'emportent : cette règle rejette aussi tout ce que la règle à cinq minutes
+rejetait, donc elle satisfait les deux ; l'inverse est faux.
+
+**Trois élargissements au maximum, puis annulation.** L'échelle s'arrête à vingt
+kilomètres parce que, depuis n'importe quel point de la Région de
+Bruxelles-Capitale, vingt kilomètres la couvrent entièrement. Le quatrième essai
+annule la Demande plutôt que de la laisser en attente : entretenir l'idée que
+quelque chose peut encore arriver serait pire que de le dire.
+
+**Le compteur d'élargissements ne se remet jamais à zéro**, et la relance est un
+compare-and-swap sur ce compteur : deux clics sur « élargir » ne consomment
+qu'une des trois chances du demandeur.
+
+**Aucun demandeur n'est notifié deux fois.** Le balayage sélectionne et éteint en
+une seule instruction, avec `FOR UPDATE SKIP LOCKED` : deux passages concurrents
+se partagent le travail sans jamais rendre la même Demande.
+
+**Le score se normalise sur le rayon du tour.** Le paramètre ajouté à `calculer`
+est un paramètre du tour, identique pour tous les candidats d'un même tour : il
+ne peut en distinguer aucun, et la garantie de FR-012 tient toujours. Un test
+fixe ce raisonnement, et le test de signature échouera de nouveau au prochain
+ajout.
+
+**Limite assumée : l'avis de fin de tour part en français** quelle que soit la
+langue du compte. Lire la langue du demandeur demanderait un dépôt de plus au
+binaire de balayage pour un message de deux lignes.
+
 ## Acceptation : ce que la course garantit, et ce qu'elle ne garantit pas (Story 3.4, FR-013)
 
 Cinq prestataires notifiés peuvent accepter la même Demande dans la même
