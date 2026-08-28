@@ -1452,8 +1452,10 @@ dependencies = [
  "klaar-email-adapter",
  "klaar-geo-adapter",
  "klaar-identity",
+ "klaar-intervention",
  "klaar-itsme-adapter",
  "klaar-matching",
+ "klaar-payment",
  "klaar-push-adapter",
  "klaar-shared-kernel",
  "klaar-sqlx-repos",
@@ -1590,7 +1592,10 @@ dependencies = [
 name = "klaar-payment"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "klaar-shared-kernel",
+ "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -1629,6 +1634,7 @@ dependencies = [
  "klaar-identity",
  "klaar-intervention",
  "klaar-matching",
+ "klaar-payment",
  "klaar-shared-kernel",
  "serde",
  "serde_json",

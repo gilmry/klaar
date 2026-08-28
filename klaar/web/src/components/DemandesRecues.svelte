@@ -10,6 +10,12 @@
    * **Les boutons d'étape viennent du serveur.** `suites` porte les statuts
    * atteignables : recopier la machine à états ici la ferait diverger, et
    * l'interface proposerait un bouton que le domaine refuse.
+   *
+   * **Le prix est saisi, jamais suggéré (FR-016, invariant §10.2).** Le champ
+   * est vide au départ et le reste : aucune valeur par défaut, aucun montant
+   * « conseillé », aucun rappel de ce qu'on a facturé la dernière fois. Une
+   * suggestion serait une fixation de prix douce, et c'est précisément ce que
+   * la loi sur le travail de plateforme regarde.
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
@@ -17,14 +23,19 @@
   import {
     accepter,
     avancerMission,
+    centimesDepuisEuros,
     codeDepuisErreur,
+    delaiLisible,
     demandesRecues,
     distanceLisible,
+    envoyerDevis,
     libelleStatut,
+    libelleStatutDevis,
     libelleTransition,
     libelleUrgence,
     lireMission,
     messageErreur,
+    montantLisible,
     type Mission,
     type Proposee,
     type StatutMission,
@@ -37,6 +48,33 @@
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
   let locale = $state<LocaleKlaar>("fr");
+
+  // Champs du devis. Vides à l'ouverture, et jamais préremplis : voir l'en-tête.
+  let montantSaisi = $state("");
+  let delaiSaisi = $state("");
+  let noteSaisie = $state("");
+  let tauxSaisi = $state("2100");
+  let preuveSaisie = $state("");
+
+  /** Un devis attend encore une réponse : le formulaire n'a rien à faire là. */
+  let devisEnAttente = $derived(
+    mission?.devis != null && mission.devis.statut === "SENT" && !mission.devis.echu,
+  );
+
+  /**
+   * Total TTC calculé pendant la saisie.
+   *
+   * **C'est un aperçu, pas le devis.** Le montant qui fait foi est celui que le
+   * serveur calcule et conserve ; le recopier ici servirait à voir ce qu'on
+   * envoie, jamais à le décider. Rendu `null` tant que la saisie n'est pas un
+   * montant.
+   */
+  let apercuTtc = $derived.by(() => {
+    const cents = centimesDepuisEuros(montantSaisi);
+    if (cents === null || cents <= 0) return null;
+    const bp = Number(tauxSaisi);
+    return cents + Math.trunc((cents * bp) / 10_000);
+  });
 
   onMount(async () => {
     locale = localeAffichee();
@@ -86,6 +124,54 @@
     }
   }
 
+  async function proposer(evenement: Event) {
+    evenement.preventDefault();
+    if (occupe || !mission) return;
+    const cents = centimesDepuisEuros(montantSaisi);
+    const minutes = Number(delaiSaisi.trim());
+    // Les deux contrôles locaux sont là pour éviter d'envoyer `null` au serveur,
+    // pas pour dupliquer ses règles : les bornes, les taux et les textes sont
+    // vérifiés par le domaine, et ses refus s'affichent tels quels.
+    if (cents === null) {
+      erreur = messageErreur(locale, "AMOUNT_ZERO");
+      return;
+    }
+    if (!Number.isFinite(minutes)) {
+      erreur = messageErreur(locale, "DELAY_INVALID");
+      return;
+    }
+
+    occupe = true;
+    erreur = null;
+    try {
+      await envoyerDevis(mission.id, {
+        montant_htva_cents: cents,
+        taux_tva_bp: Number(tauxSaisi),
+        delai_minutes: Math.trunc(minutes),
+        note: noteSaisie.trim() || undefined,
+        preuve_tva_reduite: preuveSaisie.trim() || undefined,
+      });
+      // Relu plutôt que déduit de la réponse : le serveur sait aussi combien
+      // de devis restent, et c'est ce qui décide de la suite de l'écran.
+      mission = await lireMission(mission.id);
+      montantSaisi = "";
+      delaiSaisi = "";
+      noteSaisie = "";
+      preuveSaisie = "";
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
+      // Le plafond atteint annule la Mission côté serveur : la relire évite de
+      // laisser à l'écran une intervention qui n'existe plus.
+      try {
+        mission = await lireMission(mission.id);
+      } catch {
+        // La Mission n'est plus lisible : le message d'erreur suffit.
+      }
+    } finally {
+      occupe = false;
+    }
+  }
+
   async function avancer(statut: StatutMission) {
     if (occupe || !mission) return;
     occupe = true;
@@ -121,6 +207,100 @@
       Urgence : {libelleUrgence(mission.urgence)} · Adresse :
       <span data-mission-position>{mission.latitude.toFixed(5)}, {mission.longitude.toFixed(5)}</span>
     </p>
+
+    {#if mission.devis}
+      <section data-devis={mission.devis.statut} class="devis">
+        <h4>Devis envoyé</h4>
+        <p data-devis-total>
+          {montantLisible(mission.devis.total_ttc_cents)} TTC
+          <span class="klaar-tempere">
+            ({montantLisible(mission.devis.montant_htva_cents)} HTVA + {montantLisible(
+              mission.devis.tva_cents,
+            )} de TVA à {mission.devis.taux_tva_bp / 100} %)
+          </span>
+        </p>
+        <p class="klaar-tempere">
+          Intervention sous {delaiLisible(mission.devis.delai_minutes)} ·
+          <span data-devis-statut>{libelleStatutDevis(mission.devis)}</span>
+        </p>
+        {#if mission.devis.note}
+          <p>{mission.devis.note}</p>
+        {/if}
+      </section>
+    {/if}
+
+    {#if mission.suites.length > 0 && !devisEnAttente}
+      {#if mission.devis_restants === 0}
+        <p role="status" data-devis="plafond">
+          Trois devis ont déjà été envoyés pour cette intervention. Un de plus
+          l'annulerait.
+        </p>
+      {:else}
+        <form onsubmit={proposer} data-formulaire="devis">
+          <h4>Envoyer un devis</h4>
+          <p class="klaar-tempere">
+            Vous fixez votre prix. Klaar n'en propose aucun, n'en suggère aucun
+            et n'en corrige aucun. Il vous reste {mission.devis_restants} envoi{mission.devis_restants >
+            1
+              ? "s"
+              : ""}.
+          </p>
+
+          <label>
+            Montant hors TVA, en euros
+            <input
+              type="text"
+              inputmode="decimal"
+              bind:value={montantSaisi}
+              name="montant"
+              required
+            />
+          </label>
+
+          <label>
+            Taux de TVA
+            <select bind:value={tauxSaisi} name="taux">
+              <option value="2100">21 % — taux normal</option>
+              <option value="600">6 % — logement de plus de 5 ans</option>
+              <option value="1200">12 % — isolation thermique</option>
+            </select>
+          </label>
+
+          {#if tauxSaisi !== "2100"}
+            <label>
+              Preuve du taux réduit
+              <input type="text" bind:value={preuveSaisie} name="preuve" required />
+            </label>
+          {/if}
+
+          <label>
+            Délai d'intervention, en minutes
+            <input
+              type="text"
+              inputmode="numeric"
+              bind:value={delaiSaisi}
+              name="delai"
+              required
+            />
+          </label>
+
+          <label>
+            Note pour le demandeur
+            <input type="text" bind:value={noteSaisie} name="note" />
+          </label>
+
+          {#if apercuTtc !== null}
+            <p class="klaar-tempere" data-devis-apercu>
+              Le demandeur verra {montantLisible(apercuTtc)} TTC.
+            </p>
+          {/if}
+
+          <button type="submit" disabled={occupe} data-action="envoyer-devis">
+            {occupe ? "Un instant…" : "Envoyer le devis"}
+          </button>
+        </form>
+      {/if}
+    {/if}
 
     {#if mission.suites.length === 0}
       <p role="status" data-mission-close>Cette intervention est close.</p>
@@ -190,6 +370,28 @@
     margin: 0.8rem 0;
   }
   h3 { margin: 0 0 0.3rem; }
+  h4 { margin: 0.4rem 0 0.3rem; }
+  .devis {
+    border: 1px solid var(--klaar-bord);
+    border-radius: 8px;
+    padding: 0.6rem 0.8rem;
+    margin: 0.8rem 0;
+  }
+  form label {
+    display: block;
+    margin: 0.5rem 0;
+  }
+  form input,
+  form select {
+    display: block;
+    font: inherit;
+    width: 100%;
+    max-width: 22rem;
+    margin-top: 0.2rem;
+    padding: 0.45rem 0.5rem;
+    border: 1px solid var(--klaar-bord);
+    border-radius: 6px;
+  }
   section {
     border: 2px solid var(--klaar-accent);
     border-radius: 10px;

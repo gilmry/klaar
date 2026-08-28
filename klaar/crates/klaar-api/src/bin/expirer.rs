@@ -1,4 +1,10 @@
-//! Éteint les tours de diffusion écoulés (Story 3.6, FR-015).
+//! Éteint les tours de diffusion écoulés (Story 3.6, FR-015) et les devis sans
+//! réponse (Story 4.1, FR-016 `@edge`).
+//!
+//! **Un seul binaire pour les deux.** Ce sont deux balayages indépendants, mais
+//! les lancer séparément doublerait la configuration, la surveillance et les
+//! occasions d'en oublier un. Un échec de l'un n'empêche pas l'autre : les
+//! demandeurs n'ont pas à attendre parce qu'un devis n'a pas pu s'éteindre.
 //!
 //! Un binaire à lancer périodiquement plutôt qu'une tâche de fond dans
 //! `klaar-api`, pour la même raison que `klaar-effacer` : une tâche de fond
@@ -24,9 +30,13 @@ use std::sync::Arc;
 
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_application::usecases::expirer::expirer_les_tours;
+use klaar_application::usecases::expirer_devis::expirer_les_devis;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_shared_kernel::Locale;
-use klaar_sqlx_repos::{creer_pool, PgDemandeRepository, PgPushSubscriptionRepository};
+use klaar_sqlx_repos::{
+    creer_pool, PgDemandeRepository, PgDevisRepository, PgProviderRepository,
+    PgPushSubscriptionRepository,
+};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -71,7 +81,33 @@ async fn main() -> ExitCode {
     };
 
     let demandes = PgDemandeRepository::new(pool.clone());
+    let devis = PgDevisRepository::new(pool.clone());
+    let prestataires = PgProviderRepository::new(pool.clone());
     let abonnements = PgPushSubscriptionRepository::new(pool);
+
+    // Les devis d'abord, et sans que leur sort n'engage celui des tours : les
+    // deux balayages sont indépendants, et un échec ici ne doit pas laisser des
+    // demandeurs devant un statut périmé.
+    match expirer_les_devis(
+        &devis,
+        &prestataires,
+        &abonnements,
+        notifieur.as_deref(),
+        &HorlogeSysteme,
+        Locale::Fr,
+    )
+    .await
+    {
+        Ok(bilan) if bilan.eteints > 0 => {
+            tracing::info!(
+                eteints = bilan.eteints,
+                notifies = bilan.notifies,
+                "devis expirés"
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::error!(erreur = %e, "balayage des devis interrompu"),
+    }
 
     match expirer_les_tours(
         &demandes,

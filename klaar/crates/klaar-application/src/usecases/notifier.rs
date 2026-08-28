@@ -250,6 +250,50 @@ pub fn composer_avancement(
     }
 }
 
+/// Compose l'avis « vous avez reçu un devis », pour le demandeur (FR-016).
+///
+/// **Sans le montant.** Il s'affiche sur un écran verrouillé, que n'importe qui
+/// peut lire par-dessus une épaule dans un tram. Ce que coûte la réparation
+/// d'une chaudière est une information sur la situation de quelqu'un ; elle
+/// mérite d'être ouverte, pas annoncée. Le prix est dans l'application, derrière
+/// la session.
+pub fn composer_devis_recu(demande: &Demande, locale: Locale) -> PushMessage {
+    let corps = match locale {
+        Locale::Fr => "Vous avez reçu un devis. Ouvrez pour le consulter.",
+        Locale::Nl => "U hebt een offerte ontvangen. Open om ze te bekijken.",
+        Locale::En => "You received a quote. Open to view it.",
+    };
+    PushMessage {
+        titre: format!("{}", demande.secteur),
+        corps: corps.to_string(),
+        // Même étiquette que les avis d'avancement : un devis reçu est une
+        // étape de la même intervention, et l'empiler à part afficherait deux
+        // notifications pour une seule affaire.
+        tag: Some(format!("mission-{}", demande.id)),
+        url: format!("/demande?id={}", demande.id),
+    }
+}
+
+/// Prévient le demandeur qu'un devis l'attend (FR-016 `@happy`).
+pub async fn notifier_devis_recu<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    demande: &Demande,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[demande.demandeur_id],
+        &composer_devis_recu(demande, locale),
+    )
+    .await
+}
+
 /// Prévient le demandeur que sa Mission a avancé (FR-018 `@happy`).
 pub async fn notifier_avancement<A, N>(
     abonnements: &A,

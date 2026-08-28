@@ -31,6 +31,42 @@ export interface Mission {
   longitude: number;
   /** Statuts atteignables, rendus par le serveur. */
   suites: StatutMission[];
+  /** Dernier devis envoyé, quel que soit son statut (FR-016). */
+  devis: Devis | null;
+  /** Devis encore envoyables avant que le plafond n'annule la Mission. */
+  devis_restants: number;
+}
+
+/**
+ * Un devis, tel que le serveur le rend.
+ *
+ * **Tous les montants sont des entiers de centimes.** Les manipuler en euros
+ * flottants ferait apparaître des 217,79999999999998 sur un document
+ * contractuel ; la conversion n'a lieu qu'à l'affichage et à la saisie.
+ */
+export interface Devis {
+  id: string;
+  montant_htva_cents: number;
+  taux_tva_bp: number;
+  tva_cents: number;
+  total_ttc_cents: number;
+  delai_minutes: number;
+  note: string | null;
+  statut: StatutDevis;
+  secondes_restantes: number;
+  /** L'heure de validité est passée, même si le statut dit encore « envoyé ». */
+  echu: boolean;
+}
+
+export type StatutDevis = "SENT" | "ACCEPTED" | "REFUSED" | "EXPIRED";
+
+/** Ce que le prestataire propose. */
+export interface Proposition {
+  montant_htva_cents: number;
+  taux_tva_bp: number;
+  delai_minutes: number;
+  note?: string;
+  preuve_tva_reduite?: string;
 }
 
 export type StatutMission =
@@ -82,6 +118,83 @@ export function libelleStatut(statut: StatutMission): string {
   }
 }
 
+/** Ce que le statut d'un devis veut dire, en clair. */
+export function libelleStatutDevis(devis: Devis): string {
+  // L'échéance passe avant le statut : le balayage peut n'être pas encore venu,
+  // et afficher « en attente » sur un devis mort ferait attendre pour rien.
+  if (devis.statut === "SENT" && devis.echu) return "Expiré sans réponse";
+  switch (devis.statut) {
+    case "SENT":
+      return "En attente de réponse";
+    case "ACCEPTED":
+      return "Accepté";
+    case "REFUSED":
+      return "Refusé";
+    case "EXPIRED":
+      return "Expiré sans réponse";
+    default:
+      return devis.statut;
+  }
+}
+
+/**
+ * Montant en centimes, rendu en euros.
+ *
+ * La division est faite ici et nulle part ailleurs : c'est le seul endroit du
+ * front où un montant cesse d'être un entier, et il ne repart jamais dans
+ * l'autre sens.
+ */
+export function montantLisible(cents: number): string {
+  const euros = (cents / 100).toLocaleString("fr-BE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${euros} €`;
+}
+
+/** Délai en minutes, rendu en heures et minutes. */
+export function delaiLisible(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const reste = minutes % 60;
+  return reste === 0 ? `${h} h` : `${h} h ${reste}`;
+}
+
+/**
+ * Convertit une saisie en euros en centimes entiers.
+ *
+ * **La chaîne est découpée, jamais multipliée.** `Math.round(1.005 * 100)`
+ * rend 100 et non 101, parce que 1,005 n'existe pas en binaire : il vaut
+ * 1,00499999999999989. Passer par le flottant introduirait donc une erreur
+ * d'un centime sur des montants parfaitement ordinaires, dans un module dont
+ * toute la discipline est de n'avoir que des entiers.
+ *
+ * Rend `null` sur une saisie qui n'est pas un montant : laisser passer `NaN`
+ * enverrait `null` au serveur et produirait un 400 que l'utilisateur ne
+ * comprendrait pas. La virgule est acceptée, c'est ce qu'on tape en Belgique.
+ *
+ * Un montant négatif est converti et transmis tel quel : c'est le serveur qui
+ * le refuse, avec `AMOUNT_NEGATIVE`, et le refuser ici priverait l'utilisateur
+ * de l'explication.
+ */
+export function centimesDepuisEuros(saisie: string): number | null {
+  const normalisee = saisie.trim().replace(",", ".");
+  // Un chiffre au moins, d'un côté ou de l'autre du séparateur.
+  if (!/^-?(\d+(\.\d*)?|\.\d+)$/.test(normalisee)) return null;
+
+  const negatif = normalisee.startsWith("-");
+  const [entier, decimales = ""] = normalisee.replace("-", "").split(".");
+  const euros = entier === "" ? 0 : Number(entier);
+  const centimes = Number(`${decimales}00`.slice(0, 2));
+  // Au-delà du centime, arrondi commercial sur la première décimale ignorée.
+  const reste = decimales.slice(2);
+  const arrondi = reste !== "" && Number(reste[0]) >= 5 ? 1 : 0;
+
+  const total = euros * 100 + centimes + arrondi;
+  if (!Number.isSafeInteger(total)) return null;
+  return negatif ? -total : total;
+}
+
 export function libelleUrgence(urgence: string): string {
   switch (urgence) {
     case "HIGH":
@@ -117,6 +230,18 @@ export type CodeErreurPrestataire =
   | "REQUEST_CANCELLED"
   | "REQUEST_NOT_FOUND"
   | "MISSION_NOT_FOUND"
+  | "MISSION_CLOSED"
+  | "QUOTE_ALREADY_PENDING"
+  | "MAX_QUOTES_REACHED"
+  | "AMOUNT_ZERO"
+  | "AMOUNT_NEGATIVE"
+  | "AMOUNT_TOO_HIGH"
+  | "DELAY_INVALID"
+  | "DELAY_TOO_LONG"
+  | "NOTE_TOO_LONG"
+  | "VAT_RATE_UNKNOWN"
+  | "VAT_PROOF_REQUIRED"
+  | "VAT_PROOF_TOO_LONG"
   | "INVALID_TRANSITION"
   | "TIMESTAMP_IMPLAUSIBLE"
   | "RATE_LIMIT_EXCEEDED"
@@ -137,6 +262,19 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurPrestataire, string>> = {
     REQUEST_CANCELLED: "Le demandeur a retiré sa Demande.",
     REQUEST_NOT_FOUND: "Cette Demande n'existe pas.",
     MISSION_NOT_FOUND: "Cette intervention n'existe pas.",
+    MISSION_CLOSED: "Cette intervention est close : elle ne peut plus être chiffrée.",
+    QUOTE_ALREADY_PENDING: "Un devis attend déjà une réponse pour cette intervention.",
+    MAX_QUOTES_REACHED:
+      "Trois devis ont déjà été envoyés. L'intervention a été annulée, le demandeur doit relancer.",
+    AMOUNT_ZERO: "Indiquez un montant.",
+    AMOUNT_NEGATIVE: "Un montant ne peut pas être négatif.",
+    AMOUNT_TOO_HIGH: "Ce montant dépasse ce qu'un dépannage peut chiffrer ici.",
+    DELAY_INVALID: "Indiquez un délai d'intervention.",
+    DELAY_TOO_LONG: "Le délai ne peut pas dépasser 24 h.",
+    NOTE_TOO_LONG: "Votre note est trop longue.",
+    VAT_RATE_UNKNOWN: "Ce taux de TVA n'est pas applicable.",
+    VAT_PROOF_REQUIRED: "Un taux réduit demande une preuve : indiquez-la.",
+    VAT_PROOF_TOO_LONG: "La référence de la preuve est trop longue.",
     INVALID_TRANSITION: "Cette étape n'est pas possible depuis l'état actuel.",
     TIMESTAMP_IMPLAUSIBLE: "L'heure déclarée est trop éloignée de l'heure du serveur.",
     RATE_LIMIT_EXCEEDED: "Trop de tentatives. Patientez un instant.",
@@ -156,6 +294,19 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurPrestataire, string>> = {
     REQUEST_CANCELLED: "De aanvrager heeft de aanvraag ingetrokken.",
     REQUEST_NOT_FOUND: "Deze aanvraag bestaat niet.",
     MISSION_NOT_FOUND: "Deze interventie bestaat niet.",
+    MISSION_CLOSED: "Deze interventie is afgesloten: er kan geen offerte meer bij.",
+    QUOTE_ALREADY_PENDING: "Er wacht al een offerte op antwoord voor deze interventie.",
+    MAX_QUOTES_REACHED:
+      "Er zijn al drie offertes verstuurd. De interventie is geannuleerd; de aanvrager moet opnieuw starten.",
+    AMOUNT_ZERO: "Geef een bedrag op.",
+    AMOUNT_NEGATIVE: "Een bedrag kan niet negatief zijn.",
+    AMOUNT_TOO_HIGH: "Dit bedrag overstijgt wat hier als herstelling kan worden geoffreerd.",
+    DELAY_INVALID: "Geef een interventietermijn op.",
+    DELAY_TOO_LONG: "De termijn mag niet meer dan 24 u bedragen.",
+    NOTE_TOO_LONG: "Uw nota is te lang.",
+    VAT_RATE_UNKNOWN: "Dit btw-tarief is niet van toepassing.",
+    VAT_PROOF_REQUIRED: "Een verlaagd tarief vereist een bewijs: vermeld het.",
+    VAT_PROOF_TOO_LONG: "De verwijzing naar het bewijs is te lang.",
     INVALID_TRANSITION: "Deze stap is niet mogelijk vanuit de huidige toestand.",
     TIMESTAMP_IMPLAUSIBLE: "Het opgegeven tijdstip ligt te ver van de servertijd.",
     RATE_LIMIT_EXCEEDED: "Te veel pogingen. Even geduld.",
@@ -175,6 +326,19 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurPrestataire, string>> = {
     REQUEST_CANCELLED: "The requester withdrew it.",
     REQUEST_NOT_FOUND: "This request does not exist.",
     MISSION_NOT_FOUND: "This job does not exist.",
+    MISSION_CLOSED: "This job is closed: it can no longer be quoted.",
+    QUOTE_ALREADY_PENDING: "A quote is already awaiting an answer for this job.",
+    MAX_QUOTES_REACHED:
+      "Three quotes have already been sent. The job was cancelled; the requester must start again.",
+    AMOUNT_ZERO: "Enter an amount.",
+    AMOUNT_NEGATIVE: "An amount cannot be negative.",
+    AMOUNT_TOO_HIGH: "This amount is beyond what a callout can be quoted at here.",
+    DELAY_INVALID: "Enter a response time.",
+    DELAY_TOO_LONG: "The delay cannot exceed 24 h.",
+    NOTE_TOO_LONG: "Your note is too long.",
+    VAT_RATE_UNKNOWN: "This VAT rate does not apply.",
+    VAT_PROOF_REQUIRED: "A reduced rate requires proof: state it.",
+    VAT_PROOF_TOO_LONG: "The proof reference is too long.",
     INVALID_TRANSITION: "That step is not possible from the current state.",
     TIMESTAMP_IMPLAUSIBLE: "The declared time is too far from server time.",
     RATE_LIMIT_EXCEEDED: "Too many attempts. Please wait a moment.",
@@ -231,6 +395,25 @@ export async function avancerMission(
   return request(`/missions/${missionId}/status`, {
     method: "PATCH",
     body: { statut, ...(position ?? {}) },
+    headers: autorisation(),
+  });
+}
+
+/**
+ * Envoie un devis pour une Mission (FR-016).
+ *
+ * **Pas de mise en file hors-ligne.** Un devis rejoué une heure plus tard
+ * porterait un prix décidé devant une fuite qu'on n'a plus sous les yeux, et le
+ * délai annoncé serait déjà faux. Mieux vaut un refus immédiat qu'un document
+ * contractuel envoyé à retardement.
+ */
+export async function envoyerDevis(
+  missionId: string,
+  proposition: Proposition,
+): Promise<Devis & { code: string }> {
+  return request(`/missions/${missionId}/quote`, {
+    method: "POST",
+    body: proposition,
     headers: autorisation(),
   });
 }

@@ -17,11 +17,13 @@
 use chrono::Duration;
 use klaar_intervention::StatutMission;
 use klaar_matching::{Demande, StatutDemande, DUREE_DIFFUSION_SECONDES};
+use klaar_payment::{Devis, StatutDevis, DEVIS_MAX_PAR_MISSION};
 use klaar_shared_kernel::Geo;
 use std::fmt;
 use uuid::Uuid;
 
 use crate::ports::demande_repository::DemandeRepository;
+use crate::ports::devis_repository::DevisRepository;
 use crate::ports::erreurs::RepositoryError;
 use crate::ports::horloge::Horloge;
 use crate::ports::mission_repository::MissionRepository;
@@ -80,6 +82,11 @@ pub struct VueDemandeur {
     pub prestataire: Option<String>,
     pub mission_id: Option<Uuid>,
     pub mission_statut: Option<StatutMission>,
+    /// Dernier devis reçu, quel que soit son statut (FR-016).
+    ///
+    /// Un devis refusé ou expiré reste visible : le faire disparaître laisserait
+    /// l'écran vide sans dire ce qui s'est passé.
+    pub devis: Option<VueDevis>,
 }
 
 /// Ce qu'un prestataire voit d'une Demande qui lui est proposée.
@@ -97,6 +104,52 @@ pub struct VuePrestataire {
     pub secondes_restantes: i64,
 }
 
+/// Le dernier devis d'une Mission, tel que les deux parties le voient.
+///
+/// **Une seule structure pour le demandeur et pour le prestataire**, contrairement
+/// à la Demande. Un devis n'a rien d'asymétrique : c'est un document que l'un
+/// envoie et que l'autre lit, et le cacher à moitié à l'une des deux parties
+/// n'aurait aucun sens — celui qui l'a écrit connaît son prix, celui qui doit
+/// l'accepter aussi.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VueDevis {
+    pub devis_id: Uuid,
+    pub montant_htva_cents: i64,
+    /// Taux en points de base : 2100, 1200 ou 600.
+    pub taux_tva_bp: u16,
+    pub tva_cents: i64,
+    pub total_ttc_cents: i64,
+    pub delai_minutes: i64,
+    pub note: Option<String>,
+    pub statut: StatutDevis,
+    /// Secondes avant expiration, jamais négatives.
+    pub secondes_restantes: i64,
+    /// Vrai si l'heure de validité est passée sans que le balayage soit venu.
+    ///
+    /// Exposé plutôt que masqué, pour la même raison que `tour_ecoule` : sans
+    /// lui, le demandeur verrait « en attente de votre réponse » sur un devis
+    /// que plus personne n'honorera, et le prestataire attendrait une réponse
+    /// qui ne peut plus arriver.
+    pub echu: bool,
+}
+
+impl VueDevis {
+    fn depuis(devis: Devis, maintenant: chrono::DateTime<chrono::Utc>) -> Self {
+        Self {
+            devis_id: devis.id,
+            montant_htva_cents: devis.montant_htva.cents(),
+            taux_tva_bp: devis.taux_tva.basis_points(),
+            tva_cents: devis.tva.cents(),
+            total_ttc_cents: devis.total_ttc.cents(),
+            delai_minutes: devis.delai_minutes,
+            note: devis.note.clone(),
+            statut: devis.statut,
+            secondes_restantes: devis.secondes_restantes(maintenant),
+            echu: devis.est_expire(maintenant),
+        }
+    }
+}
+
 /// Ce que le prestataire attribué voit de sa Mission.
 ///
 /// C'est ici, et seulement ici, que l'adresse apparaît : il doit s'y rendre.
@@ -111,13 +164,22 @@ pub struct VueMission {
     /// Statuts atteignables depuis l'état courant, pour que l'interface
     /// n'invente pas de bouton que le domaine refusera.
     pub suites: Vec<&'static str>,
+    /// Dernier devis envoyé pour cette Mission (FR-016).
+    pub devis: Option<VueDevis>,
+    /// Devis restants avant que le plafond de FR-016 `@edge` ne soit atteint.
+    ///
+    /// Rendu pour que le prestataire sache ce qu'il lui reste **avant** de
+    /// perdre la Mission, et non après. Zéro signifie qu'un nouvel envoi
+    /// l'annulera.
+    pub devis_restants: usize,
 }
 
 /// Lit une Demande pour son auteur.
-pub async fn demande_du_demandeur<D, M, P, H>(
+pub async fn demande_du_demandeur<D, M, P, Q, H>(
     demandes: &D,
     missions: &M,
     prestataires: &P,
+    devis_repo: &Q,
     horloge: &H,
     utilisateur_id: Uuid,
     demande_id: Uuid,
@@ -126,6 +188,7 @@ where
     D: DemandeRepository,
     M: MissionRepository,
     P: ProviderRepository,
+    Q: DevisRepository,
     H: Horloge,
 {
     let maintenant = horloge.maintenant();
@@ -140,20 +203,29 @@ where
     // La Mission n'est cherchée que si la Demande est attribuée : interroger
     // systématiquement coûterait une requête pour rien sur le cas le plus
     // fréquent, celui d'une Demande encore en diffusion.
-    let (prestataire, mission_id, mission_statut) = if demande.statut == StatutDemande::Attribuee {
-        match missions.par_demande(demande.id).await? {
-            Some(mission) => {
-                let nom = prestataires
-                    .par_id(mission.provider_id)
-                    .await?
-                    .map(|p| p.raison_sociale);
-                (nom, Some(mission.id), Some(mission.statut))
+    let (prestataire, mission_id, mission_statut, devis) =
+        if demande.statut == StatutDemande::Attribuee {
+            match missions.par_demande(demande.id).await? {
+                Some(mission) => {
+                    let nom = prestataires
+                        .par_id(mission.provider_id)
+                        .await?
+                        .map(|p| p.raison_sociale);
+                    // Le devis n'est lu que pour une Demande attribuée, comme la
+                    // Mission : sans Mission il ne peut pas en exister, et le
+                    // chercher coûterait une requête pour rien sur le cas le plus
+                    // fréquent.
+                    let devis = devis_repo
+                        .dernier_pour_mission(mission.id)
+                        .await?
+                        .map(|d| VueDevis::depuis(d, maintenant));
+                    (nom, Some(mission.id), Some(mission.statut), devis)
+                }
+                None => (None, None, None, None),
             }
-            None => (None, None, None),
-        }
-    } else {
-        (None, None, None)
-    };
+        } else {
+            (None, None, None, None)
+        };
 
     Ok(VueDemandeur {
         demande,
@@ -161,6 +233,7 @@ where
         prestataire,
         mission_id,
         mission_statut,
+        devis,
     })
 }
 
@@ -202,10 +275,12 @@ where
 }
 
 /// Lit une Mission pour le prestataire à qui elle est attribuée.
-pub async fn mission_du_prestataire<P, M, D>(
+pub async fn mission_du_prestataire<P, M, D, Q, H>(
     prestataires: &P,
     missions: &M,
     demandes: &D,
+    devis_repo: &Q,
+    horloge: &H,
     utilisateur_id: Uuid,
     mission_id: Uuid,
 ) -> Result<VueMission, ErreurConsultation>
@@ -213,6 +288,8 @@ where
     P: ProviderRepository,
     M: MissionRepository,
     D: DemandeRepository,
+    Q: DevisRepository,
+    H: Horloge,
 {
     let provider = prestataires
         .par_utilisateur_id(utilisateur_id)
@@ -230,6 +307,13 @@ where
         .await?
         .ok_or(ErreurConsultation::Introuvable)?;
 
+    let maintenant = horloge.maintenant();
+    let devis = devis_repo
+        .dernier_pour_mission(mission.id)
+        .await?
+        .map(|d| VueDevis::depuis(d, maintenant));
+    let deja_envoyes = devis_repo.compter_pour_mission(mission.id).await?;
+
     Ok(VueMission {
         mission_id: mission.id,
         statut: mission.statut,
@@ -244,5 +328,7 @@ where
             .iter()
             .map(|s| s.as_str())
             .collect(),
+        devis,
+        devis_restants: DEVIS_MAX_PAR_MISSION.saturating_sub(deja_envoyes),
     })
 }

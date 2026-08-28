@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use klaar_application::usecases::consulter::{
-    demande_du_demandeur, demandes_proposees, mission_du_prestataire, ErreurConsultation,
+    demande_du_demandeur, demandes_proposees, mission_du_prestataire, ErreurConsultation, VueDevis,
 };
 
 use crate::auth::Authentifie;
@@ -35,6 +35,47 @@ pub struct SuiviDemandeDto {
     pub prestataire: Option<String>,
     pub mission_id: Option<String>,
     pub mission_statut: Option<String>,
+    /// Dernier devis reçu, quel que soit son statut (FR-016).
+    pub devis: Option<DevisDto>,
+}
+
+/// Le dernier devis d'une Mission, pour l'une comme pour l'autre partie.
+///
+/// Tous les montants en centimes : un devis n'est pas l'endroit où découvrir
+/// que 0,1 + 0,2 ne fait pas 0,3 en binaire.
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DevisDto {
+    pub id: String,
+    pub montant_htva_cents: i64,
+    pub taux_tva_bp: u16,
+    pub tva_cents: i64,
+    pub total_ttc_cents: i64,
+    pub delai_minutes: i64,
+    pub note: Option<String>,
+    pub statut: String,
+    pub secondes_restantes: i64,
+    /// L'heure de validité est passée, même si le statut dit encore
+    /// « en attente » : le balayage n'est pas venu. Exposé pour la même raison
+    /// que `tour_ecoule`.
+    pub echu: bool,
+}
+
+impl From<VueDevis> for DevisDto {
+    fn from(vue: VueDevis) -> Self {
+        Self {
+            id: vue.devis_id.to_string(),
+            montant_htva_cents: vue.montant_htva_cents,
+            taux_tva_bp: vue.taux_tva_bp,
+            tva_cents: vue.tva_cents,
+            total_ttc_cents: vue.total_ttc_cents,
+            delai_minutes: vue.delai_minutes,
+            note: vue.note,
+            statut: vue.statut.as_str().to_string(),
+            secondes_restantes: vue.secondes_restantes,
+            echu: vue.echu,
+        }
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -71,6 +112,10 @@ pub struct SuiviMissionDto {
     /// Rendus par le serveur pour que l'interface n'invente pas un bouton que
     /// le domaine refusera, et n'ait pas à recopier la machine à états.
     pub suites: Vec<String>,
+    /// Dernier devis envoyé pour cette Mission (FR-016).
+    pub devis: Option<DevisDto>,
+    /// Devis encore envoyables avant que le plafond n'annule la Mission.
+    pub devis_restants: usize,
 }
 
 fn statut(e: &ErreurConsultation) -> actix_web::http::StatusCode {
@@ -122,6 +167,7 @@ pub async fn suivre_demande(
         etat.demandes.as_ref(),
         etat.missions.as_ref(),
         etat.prestataires.as_ref(),
+        etat.devis.as_ref(),
         etat.horloge.as_ref(),
         authentifie.utilisateur_id,
         demande_id,
@@ -140,6 +186,7 @@ pub async fn suivre_demande(
             prestataire: vue.prestataire,
             mission_id: vue.mission_id.map(|i| i.to_string()),
             mission_statut: vue.mission_statut.map(|s| s.as_str().to_string()),
+            devis: vue.devis.map(DevisDto::from),
         }),
         Err(e) => refus(e),
     }
@@ -219,6 +266,8 @@ pub async fn suivre_mission(
         etat.prestataires.as_ref(),
         etat.missions.as_ref(),
         etat.demandes.as_ref(),
+        etat.devis.as_ref(),
+        etat.horloge.as_ref(),
         authentifie.utilisateur_id,
         mission_id,
     )
@@ -233,6 +282,8 @@ pub async fn suivre_mission(
             latitude: vue.position.lat(),
             longitude: vue.position.lon(),
             suites: vue.suites.into_iter().map(String::from).collect(),
+            devis: vue.devis.map(DevisDto::from),
+            devis_restants: vue.devis_restants,
         }),
         Err(e) => refus(e),
     }

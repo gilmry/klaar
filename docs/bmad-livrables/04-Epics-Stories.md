@@ -884,6 +884,40 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain (Quote aggregate) + Application + Infra (Stripe pre-auth) + Frontend
 - **Taille** : **L** (1 j) · **Tours** : 5
 
+> **Livrée sans le séquestre, et pourquoi.** FR-016 `@happy` demande que
+> l'Escrow soit pré-autorisé à l'émission du devis. Le compte Stripe n'est pas
+> ouvert, et attendre qu'il le soit aurait laissé le devis entier — l'agrégat,
+> la TVA belge, le plafond de trois, l'expiration à une heure — dormir dans le
+> backlog derrière une dépendance qui ne dépend pas de nous. Le devis existe
+> donc, s'envoie, se reçoit et expire ; la pré-autorisation rejoint Story 4.2,
+> avec l'acceptation qu'elle sert.
+>
+> **Le prix est libre, et c'est un test qui le dit.** L'invariant §10.2 n'est
+> pas un commentaire : `security_le_montant_rendu_est_exactement_celui_propose`
+> parcourt toute l'échelle admissible et vérifie que rien n'a bougé, du
+> formulaire jusqu'à la ligne écrite. Le formulaire n'a aucune valeur par
+> défaut, aucun montant conseillé, aucun rappel du dernier prix pratiqué : une
+> suggestion serait une fixation de prix douce, et c'est exactement ce que la
+> loi du 26 avril 2024 regarde.
+>
+> **Arbitrages.** Le plafond de montant est fixé à 10 000 € HTVA : FR-016
+> `@negative` demande `AMOUNT_TOO_HIGH` à 100 000 € sans dire où passe la
+> borne, et au-delà de dix mille ce n'est plus un dépannage mais un chantier.
+> Le devis est permis depuis tous les états non terminaux de la Mission, et pas
+> seulement à l'attribution : un plombier chiffre après avoir vu la fuite. Le
+> prestataire non attribué reçoit **404** et non le 403 du PRD, par la même
+> précédence anti-énumération que les autres routes de Mission. Un code
+> nouveau, `QUOTE_ALREADY_PENDING`, refuse un second devis tant que le premier
+> attend : deux prix affichés en même temps laisseraient le demandeur sans
+> savoir lequel l'engage.
+>
+> **Non livré, et écrit comme tel.** La remise en diffusion de la Demande après
+> un second devis expiré n'est pas implémentée : défaire une attribution
+> suppose une décision sur l'argent déjà engagé que FR-017 n'a pas tranchée. Le
+> devis expire, la Mission reste attribuée, et le prestataire peut en renvoyer
+> un. Le taux de TVA réduit exige une référence de preuve, mais celle-ci est un
+> texte libre : sa vérification relève d'un contrôle fiscal, pas du service.
+
 ### Story 4.2 — Acceptation Devis User + Escrow capture (FR-017)
 - **En tant que** User · **je veux** accepter le Devis · **afin de** déclencher la Mission
 - **4×N** : PRD FR-017 (3DS2, fonds insuffisants, devis expiré)

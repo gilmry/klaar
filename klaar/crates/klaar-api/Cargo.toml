@@ -8,6 +8,8 @@ license.workspace = true
 
 [dependencies]
 klaar-application = { path = "../klaar-application", version = "0.0.0" }
+klaar-payment = { path = "../klaar-payment", version = "0.0.0" }
+klaar-intervention = { path = "../klaar-intervention", version = "0.0.0" }
 klaar-identity = { path = "../klaar-identity", version = "0.0.0" }
 # Le vocabulaire du domaine traverse la frontière HTTP : motif d'annulation,
 # rayons successifs, limite d'élargissements. Les recopier en constantes de

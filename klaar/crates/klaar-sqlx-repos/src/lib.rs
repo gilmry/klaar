@@ -4,6 +4,7 @@ pub mod audit_trace;
 mod catalogue;
 mod demande;
 pub mod demonstration;
+mod devis;
 mod effacement;
 mod journal_audit;
 mod mission;
@@ -16,6 +17,7 @@ mod utilisateur;
 
 pub use catalogue::PgCatalogueRepository;
 pub use demande::{PgDemandeRepository, PgPaiementRepository};
+pub use devis::PgDevisRepository;
 pub use journal_audit::PgJournalAudit;
 pub use mission::PgMissionRepository;
 pub use pool::{creer_pool, PoolPg};

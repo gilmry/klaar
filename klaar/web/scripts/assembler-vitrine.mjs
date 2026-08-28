@@ -67,6 +67,22 @@ const PARCOURS = [
     ],
   },
   {
+    titre: "Un devis envoyé, reçu, et le second qui ne passe pas",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Un devis envoyé, reçu, et le second qui ne passe pas",
+    propos:
+      "Le prix vient du prestataire. L'écran ne propose aucun montant, n'en suggère aucun et " +
+      "n'en corrige aucun : c'est ce que la loi belge sur le travail de plateforme regarde, et " +
+      "un champ vide filmé le montre mieux qu'un paragraphe. La TVA belge s'ajoute au prix et " +
+      "reste détaillée ; un second devis est refusé tant que le premier attend une réponse.",
+    videos: [
+      { fichier: "devis-demandeuse", acteur: "Camille · demandeuse" },
+      { fichier: "devis-prestataire", acteur: "Élec Schaerbeek · prestataire" },
+    ],
+  },
+  {
     titre: "Deux prestataires, une Demande : le premier arrivé gagne",
     // Titre du test qui produit ces vidéos. Explicite parce que le titre
     // affiché est une accroche, pas un nom de cas — et parce qu'apparier à

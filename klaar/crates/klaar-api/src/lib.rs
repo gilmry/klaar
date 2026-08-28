@@ -17,9 +17,9 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
-    PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgMissionRepository,
-    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
-    PgTraceRepository, PgUtilisateurRepository,
+    PgCatalogueRepository, PgDemandeRepository, PgDevisRepository, PgJournalAudit,
+    PgMissionRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
+    PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -53,6 +53,7 @@ pub struct EtatApplication {
     pub prestataires: Arc<PgProviderRepository>,
     pub traces: Arc<PgTraceRepository>,
     pub missions: Arc<PgMissionRepository>,
+    pub devis: Arc<PgDevisRepository>,
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
@@ -109,6 +110,7 @@ pub struct EtatApplication {
         routes::disponibilite::lire_disponibilite,
         routes::disponibilite::regler_disponibilite,
         routes::mission::avancer_mission,
+        routes::devis::envoyer_devis,
         routes::suivi::suivre_demande,
         routes::suivi::demandes_recues,
         routes::suivi::suivre_mission,
@@ -141,9 +143,12 @@ pub struct EtatApplication {
         routes::disponibilite::ReglageDto,
         routes::mission::TransitionDto,
         routes::mission::MissionAvanceeDto,
+        routes::devis::PropositionDto,
+        routes::devis::DevisEmisDto,
         routes::suivi::SuiviDemandeDto,
         routes::suivi::DemandeProposeeDto,
         routes::suivi::SuiviMissionDto,
+        routes::suivi::DevisDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -159,6 +164,7 @@ pub struct EtatApplication {
         (name = "demandes", description = "Demandes de dépannage (FR-011 à FR-015)"),
         (name = "prestataires", description = "Disponibilité et rayon d\'intervention (FR-003)"),
         (name = "missions", description = "Cycle de vie d\'une intervention (FR-018)"),
+        (name = "devis", description = "Devis du prestataire (FR-016)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -183,6 +189,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::disponibilite::lire_disponibilite)
         .service(routes::disponibilite::regler_disponibilite)
         .service(routes::mission::avancer_mission)
+        .service(routes::devis::envoyer_devis)
         .service(routes::suivi::suivre_demande)
         .service(routes::suivi::demandes_recues)
         .service(routes::suivi::suivre_mission)
@@ -213,7 +220,8 @@ pub fn etat_de_test(
         paiements: Arc::new(PgPaiementRepository::new(pool.clone())),
         prestataires: Arc::new(PgProviderRepository::new(pool.clone())),
         traces: Arc::new(PgTraceRepository::new(pool.clone())),
-        missions: Arc::new(PgMissionRepository::new(pool)),
+        missions: Arc::new(PgMissionRepository::new(pool.clone())),
+        devis: Arc::new(PgDevisRepository::new(pool)),
         jetons: Arc::new(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),

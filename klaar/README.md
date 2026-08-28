@@ -613,6 +613,39 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Le suivi sonde toutes les cinq secondes et s'arrête quand la Demande est close.
   Dette assumée : le temps réel appartient au WebSocket (Story 4.9).
 
+- **4.1** — **Envoi d'un devis** (FR-016) : `POST /api/v1/missions/{id}/quote`,
+  et le devis rendu dans les deux suivis.
+
+  **Le prix vient du prestataire, et c'est un test qui le dit.** Le formulaire
+  n'a aucune valeur par défaut, aucun montant conseillé, aucun rappel du dernier
+  prix pratiqué : une suggestion serait une fixation de prix douce, et c'est ce
+  que regarde la loi belge du 26 avril 2024 sur le travail de plateforme
+  (invariant §10.2). `security_le_montant_rendu_est_exactement_celui_propose`
+  parcourt toute l'échelle admissible et vérifie que rien n'a bougé, du clavier
+  jusqu'à la ligne écrite.
+
+  **La TVA est calculée une fois et conservée.** 180 € HTVA à 21 % font
+  217,80 €, et ce total est écrit tel quel : recalculer à la lecture après un
+  changement de taux réécrirait un document contractuel. Les trois taux belges
+  applicables sont admis, pas un de plus, et tout taux réduit exige une preuve.
+
+  **Deux comptages, tenus par la base et pas au-dessus.** Un seul devis en
+  attente par Mission — index unique partiel — et trois devis au maximum — un
+  `WHERE` sur l'insertion. Lire puis décider laisserait deux envois simultanés
+  poser deux prix, et le demandeur ne saurait pas lequel l'engage. Un devis
+  vivant prime sur le plafond : annuler la Mission alors qu'une offre attend une
+  réponse détruirait ce que le demandeur est en train de lire.
+
+  Le devis expire au bout d'une heure ; le balayage de `klaar-expirer` l'éteint
+  et prévient son émetteur. La notification ne porte **pas le montant** : elle
+  s'affiche sur un écran verrouillé, et ce que coûte la réparation d'une
+  chaudière est une information sur la situation de quelqu'un.
+
+  Non livré, et écrit comme tel : la pré-autorisation du séquestre (Stripe, avec
+  la Story 4.2), l'acceptation ou le refus depuis l'écran (FR-017), et la remise
+  en diffusion après un second devis expiré — défaire une attribution suppose
+  une décision sur l'argent engagé que FR-017 n'a pas tranchée.
+
 - **3.9** — **File d'attente hors ligne** (hors plan initial) : une Demande
   écrite sans réseau part au retour de la connexion.
 

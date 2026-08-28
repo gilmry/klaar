@@ -47,6 +47,74 @@ export interface SuiviDemande {
   prestataire: string | null;
   mission_id: string | null;
   mission_statut: string | null;
+  /**
+   * Dernier devis reçu, quel que soit son statut (FR-016).
+   *
+   * Un devis refusé ou expiré reste rendu : le faire disparaître laisserait
+   * l'écran vide sans dire ce qui s'est passé.
+   */
+  devis: DevisRecu | null;
+}
+
+/**
+ * Un devis, tel que le demandeur le voit.
+ *
+ * **Montants en centimes entiers**, comme partout : la conversion en euros n'a
+ * lieu qu'à l'affichage. Le total TTC vient du serveur et n'est jamais
+ * recalculé ici — il est conservé tel qu'il a été présenté, et le recalculer
+ * après un changement de taux réécrirait un document contractuel.
+ */
+export interface DevisRecu {
+  id: string;
+  montant_htva_cents: number;
+  taux_tva_bp: number;
+  tva_cents: number;
+  total_ttc_cents: number;
+  delai_minutes: number;
+  note: string | null;
+  statut: "SENT" | "ACCEPTED" | "REFUSED" | "EXPIRED";
+  secondes_restantes: number;
+  /** L'heure de validité est passée, même si le statut dit encore « envoyé ». */
+  echu: boolean;
+}
+
+/**
+ * Ce que le devis attend du demandeur, en clair.
+ *
+ * L'échéance passe avant le statut : le balayage peut n'être pas encore venu,
+ * et proposer de répondre à un devis mort ferait espérer pour rien.
+ */
+export function libelleDevis(devis: DevisRecu): string {
+  if (devis.statut === "SENT" && devis.echu) return "Ce devis a expiré sans réponse.";
+  switch (devis.statut) {
+    case "SENT":
+      return "Un devis vous attend.";
+    case "ACCEPTED":
+      return "Vous avez accepté ce devis.";
+    case "REFUSED":
+      return "Vous avez refusé ce devis.";
+    case "EXPIRED":
+      return "Ce devis a expiré sans réponse.";
+    default:
+      return devis.statut;
+  }
+}
+
+/** Montant en centimes, rendu en euros. La seule division du module. */
+export function montantLisible(cents: number): string {
+  const euros = (cents / 100).toLocaleString("fr-BE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${euros} €`;
+}
+
+/** Délai en minutes, rendu en heures et minutes. */
+export function delaiLisible(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const reste = minutes % 60;
+  return reste === 0 ? `${h} h` : `${h} h ${reste}`;
 }
 
 /** Motifs d'annulation, vocabulaire fermé (FR-014). */

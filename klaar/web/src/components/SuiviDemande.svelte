@@ -16,10 +16,13 @@
   import {
     annulerDemande,
     codeDepuisErreur,
+    delaiLisible,
     elargirZone,
+    libelleDevis,
     libelleMission,
     libelleStatutDemande,
     messageErreur,
+    montantLisible,
     MOTIFS_ANNULATION,
     peutAnnuler,
     peutElargir,
@@ -133,6 +136,36 @@
     </p>
     <p>{suivi.description}</p>
 
+    {#if suivi.devis}
+      <section data-devis={suivi.devis.statut} class="devis">
+        <h3>Devis reçu</h3>
+        <p data-devis-total>
+          <strong>{montantLisible(suivi.devis.total_ttc_cents)} TTC</strong>
+          <span class="klaar-tempere">
+            ({montantLisible(suivi.devis.montant_htva_cents)} hors TVA + {montantLisible(
+              suivi.devis.tva_cents,
+            )} de TVA à {suivi.devis.taux_tva_bp / 100} %)
+          </span>
+        </p>
+        <p class="klaar-tempere">
+          Intervention annoncée sous {delaiLisible(suivi.devis.delai_minutes)}.
+        </p>
+        {#if suivi.devis.note}
+          <p data-devis-note>{suivi.devis.note}</p>
+        {/if}
+        <p role="status" data-devis-etat>{libelleDevis(suivi.devis)}</p>
+        <p class="klaar-tempere">
+          C'est le prestataire qui fixe son prix. Klaar ne le lui suggère pas et
+          ne le corrige pas.
+          <!-- Accepter ou refuser relève de FR-017 (Story 4.2), qui dépend du
+               séquestre Stripe : promettre un bouton qui n'existe pas encore
+               serait pire que de dire ce qui manque. -->
+          Accepter ou refuser depuis cette page arrivera avec le paiement
+          sécurisé ; d'ici là, voyez directement avec le prestataire.
+        </p>
+      </section>
+    {/if}
+
     {#if peutElargir(suivi)}
       <button type="button" onclick={elargir} disabled={occupe} data-action="elargir">
         {occupe ? "Un instant…" : "Élargir la zone de recherche"}
@@ -167,6 +200,14 @@
     padding: 0.8rem 1rem;
   }
   p[data-suivi-etat] { font-weight: 600; font-size: 1.1rem; margin-top: 0; }
+  .devis {
+    border: 1px solid var(--klaar-bord);
+    border-radius: 8px;
+    padding: 0.6rem 0.8rem;
+    margin: 0.8rem 0;
+  }
+  .devis h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+  p[data-devis-total] { font-size: 1.15rem; margin: 0.2rem 0; }
   label { display: block; font-weight: 600; margin-top: 0.6rem; }
   select { font: inherit; padding: 0.45rem; border-radius: 8px; border: 1px solid var(--klaar-bord); }
   button {
