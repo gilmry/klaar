@@ -62,18 +62,24 @@ impl std::error::Error for NumeroBceError {}
 impl NumeroBce {
     /// Analyse un numéro saisi, séparateurs tolérés.
     ///
-    /// `0123.456.749`, `0123456749` et `BE 0123 456 749` désignent le même
-    /// numéro : refuser une mise en forme habituelle ferait buter l'inscription
-    /// sur un détail typographique, et le titulaire recopie ce qui figure sur
-    /// ses documents.
+    /// `0AAA.BBB.CC`, `0AAABBBCC` et `BE 0AAA BBB CC` désignent le même numéro :
+    /// refuser une mise en forme habituelle ferait buter l'inscription sur un
+    /// détail typographique, et le titulaire recopie ce qui figure sur ses
+    /// documents.
+    ///
+    /// Aucun numéro concret n'est donné en exemple ici, ni ailleurs dans ce
+    /// fichier : un numéro BCE bien formé identifie une personne morale
+    /// réelle, et en figer un dans un dépôt public le rattacherait durablement
+    /// à ce projet sans que son titulaire n'ait rien demandé. Les tests
+    /// construisent les leurs.
     pub fn parse(saisie: &str) -> Result<Self, NumeroBceError> {
         let brut = saisie.trim();
         if brut.is_empty() {
             return Err(NumeroBceError::Vide);
         }
-        // Le préfixe pays est retiré avant tout : « BE0123456749 » est la forme
-        // du numéro de TVA, que beaucoup donnent pour le numéro d'entreprise —
-        // ce qu'il est, au préfixe près.
+        // Le préfixe pays est retiré avant tout : la forme « BE… » est celle du
+        // numéro de TVA, que beaucoup donnent pour le numéro d'entreprise — ce
+        // qu'il est, au préfixe près.
         let sans_pays = brut
             .strip_prefix("BE")
             .or_else(|| brut.strip_prefix("be"))
@@ -107,7 +113,7 @@ impl NumeroBce {
         &self.0
     }
 
-    /// Forme lisible `0123.456.749`, telle qu'elle figure sur les documents.
+    /// Forme lisible `0AAA.BBB.CC`, telle qu'elle figure sur les documents.
     pub fn formate(&self) -> String {
         format!("{}.{}.{}", &self.0[..4], &self.0[4..7], &self.0[7..])
     }
@@ -253,11 +259,11 @@ mod tests {
         for hostile in [
             "../../etc/passwd",
             "'; DROP TABLE provider; --",
-            "0123456749\u{0}",
+            "0000000097\u{0}",
             "٠١٢٣٤٥٦٧٤٩",
             &"9".repeat(1_000),
             "BE",
-            "BEBEBE0123456749",
+            "BEBEBE0000000097",
         ] {
             let _ = NumeroBce::parse(hostile);
         }
