@@ -4,6 +4,7 @@
 pub mod accepter;
 pub mod annuler;
 pub mod connecter;
+pub mod disponibilite;
 pub mod effacer;
 pub mod elargir;
 pub mod expirer;

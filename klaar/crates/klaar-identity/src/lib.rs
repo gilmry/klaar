@@ -17,6 +17,7 @@ pub use mot_de_passe::{EmpreinteMotDePasse, MotDePasse, MotDePasseError, Paramet
 pub use numero_bce::{NumeroBce, NumeroBceError};
 pub use provider::{
     OrigineKyc, PreuveKyc, Provider, ProviderError, StatutProvider, RAISON_SOCIALE_MAX,
+    RAYON_INTERVENTION_DEFAUT, RAYON_INTERVENTION_MAX, RAYON_INTERVENTION_MIN,
 };
 pub use utilisateur::{JetonEmis, StatutUtilisateur, Utilisateur, DELAI_EFFACEMENT_JOURS};
 pub use verrouillage::{Verrouillage, DUREE_VERROU_MINUTES, FENETRE_ECHECS_MINUTES, MAX_ECHECS};

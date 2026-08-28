@@ -1,0 +1,19 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import Disponibilite from "../components/Disponibilite.svelte";
+---
+
+<AppLayout
+  titre="Klaar — espace prestataire"
+  description="Gérez votre disponibilité et votre rayon d'intervention."
+>
+  <h1>Espace prestataire</h1>
+
+  <h2>Ma disponibilité</h2>
+  <p class="klaar-tempere">
+    Se mettre en pause n'est pas une radiation : votre compte reste actif, vous
+    ne recevez simplement plus de Demandes tant que vous ne reprenez pas.
+  </p>
+
+  <Disponibilite client:load />
+</AppLayout>

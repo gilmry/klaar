@@ -23,7 +23,7 @@ impl PgProviderRepository {
 }
 
 const COLONNES: &str = "p.id, p.utilisateur_id, p.numero_bce, p.raison_sociale, p.statut, \
-     p.origine_kyc, p.kyc_verifie_le, p.cree_le, ST_Y(p.base::geometry) AS lat, ST_X(p.base::geometry) AS lon, \
+     p.origine_kyc, p.kyc_verifie_le, p.disponible, p.rayon_intervention_metres, p.cree_le, ST_Y(p.base::geometry) AS lat, ST_X(p.base::geometry) AS lon, \
      COALESCE(ARRAY_AGG(c.secteur_code ORDER BY c.secteur_code) \
               FILTER (WHERE c.secteur_code IS NOT NULL), '{}') AS competences";
 
@@ -61,6 +61,8 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Provider, RepositoryErr
             .transpose()?,
         kyc_verifie_le: ligne.get("kyc_verifie_le"),
         competences,
+        disponible: ligne.get("disponible"),
+        rayon_intervention_metres: ligne.get("rayon_intervention_metres"),
         cree_le: ligne.get("cree_le"),
     })
 }
@@ -188,6 +190,20 @@ impl ProviderRepository for PgProviderRepository {
         Ok(())
     }
 
+    async fn definir_rayon_intervention(
+        &self,
+        provider_id: Uuid,
+        metres: f64,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query("UPDATE provider SET rayon_intervention_metres = $1 WHERE id = $2")
+            .bind(metres)
+            .bind(provider_id)
+            .execute(&self.pool)
+            .await
+            .map_err(erreur)?;
+        Ok(())
+    }
+
     async fn proches(
         &self,
         secteur: &CodeCatalogue,
@@ -210,6 +226,21 @@ impl ProviderRepository for PgProviderRepository {
              WHERE p.statut = 'ACTIVE'
                AND p.disponible
                AND ST_DWithin(p.base, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+               -- Le rayon propre du prestataire, en plus de celui du tour
+               -- (Story 3.7). En second filtre et non dans le `ST_DWithin` :
+               -- une distance qui varie d'une ligne à l'autre empêcherait
+               -- l'index GIST de servir. Le `ST_DWithin` élague avec l'index,
+               -- celui-ci affine sur le reste.
+               AND ST_Distance(p.base, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography)
+                   <= p.rayon_intervention_metres
+               -- Occupé : une Mission en cours interdit d'en prendre une
+               -- seconde (FR-013 `@edge`). Le notifier quand même lui ferait
+               -- ouvrir l'application pour se voir refuser, et volerait sa
+               -- place à quelqu'un de libre.
+               AND NOT EXISTS (
+                   SELECT 1 FROM mission m
+                   WHERE m.provider_id = p.id AND m.statut IN ('ASSIGNED')
+               )
                AND EXISTS (
                    SELECT 1 FROM provider_competence pc
                    WHERE pc.provider_id = p.id AND pc.secteur_code = $4

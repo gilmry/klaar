@@ -123,6 +123,31 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Disponibilité : trois raisons de ne rien recevoir (Story 3.7)
+
+Un prestataire peut être écarté du matching pour trois raisons distinctes : son
+**statut** (en attente de contrôle, suspendu), sa **disponibilité** (« je suis en
+congé »), et son **occupation** (une Mission en cours). Les confondre ferait
+d'une pause une sanction. Seule la disponibilité se règle ; les deux autres sont
+exposées, pour qu'un prestataire jamais sollicité puisse comprendre pourquoi
+plutôt que d'en conclure que le service est cassé.
+
+**Un prestataire déjà en Mission n'est plus proposé.** C'était un trou depuis la
+Story 3.4 : il recevait des notifications qu'il ne pouvait qu'échouer à
+accepter, et volait sa place à quelqu'un de libre. Le filtre est posé par la
+base, pas appliqué après coup.
+
+**Le rayon d'intervention appartient au prestataire.** Le tour de diffusion dit
+jusqu'où la Demande cherche ; ce rayon dit jusqu'où le prestataire accepte
+d'aller. Le défaut est le maximum : les fiches existantes n'ont jamais exprimé de
+limite, et leur en prêter une les retirerait du service sans qu'elles aient rien
+demandé.
+
+**Non livré : les zones d'intervention disjointes.** Travailler à deux endroits
+sans couvrir l'espace entre les deux demanderait un modèle géographique autre
+qu'un point et un rayon. Ce qui est livré est la part actionnable : chacun règle
+sa distance.
+
 ## Annulation : ce que le motif a le droit d'être (Story 3.5, FR-014)
 
 FR-014 veut le motif d'annulation « stocké pour analytics ». Le motif est un

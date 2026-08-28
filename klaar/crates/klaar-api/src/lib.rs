@@ -97,6 +97,8 @@ pub struct EtatApplication {
         routes::acceptation::accepter_demande,
         routes::elargissement::elargir_rayon,
         routes::annulation::annuler_demande,
+        routes::disponibilite::lire_disponibilite,
+        routes::disponibilite::regler_disponibilite,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -122,6 +124,8 @@ pub struct EtatApplication {
         routes::acceptation::MissionDto,
         routes::elargissement::ElargissementDto,
         routes::annulation::AnnulationDto,
+        routes::disponibilite::DisponibiliteDto,
+        routes::disponibilite::ReglageDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -135,6 +139,7 @@ pub struct EtatApplication {
         (name = "compte", description = "Compte de l'utilisateur authentifié (FR-005)"),
         (name = "catalogue", description = "Secteurs et Skills (FR-008)"),
         (name = "demandes", description = "Demandes de dépannage (FR-011 à FR-015)"),
+        (name = "prestataires", description = "Disponibilité et rayon d\'intervention (FR-003)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -156,6 +161,8 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::acceptation::accepter_demande)
         .service(routes::elargissement::elargir_rayon)
         .service(routes::annulation::annuler_demande)
+        .service(routes::disponibilite::lire_disponibilite)
+        .service(routes::disponibilite::regler_disponibilite)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);

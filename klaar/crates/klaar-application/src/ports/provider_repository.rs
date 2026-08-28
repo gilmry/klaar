@@ -49,7 +49,24 @@ pub trait ProviderRepository {
         disponible: bool,
     ) -> Result<(), RepositoryError>;
 
-    /// Prestataires actifs, disponibles, couvrant le secteur, dans le rayon.
+    /// Écrit la distance au-delà de laquelle le prestataire ne se déplace pas.
+    ///
+    /// Séparé de `definir_disponibilite` : se mettre en pause et réduire son
+    /// rayon sont deux décisions distinctes, et les écrire ensemble ferait
+    /// qu'une reprise de service réinitialiserait un réglage.
+    async fn definir_rayon_intervention(
+        &self,
+        provider_id: Uuid,
+        metres: f64,
+    ) -> Result<(), RepositoryError>;
+
+    /// Prestataires **sollicitables** couvrant le secteur, dans le rayon.
+    ///
+    /// Sollicitable veut dire : actif, en service, libre de toute Mission en
+    /// cours, et dont le rayon d'intervention propre couvre la distance. Les
+    /// quatre conditions sont posées par la base plutôt que filtrées après
+    /// coup : rapatrier pour écarter ferait porter la limite sur les candidats
+    /// examinés au lieu des candidats retenus.
     ///
     /// Triés par distance croissante. Le tri est fait par la base, qui dispose
     /// de l'index spatial : le faire après coup obligerait à tout rapatrier.

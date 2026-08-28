@@ -7,6 +7,7 @@ pub mod auth;
 pub mod catalogue;
 pub mod compte;
 pub mod demande;
+pub mod disponibilite;
 pub mod elargissement;
 pub mod health;
 pub mod push;

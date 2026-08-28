@@ -486,6 +486,35 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Limite : l'avis de fin de tour part en français quel que soit le compte, et il
   n'existe toujours pas d'interface prestataire ni de bouton « élargir ».
 
+- **3.7** — **Disponibilité du prestataire** : `GET`/`PATCH
+  /api/v1/providers/me/availability`, plus la page `/prestataire`.
+
+  **Trois notions distinctes, et c'est tout l'enjeu.** Un prestataire peut être
+  écarté du matching pour trois raisons sans rapport : son **statut** (en
+  attente de contrôle, suspendu), sa **disponibilité** (« je suis en congé »),
+  et son **occupation** (une Mission en cours). Les confondre ferait d'une pause
+  une sanction. Seule la deuxième se règle ; les deux autres s'affichent, parce
+  qu'un prestataire en service et pourtant jamais sollicité conclurait sinon que
+  le service est cassé.
+
+  Le « busy auto » comblait un vrai trou ouvert par la Story 3.4 : un
+  prestataire déjà en Mission recevait des notifications qu'il ne pouvait
+  qu'échouer à accepter, et volait sa place à quelqu'un de libre.
+
+  Le **rayon d'intervention** est celui du prestataire, distinct de celui du
+  tour : le tour dit jusqu'où la Demande cherche, celui-ci jusqu'où le
+  prestataire accepte d'aller. Le défaut est le maximum, pas une valeur
+  médiane — les fiches existantes n'ont jamais exprimé de limite, leur en prêter
+  une les retirerait du service sans qu'elles aient rien demandé.
+
+  `peut_etre_sollicite` a changé de sens, et deux tests l'ont signalé : il ne
+  regardait que le statut alors que la base filtrait déjà sur statut **et**
+  disponibilité. Le domaine mentait sur ce que le système faisait.
+
+  **Multi-zone n'est pas livré.** Des zones d'intervention disjointes
+  demanderaient un modèle géographique autre qu'un point et un rayon ; dans le
+  PRD, « zone » désigne par ailleurs le lancement multi-villes, hors périmètre.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

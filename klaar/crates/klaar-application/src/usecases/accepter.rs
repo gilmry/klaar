@@ -231,6 +231,8 @@ mod tests {
                 .then_some(OrigineKyc::Demonstration),
             kyc_verifie_le: (statut != StatutProvider::EnAttenteKyc).then(instant),
             competences: vec![CodeCatalogue::parse(secteur).unwrap()],
+            disponible: true,
+            rayon_intervention_metres: klaar_identity::RAYON_INTERVENTION_DEFAUT,
             cree_le: instant(),
         }
     }
@@ -261,6 +263,9 @@ mod tests {
             unreachable!()
         }
         async fn definir_disponibilite(&self, _: Uuid, _: bool) -> Result<(), RepositoryError> {
+            unreachable!()
+        }
+        async fn definir_rayon_intervention(&self, _: Uuid, _: f64) -> Result<(), RepositoryError> {
             unreachable!()
         }
         async fn proches(

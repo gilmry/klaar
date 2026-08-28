@@ -738,11 +738,59 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > pour un message de deux lignes. Et il n'existe toujours pas d'interface : le
 > bouton « élargir » que FR-015 décrit reste à écrire, la route existe.
 
-### Story 3.7 — Disponibilité Provider ( Availability CRUD)
+### Story 3.7 — Disponibilité Provider ( Availability CRUD) — *faite*
 - **En tant que** Provider · **je veux** gérer ma disponibilité (go/pause) · **afin de** contrôler le flux
 - **4×N** : go / pause / busy auto / multi-zone
 - **Couche(s)** : Domain (Availability) + Frontend
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **Trois notions distinctes, et c'est tout l'enjeu.** Un prestataire peut être
+> écarté du matching pour trois raisons qui n'ont rien à voir : son **statut**
+> (en attente de contrôle, suspendu), sa **disponibilité** (« je suis en
+> congé »), et son **occupation** (une Mission en cours). Les confondre ferait
+> d'une pause une sanction, ou laisserait notifier quelqu'un qui ne peut pas
+> répondre. Seule la deuxième se règle ; les deux autres s'affichent, parce
+> qu'un prestataire en service et pourtant jamais sollicité conclurait sinon que
+> le service est cassé.
+>
+> **Le « busy auto » comblait un vrai trou.** Depuis la Story 3.4, un
+> prestataire déjà en Mission recevait encore des notifications qu'il ne pouvait
+> qu'échouer à accepter — et il volait sa place à quelqu'un de libre. Le filtre
+> est un `NOT EXISTS` dans la recherche SQL, donc posé par la base plutôt
+> qu'appliqué après coup : rapatrier pour écarter ferait porter la limite des
+> cent candidats examinés sur des gens inéligibles.
+>
+> **Le rayon d'intervention est celui du prestataire, distinct de celui du
+> tour.** Le tour dit jusqu'où la Demande cherche ; celui-ci dit jusqu'où le
+> prestataire accepte d'aller. Les deux s'appliquent. En SQL, le `ST_DWithin`
+> élague avec l'index GIST et une comparaison `ST_Distance` affine ensuite : une
+> distance qui varie d'une ligne à l'autre ne peut pas passer par l'index.
+>
+> **Le défaut est le maximum, pas une valeur médiane.** Les prestataires déjà en
+> base n'ont jamais exprimé de limite ; leur en prêter une les retirerait du
+> service sans qu'ils aient rien demandé. Vingt kilomètres couvrent la Région
+> entière, donc ce défaut ne change rien au comportement observé. Le plancher à
+> un kilomètre n'est pas cosmétique non plus : en dessous, un prestataire ne
+> serait trouvé par presque personne et conclurait que le service ne marche pas.
+>
+> **`peut_etre_sollicite` a changé de sens**, et deux tests l'ont signalé. Il ne
+> regardait que le statut, alors que la base filtrait déjà sur statut **et**
+> disponibilité : le domaine mentait sur ce que le système faisait. Il regarde
+> désormais les deux. L'occupation reste dehors — le domaine ne connaît pas les
+> Missions — et c'est le cas d'usage qui la joint.
+>
+> **Multi-zone n'est pas livré, et le mot ne veut pas la même chose partout.**
+> Dans le PRD, « zone » relève du lancement multi-villes, hors du périmètre
+> vitrine. Des zones d'intervention **disjointes** — travailler à Uccle et à
+> Schaerbeek mais pas entre les deux — demanderaient un modèle géographique
+> autre qu'un point et un rayon. Ce qui est livré est la part actionnable :
+> chacun règle sa distance.
+>
+> **Frontend : `/prestataire`.** Un interrupteur et un curseur. Le rayon
+> s'affiche en kilomètres parce que personne ne pense en mètres pour un
+> déplacement, et se transmet en mètres parce que c'est l'unité de l'API. Un
+> réglage refusé remet le curseur sur la valeur réellement enregistrée : le
+> laisser sur la valeur refusée ferait croire qu'elle a pris.
 
 ### Story 3.8 — Audit AI Act (Trace immuable + job audit biais semestriel)
 - **En tant que** ops · **je veux** audit anti-biais · **afin de** respecter AI Act Art. 12

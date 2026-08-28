@@ -131,11 +131,20 @@ impl PreuveKyc {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// `Eq` tombe avec l'arrivée d'un `f64` : `NaN` n'est égal à rien, pas même à
+// lui-même, et le prétendre serait faux. `PartialEq` suffit aux comparaisons
+// que les tests et les routes font réellement.
+#[derive(Debug, Clone, PartialEq)]
 pub enum ProviderError {
     RaisonSocialeVide,
-    RaisonSocialeTropLongue { longueur: usize },
+    RaisonSocialeTropLongue {
+        longueur: usize,
+    },
     AucuneCompetence,
+    /// Rayon d'intervention hors des bornes utiles (Story 3.7).
+    RayonHorsBornes {
+        metres: f64,
+    },
 }
 
 impl ProviderError {
@@ -144,6 +153,7 @@ impl ProviderError {
             Self::RaisonSocialeVide => "COMPANY_NAME_EMPTY",
             Self::RaisonSocialeTropLongue { .. } => "COMPANY_NAME_TOO_LONG",
             Self::AucuneCompetence => "SKILLS_REQUIRED",
+            Self::RayonHorsBornes { .. } => "SERVICE_RADIUS_OUT_OF_RANGE",
         }
     }
 }
@@ -157,11 +167,37 @@ impl fmt::Display for ProviderError {
                 "raison sociale de {longueur} caractères, maximum {RAISON_SOCIALE_MAX}"
             ),
             Self::AucuneCompetence => write!(f, "au moins une compétence est requise"),
+            Self::RayonHorsBornes { metres } => write!(
+                f,
+                "rayon de {metres} m, attendu entre {RAYON_INTERVENTION_MIN} et {RAYON_INTERVENTION_MAX}"
+            ),
         }
     }
 }
 
 impl std::error::Error for ProviderError {}
+
+/// Rayon d'intervention minimal qu'un prestataire peut se fixer, en mètres.
+///
+/// En dessous d'un kilomètre, il ne serait trouvé par presque personne et
+/// conclurait que le service ne marche pas. Mieux vaut refuser le réglage que
+/// livrer un compte qui semble fonctionner et ne sonne jamais.
+pub const RAYON_INTERVENTION_MIN: f64 = 1_000.0;
+
+/// Rayon d'intervention maximal, en mètres.
+///
+/// Vingt kilomètres depuis n'importe quel point de la Région de
+/// Bruxelles-Capitale la couvrent entièrement : au-delà, le réglage
+/// n'atteindrait personne de plus et donnerait l'illusion d'un choix.
+pub const RAYON_INTERVENTION_MAX: f64 = 20_000.0;
+
+/// Rayon d'intervention par défaut, en mètres.
+///
+/// Le maximum, et non une valeur médiane : par défaut, le prestataire ne
+/// s'impose aucune limite propre, et c'est le rayon du tour de diffusion qui
+/// décide seul. Un défaut plus serré retirerait silencieusement du service des
+/// prestataires qui n'ont rien demandé.
+pub const RAYON_INTERVENTION_DEFAUT: f64 = RAYON_INTERVENTION_MAX;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Provider {
@@ -180,6 +216,17 @@ pub struct Provider {
     pub kyc_verifie_le: Option<DateTime<Utc>>,
     /// Secteurs dans lesquels il intervient.
     pub competences: Vec<CodeCatalogue>,
+    /// En service ou en pause.
+    ///
+    /// Distinct du statut : « je suis en congé » n'est pas une radiation, et
+    /// confondre les deux ferait d'une pause une sanction.
+    pub disponible: bool,
+    /// Distance au-delà de laquelle il ne se déplace pas, en mètres.
+    ///
+    /// C'est **sa** limite, indépendante du rayon du tour de diffusion. Les
+    /// deux s'appliquent : le tour dit jusqu'où la Demande cherche, celui-ci
+    /// dit jusqu'où le prestataire accepte d'aller.
+    pub rayon_intervention_metres: f64,
     pub cree_le: DateTime<Utc>,
 }
 
@@ -226,6 +273,11 @@ impl Provider {
             origine_kyc: None,
             kyc_verifie_le: None,
             competences,
+            // Un prestataire fraîchement inscrit n'est pas en service : il
+            // attend son contrôle, et le mettre en service lui promettrait des
+            // Demandes qu'il ne recevra pas.
+            disponible: false,
+            rayon_intervention_metres: RAYON_INTERVENTION_DEFAUT,
             cree_le: maintenant,
         })
     }
@@ -245,9 +297,43 @@ impl Provider {
         self.statut = StatutProvider::Suspendu;
     }
 
+    /// Se met en service ou en pause (Story 3.7).
+    ///
+    /// N'agit que sur la disponibilité, jamais sur le statut : une pause n'est
+    /// pas une radiation, et un prestataire suspendu qui se remet « en
+    /// service » ne redevient pas sollicitable pour autant. C'est
+    /// `peut_etre_sollicite` qui combine les deux.
+    pub fn definir_disponibilite(&mut self, disponible: bool) {
+        self.disponible = disponible;
+    }
+
+    /// Fixe la distance au-delà de laquelle il ne se déplace pas.
+    pub fn definir_rayon_intervention(&mut self, metres: f64) -> Result<(), ProviderError> {
+        if !metres.is_finite()
+            || !(RAYON_INTERVENTION_MIN..=RAYON_INTERVENTION_MAX).contains(&metres)
+        {
+            return Err(ProviderError::RayonHorsBornes { metres });
+        }
+        self.rayon_intervention_metres = metres;
+        Ok(())
+    }
+
+    /// Vrai si une Demande à cette distance entre dans son rayon.
+    ///
+    /// Inclusif au bord, comme le rayon du tour : quelqu'un qui annonce dix
+    /// kilomètres accepte une Demande à dix kilomètres.
+    pub fn se_deplace_jusqu_a(&self, distance_metres: f64) -> bool {
+        distance_metres <= self.rayon_intervention_metres
+    }
+
     /// Vrai si le prestataire peut recevoir des Demandes.
+    ///
+    /// Le statut **et** la disponibilité : un prestataire actif mais en pause
+    /// ne reçoit rien, et un prestataire suspendu qui se déclare en service non
+    /// plus. L'occupation, elle, n'est pas ici — elle se lit dans les Missions
+    /// en cours, que le domaine ne détient pas.
     pub fn peut_etre_sollicite(&self) -> bool {
-        self.statut == StatutProvider::Actif
+        self.statut == StatutProvider::Actif && self.disponible
     }
 
     pub fn couvre(&self, secteur: &CodeCatalogue) -> bool {
@@ -296,6 +382,12 @@ mod tests {
     fn happy_la_validation_active_et_garde_son_origine() {
         let mut p = prestataire(vec![secteur("plomberie")]).unwrap();
         p.valider_kyc(PreuveKyc::depuis_verification_bce(instant()));
+        assert_eq!(p.statut, StatutProvider::Actif);
+        // Actif ne veut pas dire sollicitable : il faut encore qu'il se mette
+        // en service (Story 3.7). Valider un contrôle ne décide pas à sa place
+        // qu'il veut travailler tout de suite.
+        assert!(!p.peut_etre_sollicite());
+        p.definir_disponibilite(true);
         assert!(p.peut_etre_sollicite());
         assert_eq!(p.origine_kyc, Some(OrigineKyc::Bce));
         assert_eq!(p.kyc_verifie_le, Some(instant()));
@@ -401,7 +493,7 @@ mod tests {
         // créé a été oubliée.
         let mut p = prestataire(vec![secteur("plomberie")]).unwrap();
         p.valider_kyc(PreuveKyc::demonstration(instant()));
-        assert!(p.peut_etre_sollicite());
+        assert_eq!(p.statut, StatutProvider::Actif);
         assert_eq!(p.origine_kyc, Some(OrigineKyc::Demonstration));
         assert_ne!(p.origine_kyc, Some(OrigineKyc::Bce));
     }
@@ -425,5 +517,136 @@ mod tests {
         let a = prestataire(vec![secteur("plomberie")]).unwrap();
         let b = prestataire(vec![secteur("plomberie")]).unwrap();
         assert_ne!(a.id, b.id);
+    }
+}
+
+#[cfg(test)]
+mod tests_disponibilite {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn instant() -> DateTime<Utc> {
+        Utc.timestamp_opt(1_780_000_000, 0).unwrap()
+    }
+
+    fn prestataire() -> Provider {
+        let corps = 1_234_567u64;
+        Provider::inscrire(
+            Uuid::new_v4(),
+            NumeroBce::parse(&format!("{corps:08}{:02}", 97 - (corps % 97))).unwrap(),
+            "Prestataire",
+            Geo::new(50.8467, 4.3525).unwrap(),
+            vec![CodeCatalogue::parse("plomberie").unwrap()],
+            instant(),
+        )
+        .unwrap()
+    }
+
+    fn actif() -> Provider {
+        let mut p = prestataire();
+        p.valider_kyc(PreuveKyc::demonstration(instant()));
+        p.definir_disponibilite(true);
+        p
+    }
+
+    #[test]
+    fn happy_un_prestataire_en_service_est_sollicitable() {
+        assert!(actif().peut_etre_sollicite());
+    }
+
+    #[test]
+    fn happy_la_pause_et_la_reprise_sont_symetriques() {
+        let mut p = actif();
+        p.definir_disponibilite(false);
+        assert!(!p.peut_etre_sollicite());
+        p.definir_disponibilite(true);
+        assert!(p.peut_etre_sollicite());
+    }
+
+    #[test]
+    fn happy_le_rayon_par_defaut_ne_limite_rien() {
+        // Par défaut le prestataire ne s'impose aucune limite propre : c'est le
+        // rayon du tour qui décide seul. Un défaut plus serré retirerait du
+        // service des prestataires qui n'ont rien demandé.
+        assert_eq!(
+            prestataire().rayon_intervention_metres,
+            RAYON_INTERVENTION_MAX
+        );
+        assert!(actif().se_deplace_jusqu_a(RAYON_INTERVENTION_MAX));
+    }
+
+    #[test]
+    fn happy_le_rayon_se_regle_entre_les_bornes() {
+        let mut p = actif();
+        for metres in [RAYON_INTERVENTION_MIN, 5_000.0, RAYON_INTERVENTION_MAX] {
+            p.definir_rayon_intervention(metres).unwrap();
+            assert_eq!(p.rayon_intervention_metres, metres);
+        }
+    }
+
+    #[test]
+    fn negative_un_rayon_hors_bornes_est_refuse() {
+        let mut p = actif();
+        for metres in [
+            0.0,
+            -1.0,
+            RAYON_INTERVENTION_MIN - 1.0,
+            RAYON_INTERVENTION_MAX + 1.0,
+        ] {
+            assert_eq!(
+                p.definir_rayon_intervention(metres).unwrap_err().code(),
+                "SERVICE_RADIUS_OUT_OF_RANGE",
+                "rayon {metres}"
+            );
+        }
+    }
+
+    #[test]
+    fn negative_un_rayon_non_fini_est_refuse() {
+        // `f64::NAN` passe silencieusement toutes les comparaisons d'ordre :
+        // sans contrôle explicite, il s'écrirait en base et rendrait chaque
+        // comparaison de distance fausse.
+        let mut p = actif();
+        for metres in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(p.definir_rayon_intervention(metres).is_err(), "{metres}");
+        }
+        assert_eq!(p.rayon_intervention_metres, RAYON_INTERVENTION_DEFAUT);
+    }
+
+    #[test]
+    fn edge_le_bord_du_rayon_est_inclus() {
+        // Quelqu'un qui annonce dix kilomètres accepte une Demande à dix
+        // kilomètres, comme le rayon du tour est inclusif à son bord.
+        let mut p = actif();
+        p.definir_rayon_intervention(10_000.0).unwrap();
+        assert!(p.se_deplace_jusqu_a(10_000.0));
+        assert!(!p.se_deplace_jusqu_a(10_000.1));
+    }
+
+    #[test]
+    fn security_un_prestataire_neuf_n_est_pas_en_service() {
+        // L'inscrire en service lui promettrait des Demandes qu'il ne recevra
+        // pas, puisqu'il attend son contrôle.
+        let p = prestataire();
+        assert!(!p.disponible);
+        assert!(!p.peut_etre_sollicite());
+    }
+
+    #[test]
+    fn security_un_suspendu_qui_se_declare_en_service_reste_ecarte() {
+        // Une pause n'est pas une radiation, et l'inverse n'est pas vrai non
+        // plus : se remettre en service ne lève pas une suspension.
+        let mut p = actif();
+        p.suspendre();
+        p.definir_disponibilite(true);
+        assert!(!p.peut_etre_sollicite());
+    }
+
+    #[test]
+    fn security_regler_son_rayon_ne_change_ni_statut_ni_disponibilite() {
+        let mut p = actif();
+        p.definir_rayon_intervention(3_000.0).unwrap();
+        assert_eq!(p.statut, StatutProvider::Actif);
+        assert!(p.disponible);
     }
 }
