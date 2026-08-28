@@ -1,5 +1,12 @@
 //! Périmètre géographique du service (FR-011, `GEO_OUTSIDE_RBC`).
 //!
+//! **Ici et non dans un bounded context.** La zone servie n'appartient ni au
+//! matching ni à l'intervention : les deux s'y réfèrent, une Demande pour être
+//! acceptée (FR-011) et une Mission pour signaler une sortie de zone
+//! (FR-018 `@edge`). La dupliquer ferait diverger deux définitions de la même
+//! frontière, et un prestataire serait alors « hors zone » selon des bornes que
+//! le demandeur n'a jamais connues.
+//!
 //! **Ce contrôle est une approximation, et il faut le savoir.** La Région de
 //! Bruxelles-Capitale est un polygone de dix-neuf communes aux contours
 //! irréguliers ; ce module la ramène à un rectangle englobant. Un rectangle
@@ -15,7 +22,7 @@
 //! aujourd'hui bloquée faute d'hébergement pour le tile-server. À remplacer
 //! avant toute mise en service — c'est écrit dans `COMPLIANCE.md`.
 
-use klaar_shared_kernel::Geo;
+use crate::Geo;
 
 /// Rectangle englobant la Région de Bruxelles-Capitale.
 ///

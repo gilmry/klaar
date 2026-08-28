@@ -556,6 +556,39 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   L'immuabilité est un **déclencheur**, pas une convention : supprimer une
   Demande tracée échoue bruyamment plutôt que d'emporter sa trace par cascade.
 
+- **4.3** — **Machine à états de la Mission** : `PATCH /api/v1/missions/{id}/status`.
+
+  `ASSIGNED` devient **`ACCEPTED`** : la Story 3.4 avait nommé l'état initial
+  faute que FR-013 le nomme, FR-018 l'appelle ainsi dans toutes ses transitions.
+  Aligner coûte une migration et évite un synonyme privé.
+
+  **La machine à états est une fonction totale, pas une suite de `if`** :
+  `transitions_possibles` énumère ce qui est permis depuis chaque statut, et le
+  `match` exhaustif fait qu'ajouter un état sans dire ce qu'on en fait ne
+  compile pas.
+
+  **Un défaut réel comblé** : le filtre « déjà en mission » du matching ne
+  connaissait que `ASSIGNED`, si bien qu'un prestataire en route aurait de
+  nouveau reçu des Demandes. `COMPLETED` et `CANCELLED` le libèrent, ce qui
+  l'aurait sinon bloqué à vie — la note laissée en 3.4 est levée.
+
+  **La position est facultative** : l'exiger rendrait l'autorisation de
+  localisation de fait obligatoire, alors que quelqu'un sans GPS doit pouvoir
+  déclarer qu'il est arrivé. Sortir de la Région se **consigne** et ne refuse
+  pas ; l'alerte est journalisée sans la position, le journal n'ayant pas à dire
+  où se trouve un prestataire.
+
+  **Deux horodatages** : celui du client et celui du serveur. Une transition
+  faite hors connexion garde sa date, dans une tolérance de cinq minutes —
+  au-delà, une intervention pourrait se prétendre commencée une heure plus tôt.
+
+  La bascule et l'entrée d'historique sont une seule transaction, avec garde sur
+  l'état de départ. L'historique est append-only par déclencheur.
+
+  Non livré : le WebSocket (4.9), la validation de fin (FR-021), les pénalités
+  d'annulation (FR-022) — le domaine connaît la transition vers `CANCELLED`,
+  aucune route ne l'expose faute de la règle qui doit l'accompagner.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

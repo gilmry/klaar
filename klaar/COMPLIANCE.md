@@ -123,6 +123,32 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Cycle de vie d'une Mission : ce que l'historique enregistre (Story 4.3, FR-018)
+
+**La position est facultative.** FR-018 demande la géolocalisation sur chaque
+entrée d'historique. L'exiger rendrait l'autorisation de localisation de fait
+obligatoire, alors que quelqu'un sans GPS doit pouvoir déclarer qu'il est
+arrivé. Son absence est consignée comme telle, et le marqueur « hors zone » ne
+vaut jamais vrai sans position : ne pas savoir où quelqu'un est n'est pas la
+même chose que le savoir ailleurs.
+
+**Sortir de la Région se consigne, ne refuse pas.** Un prestataire qui coupe par
+le ring reste en intervention. L'alerte d'exploitation est journalisée **sans**
+la position ni l'identifiant de Mission : le journal applicatif n'a pas à dire où
+se trouve un prestataire.
+
+**Deux horodatages.** Celui que le client déclare et celui où le serveur reçoit.
+Une transition faite hors connexion garde ainsi sa date. Au-delà de cinq minutes
+d'écart, la date est refusée : ce n'est plus un décalage de synchronisation mais
+une date choisie.
+
+**L'historique est append-only**, par déclencheur, comme la trace de matching.
+Une preuve qu'on peut réécrire n'en est pas une. La bascule de statut et l'entrée
+d'historique sont écrites dans la même transaction.
+
+**L'avis d'avancement ne nomme pas le prestataire.** « Untel est en route » lu
+par-dessus une épaule dit qui vient chez qui.
+
 ## Trace de matching : immuable, scellée, auditée (Story 3.8, AI Act art. 12)
 
 **Immuabilité par déclencheur, pas par convention.** `UPDATE` et `DELETE` sur

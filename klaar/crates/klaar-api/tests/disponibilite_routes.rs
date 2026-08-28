@@ -140,7 +140,7 @@ async fn occuper(pool: &PoolPg, provider_id: Uuid, demandeur_id: Uuid) {
     .expect("Demande attribuée");
     sqlx::query(
         "INSERT INTO mission (id, demande_id, provider_id, statut, cree_le)
-         VALUES ($1, $2, $3, 'ASSIGNED', now())",
+         VALUES ($1, $2, $3, 'ACCEPTED', now())",
     )
     .bind(Uuid::new_v4())
     .bind(demande_id)

@@ -169,7 +169,7 @@ async fn happy_le_premier_prestataire_obtient_la_mission() {
     assert_eq!(reponse.status(), StatusCode::CREATED);
     let corps: Value = test::read_body_json(reponse).await;
     assert_eq!(corps["code"], "MATCH_ACCEPTED");
-    assert_eq!(corps["statut"], "ASSIGNED");
+    assert_eq!(corps["statut"], "ACCEPTED");
     assert_eq!(corps["demande_id"], demande_id.to_string());
     // Sans clé VAPID dans ce bac, personne n'est prévenu : c'est un mode de
     // fonctionnement légitime et le champ le dit plutôt que de le taire.

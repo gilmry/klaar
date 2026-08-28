@@ -209,6 +209,68 @@ where
     .await
 }
 
+/// Compose l'avis d'avancement d'une Mission, pour le demandeur (FR-018).
+///
+/// Il s'affiche sur **son** écran verrouillé. Il ne nomme pas le prestataire :
+/// « Untel est en route » lu par-dessus une épaule dit qui vient chez qui. Le
+/// secteur suffit à savoir de quelle intervention on parle.
+pub fn composer_avancement(
+    demande: &Demande,
+    statut: klaar_intervention::StatutMission,
+    locale: Locale,
+) -> PushMessage {
+    use klaar_intervention::StatutMission as S;
+    let corps = match (statut, locale) {
+        (S::EnRoute, Locale::Fr) => "Le prestataire est en route",
+        (S::EnRoute, Locale::Nl) => "De vakman is onderweg",
+        (S::EnRoute, Locale::En) => "The provider is on the way",
+        (S::SurPlace, Locale::Fr) => "Le prestataire est arrivé",
+        (S::SurPlace, Locale::Nl) => "De vakman is ter plaatse",
+        (S::SurPlace, Locale::En) => "The provider has arrived",
+        (S::Terminee, Locale::Fr) => "L'intervention est terminée",
+        (S::Terminee, Locale::Nl) => "De interventie is afgerond",
+        (S::Terminee, Locale::En) => "The job is done",
+        (S::Annulee, Locale::Fr) => "L'intervention a été annulée",
+        (S::Annulee, Locale::Nl) => "De interventie is geannuleerd",
+        (S::Annulee, Locale::En) => "The job was cancelled",
+        // `ACCEPTED` n'est pas une transition : c'est l'état de naissance, et
+        // le demandeur l'a déjà appris par la réponse à sa Demande.
+        (S::Acceptee, Locale::Fr) => "Votre demande a été acceptée",
+        (S::Acceptee, Locale::Nl) => "Uw aanvraag is aanvaard",
+        (S::Acceptee, Locale::En) => "Your request was accepted",
+    };
+    PushMessage {
+        titre: format!("{}", demande.secteur),
+        corps: corps.to_string(),
+        // Une étiquette par Mission et non par statut : les avis successifs se
+        // remplacent, sinon un téléphone posé sur une table affiche trois
+        // notifications pour une seule intervention.
+        tag: Some(format!("mission-{}", demande.id)),
+        url: format!("/demande?id={}", demande.id),
+    }
+}
+
+/// Prévient le demandeur que sa Mission a avancé (FR-018 `@happy`).
+pub async fn notifier_avancement<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    demande: &Demande,
+    statut: klaar_intervention::StatutMission,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[demande.demandeur_id],
+        &composer_avancement(demande, statut, locale),
+    )
+    .await
+}
+
 /// Prévient les candidats qu'un autre a pris la Demande (FR-013 `@happy`).
 ///
 /// Séparé de l'attribution elle-même : une panne du service de push ne doit pas
@@ -446,6 +508,49 @@ mod tests {
                 .push((abonnement.endpoint.clone(), message.clone()));
             Ok(())
         }
+    }
+
+    #[tokio::test]
+    async fn happy_chaque_statut_a_un_avis_dans_les_trois_langues() {
+        use klaar_intervention::StatutMission as S;
+        let d = demande(Urgence::Haute);
+        for statut in [
+            S::Acceptee,
+            S::EnRoute,
+            S::SurPlace,
+            S::Terminee,
+            S::Annulee,
+        ] {
+            for locale in [Locale::Fr, Locale::Nl, Locale::En] {
+                let m = composer_avancement(&d, statut, locale);
+                assert!(!m.corps.is_empty(), "{statut:?} {locale:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn happy_les_avis_successifs_se_remplacent() {
+        // Sinon un téléphone posé sur une table affiche trois notifications
+        // pour une seule intervention.
+        use klaar_intervention::StatutMission as S;
+        let d = demande(Urgence::Haute);
+        assert_eq!(
+            composer_avancement(&d, S::EnRoute, Locale::Fr).tag,
+            composer_avancement(&d, S::SurPlace, Locale::Fr).tag
+        );
+    }
+
+    #[tokio::test]
+    async fn security_l_avis_d_avancement_ne_nomme_pas_le_prestataire() {
+        // « Untel est en route » lu par-dessus une épaule dit qui vient chez
+        // qui.
+        use klaar_intervention::StatutMission as S;
+        let d = demande(Urgence::Haute);
+        let m = composer_avancement(&d, S::EnRoute, Locale::Fr);
+        let tout = format!("{} {} {}", m.titre, m.corps, m.url);
+        assert!(!tout.contains("Fuite"));
+        assert!(!tout.contains("50.8"));
+        assert!(!tout.contains(&d.demandeur_id.to_string()));
     }
 
     #[tokio::test]

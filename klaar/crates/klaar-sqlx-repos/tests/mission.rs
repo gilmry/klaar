@@ -96,7 +96,7 @@ async fn happy_une_acceptation_attribue_la_demande_et_cree_la_mission() {
     };
     assert_eq!(mission.demande_id, d.id);
     assert_eq!(mission.provider_id, p.id);
-    assert_eq!(mission.statut.as_str(), "ASSIGNED");
+    assert_eq!(mission.statut.as_str(), "ACCEPTED");
 
     // La Demande **et** la Mission, dans la même transaction : une Demande
     // attribuée sans Mission promettrait une intervention dont personne ne

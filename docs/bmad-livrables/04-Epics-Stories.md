@@ -890,11 +890,71 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Application + Infra (Stripe capture) + Frontend
 - **Taille** : **L** (1 j) · **Tours** : 5
 
-### Story 4.3 — Machine à états Mission (FR-018)
+### Story 4.3 — Machine à états Mission (FR-018) — *faite*
 - **En tant que** Provider · **je veux** faire évoluer le statut Mission · **afin de** tracer
 - **4×N** : PRD FR-018 (transitions valides/interdites, offline sync)
 - **Couche(s)** : Domain (MissionStatus state machine) + Application + Infra (mission_statuses table)
 - **Taille** : **L** (1 j) · **Tours** : 5
+
+> **`ASSIGNED` devient `ACCEPTED`.** La Story 3.4 avait nommé l'état initial
+> faute que FR-013 le nomme ; FR-018 l'appelle `ACCEPTED` dans toutes ses
+> transitions. Aligner coûte une migration et évite d'entretenir un synonyme
+> privé que personne ne retrouverait en lisant les deux documents.
+>
+> **La machine à états est une fonction totale, pas une suite de `if`.**
+> `transitions_possibles` énumère ce qui est permis depuis chaque statut, et le
+> `match` est exhaustif : ajouter un statut sans dire ce qu'on peut en faire ne
+> compile pas. C'est ce qui évitera qu'un état apparaisse un jour sans que
+> personne ne se demande d'où on y entre ni comment on en sort.
+>
+> **Un défaut réel comblé au passage.** Le filtre « déjà en mission » du
+> matching ne connaissait que `ASSIGNED` : dès l'ajout des états
+> intermédiaires, un prestataire en route aurait de nouveau reçu des Demandes.
+> La liste est désormais celle de `StatutMission::occupe_le_prestataire`, et
+> l'index partiel de la base suit. Cela lève la note laissée en Story 3.4 :
+> `COMPLETED` et `CANCELLED` libèrent le prestataire, ce qui l'aurait sinon
+> bloqué à vie.
+>
+> **La position est facultative, et c'est un choix.** FR-018 `@security` demande
+> la géolocalisation sur chaque entrée. L'exiger rendrait l'autorisation de
+> localisation de fait obligatoire, alors que quelqu'un sans GPS — cas que
+> FR-019 prévoit explicitement — doit pouvoir déclarer qu'il est arrivé. Son
+> absence est consignée comme telle, et `hors_zone` ne vaut jamais vrai sans
+> position : ne pas savoir où quelqu'un est n'est pas la même chose que le
+> savoir ailleurs.
+>
+> **Sortir de la Région se consigne, ne refuse pas** (FR-018 `@edge`). Un
+> prestataire qui coupe par le ring reste en intervention ; c'est à
+> l'exploitation d'y regarder, pas au domaine de bloquer. L'alerte est
+> journalisée sans la position ni l'identifiant de Mission — le journal
+> applicatif n'a pas à dire où se trouve un prestataire.
+>
+> **Deux horodatages, et pas un.** Celui que le client déclare et celui où le
+> serveur reçoit. C'est ce qui permet à une transition faite hors connexion de
+> garder sa date au lieu d'être datée du retour du réseau. La tolérance de cinq
+> minutes est la borne : au-delà, ce n'est plus un décalage de synchronisation
+> mais une date choisie, et une intervention pourrait se prétendre commencée une
+> heure plus tôt.
+>
+> **La bascule et l'entrée d'historique sont une seule transaction**, avec une
+> garde sur le statut de départ : deux transitions concurrentes depuis le même
+> état ne peuvent pas toutes deux aboutir, sinon l'historique porterait deux
+> entrées pour un seul changement. L'historique est append-only, par
+> déclencheur, comme la trace de matching — une preuve qu'on peut réécrire n'en
+> est pas une.
+>
+> **Écart au FR : 404 et non 403** pour la Mission d'autrui, par la même
+> précédence anti-énumération que les routes de Demande.
+>
+> **Le périmètre géographique a déménagé dans le shared kernel.** Le bounded
+> context Intervention en avait besoin, et la première version le dupliquait —
+> ce qui aurait fait diverger deux définitions de la même frontière, et rendu un
+> prestataire « hors zone » selon des bornes que le demandeur n'a jamais connues.
+>
+> **Non livré ici** : le WebSocket que FR-018 mentionne (Story 4.9), la
+> validation de fin par le demandeur (FR-021), les pénalités d'annulation
+> (FR-022). Le domaine connaît la transition vers `CANCELLED` ; aucune route ne
+> l'expose, faute de la règle de pénalités qui doit l'accompagner.
 
 ### Story 4.4 — Tracking géoloc temps réel, foreground uniquement (FR-019)
 - **En tant que** User · **je veux** voir la position Provider temps réel · **afin de** savoir quand il arrive

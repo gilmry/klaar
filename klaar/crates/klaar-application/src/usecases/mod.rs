@@ -13,4 +13,5 @@ pub mod matcher;
 pub mod notifier;
 pub mod rafraichir;
 pub mod soumettre_demande;
+pub mod transiter_mission;
 pub mod verifier_email;

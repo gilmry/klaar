@@ -10,6 +10,7 @@ pub mod demande;
 pub mod disponibilite;
 pub mod elargissement;
 pub mod health;
+pub mod mission;
 pub mod push;
 pub mod session;
 pub mod verification;

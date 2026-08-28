@@ -237,9 +237,15 @@ impl ProviderRepository for PgProviderRepository {
                -- seconde (FR-013 `@edge`). Le notifier quand même lui ferait
                -- ouvrir l'application pour se voir refuser, et volerait sa
                -- place à quelqu'un de libre.
+               --
+               -- La liste est celle de `StatutMission::occupe_le_prestataire`.
+               -- Elle ne connaissait que `ASSIGNED` avant FR-018, ce qui aurait
+               -- laissé un prestataire en route recevoir de nouvelles Demandes
+               -- dès l'ajout des états intermédiaires.
                AND NOT EXISTS (
                    SELECT 1 FROM mission m
-                   WHERE m.provider_id = p.id AND m.statut IN ('ASSIGNED')
+                   WHERE m.provider_id = p.id
+                     AND m.statut IN ('ACCEPTED', 'PROVIDER_EN_ROUTE', 'ON_SITE')
                )
                AND EXISTS (
                    SELECT 1 FROM provider_competence pc

@@ -370,6 +370,17 @@ mod tests {
                 None => ResultatAttribution::DemandeNonDiffusee,
             })
         }
+        async fn par_id(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
+            unreachable!()
+        }
+        async fn transiter(
+            &self,
+            _: Uuid,
+            _: klaar_intervention::StatutMission,
+            _: &klaar_intervention::TransitionMission,
+        ) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
         async fn en_cours_pour(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
             unreachable!()
         }
@@ -415,7 +426,7 @@ mod tests {
         assert_eq!(r.provider_id, p.id);
         assert_eq!(r.mission.demande_id, d.id);
         assert_eq!(r.mission.provider_id, p.id);
-        assert_eq!(r.mission.statut.as_str(), "ASSIGNED");
+        assert_eq!(r.mission.statut.as_str(), "ACCEPTED");
     }
 
     #[tokio::test]

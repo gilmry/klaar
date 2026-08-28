@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use klaar_application::ports::erreurs::RepositoryError;
 use klaar_application::ports::mission_repository::{MissionRepository, ResultatAttribution};
-use klaar_intervention::{Mission, StatutMission};
+use klaar_intervention::{Mission, StatutMission, TransitionMission};
 
 use crate::erreur;
 use crate::pool::PoolPg;
@@ -127,7 +127,7 @@ impl MissionRepository for PgMissionRepository {
     async fn en_cours_pour(&self, provider_id: Uuid) -> Result<Option<Mission>, RepositoryError> {
         let ligne = sqlx::query(
             "SELECT id, demande_id, provider_id, statut, cree_le FROM mission
-             WHERE provider_id = $1 AND statut IN ('ASSIGNED')
+             WHERE provider_id = $1 AND statut IN ('ACCEPTED', 'PROVIDER_EN_ROUTE', 'ON_SITE')
              ORDER BY cree_le DESC
              LIMIT 1",
         )
@@ -136,5 +136,72 @@ impl MissionRepository for PgMissionRepository {
         .await
         .map_err(erreur)?;
         ligne.as_ref().map(depuis_ligne).transpose()
+    }
+
+    async fn par_id(&self, id: Uuid) -> Result<Option<Mission>, RepositoryError> {
+        let ligne = sqlx::query(
+            "SELECT id, demande_id, provider_id, statut, cree_le FROM mission WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+        ligne.as_ref().map(depuis_ligne).transpose()
+    }
+
+    async fn transiter(
+        &self,
+        mission_id: Uuid,
+        depuis: StatutMission,
+        entree: &TransitionMission,
+    ) -> Result<bool, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(erreur)?;
+
+        // Garde sur le statut de départ : deux transitions concurrentes depuis
+        // le même état ne doivent pas toutes deux aboutir, sinon l'historique
+        // porterait deux entrées pour un seul changement.
+        let bouge = sqlx::query(
+            "UPDATE mission SET statut = $1 WHERE id = $2 AND statut = $3 RETURNING id",
+        )
+        .bind(entree.statut.as_str())
+        .bind(mission_id)
+        .bind(depuis.as_str())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(erreur)?;
+
+        if bouge.is_none() {
+            tx.rollback().await.map_err(erreur)?;
+            return Ok(false);
+        }
+
+        // Même transaction que la bascule : un statut changé sans entrée
+        // d'historique laisserait une Mission avancée dont plus rien ne dit
+        // quand ni d'où.
+        sqlx::query(
+            "INSERT INTO mission_transition
+                 (mission_id, provider_id, statut, horodate_le, enregistre_le, position, hors_zone)
+             VALUES ($1, $2, $3, $4, $5,
+                     CASE WHEN $6::float8 IS NULL THEN NULL
+                          ELSE ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography END,
+                     $8)",
+        )
+        .bind(entree.mission_id)
+        .bind(entree.provider_id)
+        .bind(entree.statut.as_str())
+        .bind(entree.horodate_le)
+        .bind(entree.enregistre_le)
+        // `ST_MakePoint` prend la longitude d'abord : l'inverser place
+        // Bruxelles au large de la Somalie sans qu'aucune contrainte ne s'en
+        // aperçoive.
+        .bind(entree.position.map(|p| p.lon()))
+        .bind(entree.position.map(|p| p.lat()))
+        .bind(entree.hors_zone)
+        .execute(&mut *tx)
+        .await
+        .map_err(erreur)?;
+
+        tx.commit().await.map_err(erreur)?;
+        Ok(true)
     }
 }

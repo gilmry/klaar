@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
-use crate::perimetre::dans_le_perimetre;
+use klaar_shared_kernel::dans_le_perimetre;
 
 /// Longueur maximale de la description (FR-011 `@negative`).
 ///

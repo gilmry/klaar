@@ -99,6 +99,7 @@ pub struct EtatApplication {
         routes::annulation::annuler_demande,
         routes::disponibilite::lire_disponibilite,
         routes::disponibilite::regler_disponibilite,
+        routes::mission::avancer_mission,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -126,6 +127,8 @@ pub struct EtatApplication {
         routes::annulation::AnnulationDto,
         routes::disponibilite::DisponibiliteDto,
         routes::disponibilite::ReglageDto,
+        routes::mission::TransitionDto,
+        routes::mission::MissionAvanceeDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -140,6 +143,7 @@ pub struct EtatApplication {
         (name = "catalogue", description = "Secteurs et Skills (FR-008)"),
         (name = "demandes", description = "Demandes de dépannage (FR-011 à FR-015)"),
         (name = "prestataires", description = "Disponibilité et rayon d\'intervention (FR-003)"),
+        (name = "missions", description = "Cycle de vie d\'une intervention (FR-018)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -163,6 +167,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::annulation::annuler_demande)
         .service(routes::disponibilite::lire_disponibilite)
         .service(routes::disponibilite::regler_disponibilite)
+        .service(routes::mission::avancer_mission)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);

@@ -259,6 +259,17 @@ mod tests {
         ) -> Result<ResultatAttribution, RepositoryError> {
             unreachable!()
         }
+        async fn par_id(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
+            unreachable!()
+        }
+        async fn transiter(
+            &self,
+            _: Uuid,
+            _: klaar_intervention::StatutMission,
+            _: &klaar_intervention::TransitionMission,
+        ) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
         async fn en_cours_pour(
             &self,
             provider_id: Uuid,

@@ -13,7 +13,7 @@
 //! partiel qui le tient, et l'erreur qu'il produit qui remonte ici.
 
 use chrono::{DateTime, Utc};
-use klaar_intervention::Mission;
+use klaar_intervention::{Mission, StatutMission, TransitionMission};
 use uuid::Uuid;
 
 use super::erreurs::RepositoryError;
@@ -51,4 +51,23 @@ pub trait MissionRepository {
 
     /// Mission en cours du prestataire, s'il en a une.
     async fn en_cours_pour(&self, provider_id: Uuid) -> Result<Option<Mission>, RepositoryError>;
+
+    async fn par_id(&self, id: Uuid) -> Result<Option<Mission>, RepositoryError>;
+
+    /// Écrit le nouveau statut **et** consigne la transition, ensemble.
+    ///
+    /// Une seule transaction : un statut changé sans entrée d'historique
+    /// laisserait une Mission avancée dont plus rien ne dit quand ni d'où, et
+    /// c'est exactement ce que FR-018 `@security` demande de pouvoir produire.
+    ///
+    /// Le statut de départ est passé en garde : deux transitions concurrentes
+    /// depuis le même état ne doivent pas toutes deux aboutir, sinon
+    /// l'historique porterait deux entrées pour un seul changement. Rend
+    /// `false` quand la Mission avait déjà bougé.
+    async fn transiter(
+        &self,
+        mission_id: Uuid,
+        depuis: StatutMission,
+        entree: &TransitionMission,
+    ) -> Result<bool, RepositoryError>;
 }
