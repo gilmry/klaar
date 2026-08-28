@@ -18,11 +18,12 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use klaar_application::ports::erreurs::RepositoryError;
+use klaar_application::ports::evenements::EvenementMission;
 use klaar_application::ports::mission_repository::{MissionRepository, ResultatAttribution};
 use klaar_intervention::{Mission, StatutMission, TransitionMission};
 
-use crate::erreur;
 use crate::pool::PoolPg;
+use crate::{erreur, notifier};
 
 /// Nom de l'index qui tient « une Mission à la fois » (migration V13).
 ///
@@ -212,6 +213,19 @@ impl MissionRepository for PgMissionRepository {
         .execute(&mut *tx)
         .await
         .map_err(erreur)?;
+
+        // L'avis temps réel part **dans la même transaction** (Story 4.9).
+        //
+        // PostgreSQL ne délivre un `NOTIFY` qu'au `COMMIT` : un abandon
+        // n'annonce donc rien, et une bascule commise annonce toujours. Le
+        // faire depuis le cas d'usage, après coup, ouvrirait les deux fenêtres
+        // que ce placement ferme — annoncer un changement qui n'a pas eu lieu,
+        // ou n'annoncer rien après un changement qui a eu lieu.
+        notifier(
+            &mut tx,
+            &EvenementMission::statut(mission_id, entree.statut.as_str(), entree.enregistre_le),
+        )
+        .await?;
 
         tx.commit().await.map_err(erreur)?;
         Ok(true)

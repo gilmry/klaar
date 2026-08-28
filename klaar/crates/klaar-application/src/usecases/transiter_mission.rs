@@ -35,6 +35,8 @@ pub enum ErreurTransition {
     Introuvable,
     /// Statut cible inconnu du vocabulaire.
     StatutInconnu,
+    /// Statut que le prestataire n'a pas le droit de poser lui-même.
+    ReserveAuDemandeur,
     /// Transition refusée par la machine à états, ou horodatage invraisemblable.
     Domaine(MissionError),
     /// La Mission a changé d'état entre la lecture et l'écriture.
@@ -48,6 +50,7 @@ impl ErreurTransition {
             Self::PasPrestataire => "NOT_A_PROVIDER",
             Self::Introuvable => "MISSION_NOT_FOUND",
             Self::StatutInconnu => "UNKNOWN_STATUS",
+            Self::ReserveAuDemandeur => "RESERVED_TO_USER",
             Self::Domaine(e) => e.code(),
             // Le même code qu'une transition interdite, et c'est juste : dans
             // les deux cas, la Mission n'était pas dans l'état d'où le
@@ -64,6 +67,9 @@ impl fmt::Display for ErreurTransition {
             Self::PasPrestataire => write!(f, "ce compte n'est pas un prestataire"),
             Self::Introuvable => write!(f, "Mission introuvable"),
             Self::StatutInconnu => write!(f, "statut inconnu"),
+            Self::ReserveAuDemandeur => {
+                write!(f, "ce changement d'état appartient au demandeur")
+            }
             Self::Domaine(e) => write!(f, "{e}"),
             Self::Concurrence => write!(f, "la Mission a changé d'état entre-temps"),
             Self::Indisponible(d) => write!(f, "service indisponible : {d}"),
@@ -122,6 +128,19 @@ where
     // sur l'existence d'une Mission.
     let vers =
         StatutMission::parse(declaration.statut_cible).ok_or(ErreurTransition::StatutInconnu)?;
+
+    // **La validation appartient au demandeur, pas au prestataire.** Le domaine
+    // autorise `COMPLETED` → `VALIDATED` — c'est une transition légitime de la
+    // Mission — mais cette route est celle du prestataire, et lui laisser poser
+    // ce statut reviendrait à le laisser signer la réception de son propre
+    // travail, donc déclencher son propre paiement. La route de FR-021 est
+    // ailleurs, et elle vérifie que l'appelant est le demandeur.
+    //
+    // Le refus est ici et pas dans la machine à états : celle-ci dit ce qui est
+    // possible, pas qui a le droit de le faire.
+    if vers == StatutMission::Validee {
+        return Err(ErreurTransition::ReserveAuDemandeur);
+    }
 
     let provider = prestataires
         .par_utilisateur_id(utilisateur_id)

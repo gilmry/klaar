@@ -8,7 +8,7 @@
 //! même instruction que l'insertion, et l'unicité dans un index partiel.
 
 use chrono::{DateTime, Utc};
-use klaar_payment::Devis;
+use klaar_payment::{Devis, StatutDevis};
 use uuid::Uuid;
 
 use super::erreurs::RepositoryError;
@@ -58,6 +58,22 @@ pub trait DevisRepository {
 
     /// Nombre de devis déjà émis pour cette Mission, tous statuts confondus.
     async fn compter_pour_mission(&self, mission_id: Uuid) -> Result<usize, RepositoryError>;
+
+    /// Écrit la réponse du demandeur, si le devis attend encore.
+    ///
+    /// **Compare-and-swap sur le statut**, comme partout où deux appelants
+    /// peuvent arriver ensemble : le demandeur qui touche « accepter » deux
+    /// fois, ou qui accepte à l'instant où le balayage expire son devis. Rend
+    /// `false` quand le devis avait déjà bougé, et l'appelant traduit.
+    async fn repondre(
+        &self,
+        devis_id: Uuid,
+        reponse: StatutDevis,
+        motif: Option<&str>,
+    ) -> Result<bool, RepositoryError>;
+
+    /// Devis lu par son identifiant.
+    async fn par_id(&self, devis_id: Uuid) -> Result<Option<Devis>, RepositoryError>;
 
     /// Éteint les devis dont l'heure est passée et rend ceux qu'il vient
     /// d'éteindre — eux seuls.

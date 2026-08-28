@@ -3,6 +3,7 @@
 
 pub mod accepter;
 pub mod annuler;
+pub mod annuler_mission;
 pub mod connecter;
 pub mod consulter;
 pub mod disponibilite;
@@ -13,8 +14,11 @@ pub mod expirer;
 pub mod expirer_devis;
 pub mod inscrire_utilisateur;
 pub mod matcher;
+pub mod noter;
 pub mod notifier;
 pub mod rafraichir;
+pub mod repondre_devis;
 pub mod soumettre_demande;
 pub mod transiter_mission;
+pub mod valider_mission;
 pub mod verifier_email;

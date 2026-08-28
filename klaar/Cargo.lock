@@ -224,6 +224,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-ws"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "decf53c3cdd63dd6f289980b430238f9a2f6d19f8bce8e418272e08d3da43f0f"
+dependencies = [
+ "actix-codec",
+ "actix-http",
+ "actix-web",
+ "bytestring",
+ "futures-core",
+ "futures-sink",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1441,6 +1457,7 @@ dependencies = [
  "actix-rt",
  "actix-web",
  "actix-web-prom",
+ "actix-ws",
  "base64",
  "chrono",
  "futures-util",
@@ -1461,6 +1478,8 @@ dependencies = [
  "klaar-sqlx-repos",
  "klaar-storage-adapter",
  "klaar-stripe-adapter",
+ "klaar-trust",
+ "rand 0.9.5",
  "refinery",
  "serde",
  "serde_json",
@@ -1489,6 +1508,8 @@ dependencies = [
  "klaar-payment",
  "klaar-shared-kernel",
  "klaar-trust",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "uuid",
@@ -1636,6 +1657,7 @@ dependencies = [
  "klaar-matching",
  "klaar-payment",
  "klaar-shared-kernel",
+ "klaar-trust",
  "serde",
  "serde_json",
  "sqlx",
@@ -1661,7 +1683,10 @@ dependencies = [
 name = "klaar-trust"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "klaar-shared-kernel",
+ "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -3205,6 +3230,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",

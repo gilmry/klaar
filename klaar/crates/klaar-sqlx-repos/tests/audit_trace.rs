@@ -8,7 +8,7 @@ use chrono::{Duration, Utc};
 use klaar_application::ports::demande_repository::DemandeRepository;
 use klaar_application::ports::provider_repository::ProviderRepository;
 use klaar_application::ports::trace_repository::{LigneTrace, MotifEcart, TraceRepository};
-use klaar_audit_adapter::SignataireTrace;
+use klaar_audit_adapter::{contenu_canonique, SignataireTrace};
 use klaar_catalog::CodeCatalogue;
 use klaar_identity::{
     EmpreinteMotDePasse, MotDePasse, NumeroBce, ParametresArgon2, PreuveKyc, Provider,
@@ -146,10 +146,9 @@ async fn happy_une_trace_signee_se_verifie() {
 
 #[tokio::test]
 async fn happy_la_chaine_relie_des_tours_successifs() {
-    // Deux tours de matching distincts : le second maillon doit déclarer le
-    // premier comme prédécesseur.
+    // Deux tours de matching distincts : chaque maillon doit déclarer pour
+    // prédécesseur la ligne signée réellement écrite avant lui.
     let pool = pool().await;
-    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::avec_signature(pool.clone(), signataire());
     let p = prestataire(&pool).await;
     let a = demande(&pool, CENTRE.0, CENTRE.1).await;
@@ -168,25 +167,80 @@ async fn happy_la_chaine_relie_des_tours_successifs() {
     .await
     .unwrap();
     assert_eq!(sigs.len(), 2);
-    // Les deux maillons sont scellés et déclarent un prédécesseur. L'adjacence
-    // n'est **pas** asserté : cette suite tourne en parallèle, et un autre cas
-    // peut s'insérer entre les deux tours. C'est le rejeu complet ci-dessous
-    // qui prouve la chaîne, et lui seul le peut.
+    // Les deux maillons sont scellés et déclarent un prédécesseur.
     for (i, (signature, precedente)) in sigs.iter().enumerate() {
         assert!(signature.is_some(), "maillon {i} non scellé");
         assert!(precedente.is_some(), "maillon {i} sans prédécesseur");
     }
-    assert_eq!(
-        verifier_chaine(
-            &pool,
-            Some(&SignataireTrace::new(CLE).unwrap()),
-            Some(depart)
+
+    // **Le prédécesseur déclaré est celui réellement écrit avant.** L'adjacence
+    // des deux tours n'est pas assertée : cette suite tourne en parallèle, et
+    // un autre cas peut s'insérer entre eux. Ce qui est vérifié est plus
+    // précis — chaque maillon désigne la ligne signée qui le précède
+    // réellement dans la table, quelle qu'elle soit.
+    //
+    // **Pourquoi pas `verifier_chaine` ici.** Le rejeu complet porte sur une
+    // fenêtre partagée avec les autres cas et avec les autres binaires de test,
+    // qui écrivent dans la même table : son résultat dépend alors de ce qui a
+    // tourné en même temps, et l'assertion devient intermittente. C'est
+    // `happy_une_trace_signee_se_verifie` qui l'exerce, sur une fenêtre d'une
+    // seule ligne où l'interférence est bien plus étroite.
+    for (signature, precedente) in &sigs {
+        let precedente_reelle: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT signature FROM trace_matching
+             WHERE signature IS NOT NULL AND id < (
+                 SELECT id FROM trace_matching WHERE signature = $1
+             )
+             ORDER BY id DESC LIMIT 1",
         )
+        .bind(signature.as_deref())
+        .fetch_optional(&pool)
         .await
         .unwrap()
-        .rompue_a,
-        None
-    );
+        .flatten();
+        assert_eq!(
+            precedente.as_deref(),
+            precedente_reelle.as_deref(),
+            "un maillon déclare un prédécesseur qui n'est pas celui écrit avant lui"
+        );
+    }
+
+    // Et les deux maillons sont bien scellés par **notre** clé : une signature
+    // cohérente mais étrangère ne prouverait rien.
+    let signataire = SignataireTrace::new(CLE).unwrap();
+    for (demande_id, (signature, precedente)) in [a.id, b.id].iter().zip(sigs.iter()) {
+        let contenu: (
+            Uuid,
+            f64,
+            f64,
+            bool,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ) = sqlx::query_as(
+            "SELECT provider_id, score, distance_metres, retenu, motif_ecart, tracee_le
+                 FROM trace_matching WHERE demande_id = $1",
+        )
+        .bind(demande_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            signataire.verifier(
+                precedente.as_deref(),
+                &contenu_canonique(
+                    demande_id,
+                    &contenu.0,
+                    contenu.1,
+                    contenu.2,
+                    contenu.3,
+                    contenu.4.as_deref(),
+                    contenu.5.timestamp(),
+                ),
+                signature.as_deref().unwrap(),
+            ),
+            "maillon non vérifiable par la clé de la trace"
+        );
+    }
 }
 
 #[tokio::test]

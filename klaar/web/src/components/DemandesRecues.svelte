@@ -11,17 +11,24 @@
    * atteignables : recopier la machine à états ici la ferait diverger, et
    * l'interface proposerait un bouton que le domaine refuse.
    *
+   * **Le temps réel (Story 4.9).** Une socket suit l'intervention en cours et
+   * relit dès qu'un événement arrive — utile surtout au prestataire dont le
+   * devis vient d'expirer, ou dont la Mission a été annulée sous ses pieds.
+   * Sans elle, cet écran ne bougeait qu'au clic.
+   *
    * **Le prix est saisi, jamais suggéré (FR-016, invariant §10.2).** Le champ
    * est vide au départ et le reste : aucune valeur par défaut, aucun montant
    * « conseillé », aucun rappel de ce qu'on a facturé la dernière fois. Une
    * suggestion serait une fixation de prix douce, et c'est précisément ce que
    * la loi sur le travail de plateforme regarde.
    */
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
   import { restaurerSession } from "../lib/connexion";
+  import { ouvrirFlux } from "../lib/tempsReel";
   import {
     accepter,
+    annulerMission,
     avancerMission,
     centimesDepuisEuros,
     codeDepuisErreur,
@@ -36,6 +43,7 @@
     lireMission,
     messageErreur,
     montantLisible,
+    MOTIFS_ANNULATION_MISSION,
     type Mission,
     type Proposee,
     type StatutMission,
@@ -55,6 +63,10 @@
   let noteSaisie = $state("");
   let tauxSaisi = $state("2100");
   let preuveSaisie = $state("");
+
+  let motifAnnulation = $state("");
+  let fermerFlux: (() => void) | null = null;
+  let missionSuivie: string | null = null;
 
   /** Un devis attend encore une réponse : le formulaire n'a rien à faire là. */
   let devisEnAttente = $derived(
@@ -82,6 +94,36 @@
     if (connecte) await rafraichir();
     reprise = false;
   });
+
+  onDestroy(() => fermerFlux?.());
+
+  /**
+   * Ouvre la socket sur la Mission en cours, une seule fois par Mission.
+   *
+   * Rouvrir à chaque relecture dépenserait un billet par clic et finirait par
+   * ressembler à un abus.
+   */
+  function suivreEnDirect(missionId: string | null) {
+    if (missionId === missionSuivie) return;
+    fermerFlux?.();
+    fermerFlux = null;
+    missionSuivie = missionId;
+    if (!missionId) return;
+
+    fermerFlux = ouvrirFlux(missionId, {
+      surEvenement: async () => {
+        // L'événement dit qu'il s'est passé quelque chose ; la relecture dit
+        // quoi. Un échec ici est silencieux : l'écran garde son état plutôt que
+        // d'afficher une erreur pour un rafraîchissement que personne n'a
+        // demandé.
+        try {
+          if (missionSuivie) mission = await lireMission(missionSuivie);
+        } catch {
+          // La Mission n'est plus lisible : le prochain geste le dira.
+        }
+      },
+    });
+  }
 
   /**
    * Recharge la liste.
@@ -111,6 +153,7 @@
     try {
       const attribuee = await accepter(id);
       mission = await lireMission(attribuee.id);
+      suivreEnDirect(mission.id);
       demandes = [];
     } catch (e) {
       erreur = messageErreur(locale, codeDepuisErreur(e));
@@ -172,6 +215,30 @@
     }
   }
 
+  /**
+   * Se désister d'une intervention (FR-022).
+   *
+   * Le libellé ne cache pas la conséquence : trois désistements en trente jours
+   * suspendent le compte. La dire avant le clic vaut mieux que de la découvrir
+   * après.
+   */
+  async function seDesister() {
+    if (occupe || !mission) return;
+    occupe = true;
+    erreur = null;
+    try {
+      await annulerMission(mission.id, motifAnnulation || undefined);
+      suivreEnDirect(null);
+      mission = null;
+      motifAnnulation = "";
+      await rafraichir();
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
+    } finally {
+      occupe = false;
+    }
+  }
+
   async function avancer(statut: StatutMission) {
     if (occupe || !mission) return;
     occupe = true;
@@ -181,7 +248,9 @@
       mission = await lireMission(mission.id);
       if (statut === "COMPLETED" || statut === "CANCELLED") {
         // L'intervention est close : le prestataire redevient disponible, et
-        // la liste des Demandes reprend son sens.
+        // la liste des Demandes reprend son sens. La socket se ferme avec elle,
+        // sinon le service tiendrait un abonné pour une Mission finie.
+        suivreEnDirect(null);
         await rafraichir();
       }
     } catch (e) {
@@ -304,10 +373,34 @@
 
     {#if mission.suites.length === 0}
       <p role="status" data-mission-close>Cette intervention est close.</p>
-      <button type="button" onclick={() => (mission = null)} data-action="revenir">
+      <button
+        type="button"
+        onclick={() => {
+          suivreEnDirect(null);
+          mission = null;
+        }}
+        data-action="revenir"
+      >
         Revenir aux Demandes
       </button>
     {:else}
+      <div data-bloc="desistement">
+        <label for="motif-desistement">Si vous ne pouvez plus venir, pourquoi</label>
+        <select id="motif-desistement" bind:value={motifAnnulation} data-champ="motif-desistement">
+          <option value="">Sans motif</option>
+          {#each MOTIFS_ANNULATION_MISSION as m}
+            <option value={m.code}>{m.libelle}</option>
+          {/each}
+        </select>
+        <button type="button" onclick={seDesister} disabled={occupe} data-action="se-desister">
+          {occupe ? "Un instant…" : "Je ne peux plus assurer cette intervention"}
+        </button>
+        <p class="klaar-tempere">
+          Trois désistements en trente jours suspendent votre compte pendant une
+          semaine.
+        </p>
+      </div>
+
       {#each mission.suites.filter((s) => s !== "CANCELLED") as suite}
         <button
           type="button"

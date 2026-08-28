@@ -5,9 +5,15 @@
 //! epic (voir docs/bmad-livrables/04-Epics-Stories.md).
 
 mod devis;
+mod liberation;
+
+pub use liberation::{
+    echeance_validation, repartir, Liberation, LiberationError, OrigineValidation, Repartition,
+    StatutLiberation, DELAI_VALIDATION_HEURES, SEUIL_QUATRE_YEUX_CENTS, TAUX_COMMISSION_BP,
+};
 
 pub use devis::{
-    Devis, DevisError, Proposition, StatutDevis, DELAI_MAX_MINUTES, DELAI_MIN_MINUTES,
+    Devis, DevisError, MotifRefus, Proposition, StatutDevis, DELAI_MAX_MINUTES, DELAI_MIN_MINUTES,
     DEVIS_MAX_PAR_MISSION, MONTANT_MAX_CENTS, MONTANT_MIN_CENTS, NOTE_MAX_CARACTERES,
     PREUVE_MAX_CARACTERES, TAUX_ADMIS, VALIDITE_MINUTES,
 };

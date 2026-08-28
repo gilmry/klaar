@@ -19,8 +19,9 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
-    creer_pool, PgCatalogueRepository, PgDemandeRepository, PgDevisRepository, PgJournalAudit,
-    PgMissionRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
+    creer_pool, PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository,
+    PgDevisRepository, PgJournalAudit, PgLiberationRepository, PgMissionRepository,
+    PgNotationRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
     PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
 };
 
@@ -153,6 +154,22 @@ async fn main() -> std::io::Result<()> {
     // de `App` en donnerait un par fil d'exécution, et la limite annoncée
     // serait silencieusement multipliée par le nombre de coeurs.
     let limiteur = Arc::new(LimiteurMemoire::new());
+
+    // Temps réel (Story 4.9). Créés **avant** `HttpServer::new`, dont la
+    // fermeture est appelée une fois par fil d'exécution : un bus par fil ne
+    // relierait qu'une fraction des sockets à l'écoute PostgreSQL, et le défaut
+    // ne se verrait qu'en production, sous la forme d'écrans qui ne bougent
+    // plus pour certains utilisateurs.
+    let evenements = klaar_api::evenements::BusEvenements::new();
+    let billets = Arc::new(klaar_api::billet::BilletsMemoire::new());
+
+    // L'écoute tourne dans sa propre tâche et ne rend jamais la main. Sa perte
+    // ne fait pas tomber le service : les clients gardent un sondage lent en
+    // filet, et l'écoute se reprend d'elle-même.
+    actix_web::rt::spawn(klaar_api::evenements::ecouter(
+        database_url.clone(),
+        evenements.clone(),
+    ));
     let courriel = Arc::new(CourrielJournalise::depuis_environnement());
     let derriere_proxy = std::env::var("KLAAR_DERRIERE_PROXY").as_deref() == Ok("1");
     if !derriere_proxy {
@@ -234,6 +251,15 @@ async fn main() -> std::io::Result<()> {
             }),
             missions: Arc::new(PgMissionRepository::new(pool.clone())),
             devis: Arc::new(PgDevisRepository::new(pool.clone())),
+            liberations: Arc::new(PgLiberationRepository::new(pool.clone())),
+            annulations: Arc::new(PgAnnulationRepository::new(pool.clone())),
+            notations: Arc::new(PgNotationRepository::new(pool.clone())),
+            // Le bus et les billets sont **partagés entre les fabriques
+            // d'application** : `HttpServer::new` appelle sa fermeture une fois
+            // par fil d'exécution, et un bus par fil ne relierait qu'un
+            // huitième des sockets à l'écoute PostgreSQL.
+            evenements: evenements.clone(),
+            billets: billets.clone(),
             jetons: jetons.clone(),
             courriel: courriel.clone(),
             horloge: Arc::new(HorlogeSysteme),

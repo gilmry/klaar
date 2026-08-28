@@ -17,12 +17,15 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
-    PgCatalogueRepository, PgDemandeRepository, PgDevisRepository, PgJournalAudit,
-    PgMissionRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
-    PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
+    PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository, PgDevisRepository,
+    PgJournalAudit, PgLiberationRepository, PgMissionRepository, PgNotationRepository,
+    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
+    PgTraceRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
+pub mod billet;
+pub mod evenements;
 pub mod jwt;
 pub mod limitation;
 pub mod routes;
@@ -54,6 +57,13 @@ pub struct EtatApplication {
     pub traces: Arc<PgTraceRepository>,
     pub missions: Arc<PgMissionRepository>,
     pub devis: Arc<PgDevisRepository>,
+    pub liberations: Arc<PgLiberationRepository>,
+    pub annulations: Arc<PgAnnulationRepository>,
+    pub notations: Arc<PgNotationRepository>,
+    /// Diffusion temps réel des événements de Mission (Story 4.9).
+    pub evenements: crate::evenements::BusEvenements,
+    /// Billets d'ouverture de socket, à usage unique et de courte vie.
+    pub billets: Arc<crate::billet::BilletsMemoire>,
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
@@ -111,6 +121,14 @@ pub struct EtatApplication {
         routes::disponibilite::regler_disponibilite,
         routes::mission::avancer_mission,
         routes::devis::envoyer_devis,
+        routes::devis::accepter_devis,
+        routes::devis::refuser_devis,
+        routes::validation::valider_mission,
+        routes::annulation_mission::annuler_intervention,
+        routes::notation::noter_intervention,
+        routes::notation::lire_notes,
+        routes::temps_reel::demander_billet,
+        routes::temps_reel::suivre_en_direct,
         routes::suivi::suivre_demande,
         routes::suivi::demandes_recues,
         routes::suivi::suivre_mission,
@@ -145,6 +163,16 @@ pub struct EtatApplication {
         routes::mission::MissionAvanceeDto,
         routes::devis::PropositionDto,
         routes::devis::DevisEmisDto,
+        routes::devis::RefusDto,
+        routes::devis::ReponseDevisDto,
+        routes::validation::LiberationDto,
+        routes::annulation_mission::AnnulationMissionDto,
+        routes::annulation_mission::MissionAnnuleeDto,
+        routes::notation::NoteDto,
+        routes::notation::NoteEcriteDto,
+        routes::notation::NoteVisibleDto,
+        routes::notation::NotesDeMissionDto,
+        routes::temps_reel::BilletDto,
         routes::suivi::SuiviDemandeDto,
         routes::suivi::DemandeProposeeDto,
         routes::suivi::SuiviMissionDto,
@@ -165,6 +193,8 @@ pub struct EtatApplication {
         (name = "prestataires", description = "Disponibilité et rayon d\'intervention (FR-003)"),
         (name = "missions", description = "Cycle de vie d\'une intervention (FR-018)"),
         (name = "devis", description = "Devis du prestataire (FR-016)"),
+        (name = "notation", description = "Notation double sens (FR-033)"),
+        (name = "temps-réel", description = "Flux d'événements d'une Mission (Story 4.9)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
     )
 )]
@@ -190,6 +220,14 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::disponibilite::regler_disponibilite)
         .service(routes::mission::avancer_mission)
         .service(routes::devis::envoyer_devis)
+        .service(routes::devis::accepter_devis)
+        .service(routes::devis::refuser_devis)
+        .service(routes::validation::valider_mission)
+        .service(routes::annulation_mission::annuler_intervention)
+        .service(routes::notation::noter_intervention)
+        .service(routes::notation::lire_notes)
+        .service(routes::temps_reel::demander_billet)
+        .service(routes::temps_reel::suivre_en_direct)
         .service(routes::suivi::suivre_demande)
         .service(routes::suivi::demandes_recues)
         .service(routes::suivi::suivre_mission)
@@ -221,7 +259,12 @@ pub fn etat_de_test(
         prestataires: Arc::new(PgProviderRepository::new(pool.clone())),
         traces: Arc::new(PgTraceRepository::new(pool.clone())),
         missions: Arc::new(PgMissionRepository::new(pool.clone())),
-        devis: Arc::new(PgDevisRepository::new(pool)),
+        devis: Arc::new(PgDevisRepository::new(pool.clone())),
+        liberations: Arc::new(PgLiberationRepository::new(pool.clone())),
+        annulations: Arc::new(PgAnnulationRepository::new(pool.clone())),
+        notations: Arc::new(PgNotationRepository::new(pool)),
+        evenements: crate::evenements::BusEvenements::new(),
+        billets: Arc::new(crate::billet::BilletsMemoire::new()),
         jetons: Arc::new(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),

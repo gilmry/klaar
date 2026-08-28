@@ -9,12 +9,22 @@
    * être « en diffusion » et son tour écoulé, parce que le balayage passe
    * périodiquement. Afficher « recherche en cours » dans ce cas ferait attendre
    * pour rien : `tour_ecoule` tranche, et c'est le serveur qui le calcule.
+   *
+   * **Le temps réel accélère, il ne remplace pas (Story 4.9).** Dès qu'une
+   * Mission existe, une socket s'ouvre et chaque événement déclenche une
+   * relecture. Le sondage reste, ralenti de cinq à trente secondes : une socket
+   * coupée par un proxy ne se signale pas, et un écran qui cesse de bouger sans
+   * le dire est pire qu'un écran lent.
    */
   import { onMount, onDestroy } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
   import { restaurerSession } from "../lib/connexion";
+  import { ouvrirFlux } from "../lib/tempsReel";
   import {
+    accepterDevis,
     annulerDemande,
+    annulerMissionEnCours,
+    attendUneReponse,
     codeDepuisErreur,
     delaiLisible,
     elargirZone,
@@ -24,9 +34,17 @@
     messageErreur,
     montantLisible,
     MOTIFS_ANNULATION,
+    MOTIFS_ANNULATION_MISSION,
+    MOTIFS_REFUS,
     peutAnnuler,
+    peutAnnulerMission,
     peutElargir,
+    peutNoter,
+    peutValider,
+    noterIntervention,
+    refuserDevis,
     suivreDemande,
+    validerMission,
     type SuiviDemande,
   } from "../lib/demande";
 
@@ -42,8 +60,21 @@
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
   let motif = $state("");
+  let motifRefus = $state("");
+  let motifArret = $state("");
+  let noteChoisie = $state(0);
+  let commentaireNote = $state("");
+  let noteEnvoyee = $state(false);
   let locale = $state<LocaleKlaar>("fr");
   let minuterie: ReturnType<typeof setInterval> | null = null;
+
+  /** Cadence du sondage seul, et cadence quand la socket vit (Story 4.9). */
+  const SONDAGE_MS = 5000;
+  const SONDAGE_AVEC_SOCKET_MS = 30000;
+
+  let fermerFlux: (() => void) | null = null;
+  let missionSuivie: string | null = null;
+  let socketOuverte = $state(false);
 
   onMount(async () => {
     locale = localeAffichee();
@@ -58,14 +89,47 @@
       // Cinq secondes : assez pour voir arriver une acceptation sans marteler
       // le serveur. Le temps réel viendra avec le WebSocket (FR-018) ; d'ici
       // là, un sondage court est honnête et se voit dans les journaux.
-      minuterie = setInterval(rafraichir, 5000);
+      minuterie = setInterval(rafraichir, SONDAGE_MS);
     }
     reprise = false;
   });
 
   onDestroy(() => {
     if (minuterie) clearInterval(minuterie);
+    fermerFlux?.();
   });
+
+  /** Reprogramme le sondage à la cadence qui correspond à l'état de la socket. */
+  function cadencer(periode: number) {
+    if (minuterie === null) return;
+    clearInterval(minuterie);
+    minuterie = setInterval(rafraichir, periode);
+  }
+
+  /**
+   * Ouvre la socket dès qu'une Mission existe, une seule fois par Mission.
+   *
+   * Rouvrir à chaque sondage dépenserait un billet toutes les cinq secondes et
+   * finirait par ressembler à un abus.
+   */
+  function suivreEnDirect(missionId: string | null) {
+    if (missionId === missionSuivie) return;
+    fermerFlux?.();
+    fermerFlux = null;
+    missionSuivie = missionId;
+    socketOuverte = false;
+    if (!missionId) return;
+
+    fermerFlux = ouvrirFlux(missionId, {
+      // L'événement dit qu'il s'est passé quelque chose ; c'est la relecture
+      // qui dit quoi, avec les droits que le serveur vérifie déjà.
+      surEvenement: () => void rafraichir(),
+      surEtat: (ouverte) => {
+        socketOuverte = ouverte;
+        cadencer(ouverte ? SONDAGE_AVEC_SOCKET_MS : SONDAGE_MS);
+      },
+    });
+  }
 
   const etat = $derived(suivi ? libelleStatutDemande(suivi) : null);
   const intervention = $derived(suivi ? libelleMission(suivi.mission_statut) : null);
@@ -73,6 +137,7 @@
   async function rafraichir() {
     try {
       suivi = await suivreDemande(id);
+      suivreEnDirect(suivi.mission_id);
       // Une Demande close ne bouge plus : arrêter le sondage évite de
       // continuer à interroger le serveur pour rien.
       if (suivi.statut === "MATCHED" && suivi.mission_statut === "COMPLETED") arreter();
@@ -86,6 +151,9 @@
   function arreter() {
     if (minuterie) clearInterval(minuterie);
     minuterie = null;
+    // La socket se ferme avec le sondage : garder ouverte une socket sur une
+    // Mission close laisserait le service tenir un abonné pour rien.
+    suivreEnDirect(null);
   }
 
   async function elargir() {
@@ -97,6 +165,91 @@
     } catch (e) {
       erreur = messageErreur(locale, codeDepuisErreur(e));
       await rafraichir();
+    } finally {
+      occupe = false;
+    }
+  }
+
+  /**
+   * Accepte ou refuse le devis en attente (FR-017).
+   *
+   * La relecture suit toujours, y compris après un refus : le prestataire peut
+   * en renvoyer un, et l'écran doit montrer l'état réel plutôt que celui qu'on
+   * déduirait de la réponse.
+   */
+  async function repondreAuDevis(accepte: boolean) {
+    if (occupe || !suivi?.mission_id) return;
+    occupe = true;
+    erreur = null;
+    try {
+      if (accepte) {
+        await accepterDevis(suivi.mission_id);
+      } else {
+        await refuserDevis(suivi.mission_id, motifRefus || undefined);
+      }
+      motifRefus = "";
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
+    } finally {
+      occupe = false;
+      // Après coup dans les deux cas : un refus du serveur signifie souvent que
+      // le devis a changé sous nos yeux, et c'est cela qu'il faut montrer.
+      await rafraichir();
+    }
+  }
+
+  /** Valide la fin de l'intervention (FR-021). */
+  async function valider() {
+    if (occupe || !suivi?.mission_id) return;
+    occupe = true;
+    erreur = null;
+    try {
+      await validerMission(suivi.mission_id);
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
+    } finally {
+      occupe = false;
+      await rafraichir();
+    }
+  }
+
+  /**
+   * Annule l'intervention en cours (FR-022).
+   *
+   * Le texte dit ce que cela coûte **avant** le clic : trente euros restent au
+   * prestataire s'il est déjà sur place. L'apprendre après serait déloyal.
+   */
+  async function arreter_intervention() {
+    if (occupe || !suivi?.mission_id) return;
+    occupe = true;
+    erreur = null;
+    try {
+      await annulerMissionEnCours(suivi.mission_id, motifArret || undefined);
+      motifArret = "";
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
+    } finally {
+      occupe = false;
+      await rafraichir();
+    }
+  }
+
+  /**
+   * Note le prestataire (FR-033).
+   *
+   * Le texte dit que la note reste cachée tant que l'autre n'a pas noté : sans
+   * cela, l'absence d'affichage passerait pour une panne.
+   */
+  async function noter() {
+    if (occupe || !suivi?.mission_id || noteChoisie < 1) return;
+    occupe = true;
+    erreur = null;
+    try {
+      await noterIntervention(suivi.mission_id, noteChoisie, commentaireNote.trim() || undefined);
+      noteEnvoyee = true;
+      commentaireNote = "";
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
     } finally {
       occupe = false;
     }
@@ -126,7 +279,7 @@
 {:else if suivi === null}
   <p role="alert" data-etat-suivi="introuvable">{erreur ?? "Demande introuvable."}</p>
 {:else}
-  <section data-suivi={suivi.statut}>
+  <section data-suivi={suivi.statut} data-direct={socketOuverte ? "ouvert" : "ferme"}>
     <p role="status" data-suivi-etat>{etat}</p>
     {#if intervention}
       <p data-suivi-intervention>{intervention}</p>
@@ -154,16 +307,120 @@
           <p data-devis-note>{suivi.devis.note}</p>
         {/if}
         <p role="status" data-devis-etat>{libelleDevis(suivi.devis)}</p>
+
+        {#if attendUneReponse(suivi.devis)}
+          <div data-bloc="reponse-devis">
+            <button
+              type="button"
+              onclick={() => repondreAuDevis(true)}
+              disabled={occupe}
+              data-action="accepter-devis"
+            >
+              {occupe ? "Un instant…" : "J'accepte ce devis"}
+            </button>
+
+            <label for="motif-refus">Si vous refusez, pourquoi (facultatif)</label>
+            <select id="motif-refus" bind:value={motifRefus} data-champ="motif-refus">
+              <option value="">Sans motif</option>
+              {#each MOTIFS_REFUS as m}
+                <option value={m.code}>{m.libelle}</option>
+              {/each}
+            </select>
+            <button
+              type="button"
+              onclick={() => repondreAuDevis(false)}
+              disabled={occupe}
+              data-action="refuser-devis"
+            >
+              {occupe ? "Un instant…" : "Je refuse"}
+            </button>
+          </div>
+        {/if}
+
         <p class="klaar-tempere">
           C'est le prestataire qui fixe son prix. Klaar ne le lui suggère pas et
           ne le corrige pas.
-          <!-- Accepter ou refuser relève de FR-017 (Story 4.2), qui dépend du
-               séquestre Stripe : promettre un bouton qui n'existe pas encore
-               serait pire que de dire ce qui manque. -->
-          Accepter ou refuser depuis cette page arrivera avec le paiement
-          sécurisé ; d'ici là, voyez directement avec le prestataire.
+          <!-- Le paiement lui-même relève de l'Epic 5 (Stripe). L'accord est
+               enregistré ; le règlement se fait pour l'instant entre les deux
+               parties, et le dire vaut mieux que de laisser croire le contraire. -->
+          L'accord est enregistré ici ; le règlement se fait pour l'instant
+          directement avec le prestataire.
         </p>
       </section>
+    {/if}
+
+    {#if peutNoter(suivi) && !noteEnvoyee}
+      <div data-bloc="notation">
+        <p>Comment s'est passée l'intervention ?</p>
+        <label for="note-etoiles">De 1 à 5 étoiles</label>
+        <select id="note-etoiles" bind:value={noteChoisie} data-champ="note">
+          <option value={0} disabled>Choisissez…</option>
+          {#each [1, 2, 3, 4, 5] as etoiles}
+            <option value={etoiles}>{etoiles} ★</option>
+          {/each}
+        </select>
+        <label for="note-commentaire">Un mot (facultatif)</label>
+        <input id="note-commentaire" type="text" bind:value={commentaireNote} data-champ="commentaire-note" />
+        <button
+          type="button"
+          onclick={noter}
+          disabled={occupe || noteChoisie < 1}
+          data-action="noter"
+        >
+          {occupe ? "Un instant…" : "Envoyer ma note"}
+        </button>
+        <p class="klaar-tempere">
+          Votre note reste cachée tant que le prestataire n'a pas donné la
+          sienne : les deux s'affichent ensemble, pour que personne n'ajuste la
+          sienne en fonction de l'autre.
+        </p>
+      </div>
+    {:else if peutNoter(suivi) && noteEnvoyee}
+      <p role="status" data-notation="envoyee">
+        Merci. Votre note s'affichera quand le prestataire aura donné la sienne.
+      </p>
+    {/if}
+
+    {#if peutAnnulerMission(suivi)}
+      <div data-bloc="arret-intervention">
+        <label for="motif-arret">Annuler l'intervention (facultatif : pourquoi)</label>
+        <select id="motif-arret" bind:value={motifArret} data-champ="motif-arret">
+          <option value="">Sans motif</option>
+          {#each MOTIFS_ANNULATION_MISSION as m}
+            <option value={m.code}>{m.libelle}</option>
+          {/each}
+        </select>
+        <button
+          type="button"
+          onclick={arreter_intervention}
+          disabled={occupe}
+          data-action="annuler-intervention"
+        >
+          {occupe ? "Un instant…" : "Annuler l'intervention"}
+        </button>
+        {#if suivi.mission_statut === "ON_SITE"}
+          <p class="klaar-tempere">
+            Le prestataire est déjà sur place : 30 € lui resteront pour son
+            déplacement, le reste vous est rendu.
+          </p>
+        {/if}
+      </div>
+    {/if}
+
+    {#if peutValider(suivi)}
+      <div data-bloc="validation">
+        <p>
+          Le prestataire a déclaré avoir terminé. Si c'est bien le cas,
+          confirmez-le : c'est ce qui déclenche son paiement.
+        </p>
+        <button type="button" onclick={valider} disabled={occupe} data-action="valider">
+          {occupe ? "Un instant…" : "L'intervention est bien terminée"}
+        </button>
+        <p class="klaar-tempere">
+          Sans réponse de votre part, elle sera validée automatiquement dans les
+          72 heures.
+        </p>
+      </div>
     {/if}
 
     {#if peutElargir(suivi)}

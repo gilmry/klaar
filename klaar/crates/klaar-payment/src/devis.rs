@@ -84,6 +84,42 @@ pub const TAUX_ADMIS: [VatRate; 3] = [
     VatRate::BELGIUM_RENOVATION,
 ];
 
+/// Pourquoi un devis est refusé (FR-017 `@happy`).
+///
+/// **Vocabulaire fermé**, comme les motifs d'annulation d'une Demande. Un champ
+/// libre serait une invitation à écrire ce qu'on pense du prestataire, dans une
+/// donnée qu'il pourrait lire un jour ; et il ne se compterait pas. Ces codes,
+/// eux, se comptent — c'est ce qui permettra de savoir si les refus viennent du
+/// prix ou du délai.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MotifRefus {
+    TropCher,
+    DelaiTropLong,
+    PlusBesoin,
+    Autre,
+}
+
+impl MotifRefus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::TropCher => "TOO_EXPENSIVE",
+            Self::DelaiTropLong => "DELAY_TOO_LONG",
+            Self::PlusBesoin => "NO_LONGER_NEEDED",
+            Self::Autre => "OTHER",
+        }
+    }
+
+    pub fn parse(valeur: &str) -> Option<Self> {
+        match valeur {
+            "TOO_EXPENSIVE" => Some(Self::TropCher),
+            "DELAY_TOO_LONG" => Some(Self::DelaiTropLong),
+            "NO_LONGER_NEEDED" => Some(Self::PlusBesoin),
+            "OTHER" => Some(Self::Autre),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatutDevis {
     /// Émis, en attente de réponse du demandeur.
@@ -144,6 +180,10 @@ pub enum DevisError {
     /// Taux réduit demandé sans la preuve qui le justifie (FR-016 `@edge`).
     PreuveTvaRequise,
     PreuveTropLongue,
+    /// Réponse à un devis dont l'heure de validité est passée (FR-017 `@edge`).
+    DevisExpire,
+    /// Réponse à un devis qui en a déjà reçu une.
+    DevisDejaRepondu,
 }
 
 impl DevisError {
@@ -158,6 +198,8 @@ impl DevisError {
             Self::TauxTvaInconnu => "VAT_RATE_UNKNOWN",
             Self::PreuveTvaRequise => "VAT_PROOF_REQUIRED",
             Self::PreuveTropLongue => "VAT_PROOF_TOO_LONG",
+            Self::DevisExpire => "QUOTE_EXPIRED",
+            Self::DevisDejaRepondu => "QUOTE_ALREADY_ANSWERED",
         }
     }
 }
@@ -179,6 +221,8 @@ impl fmt::Display for DevisError {
                 f,
                 "référence de preuve au-delà de {PREUVE_MAX_CARACTERES} caractères"
             ),
+            Self::DevisExpire => write!(f, "ce devis a expiré"),
+            Self::DevisDejaRepondu => write!(f, "ce devis a déjà reçu une réponse"),
         }
     }
 }
@@ -223,6 +267,8 @@ pub struct Devis {
     pub note: Option<String>,
     pub preuve_tva_reduite: Option<String>,
     pub statut: StatutDevis,
+    /// Renseigné seulement quand le demandeur a refusé, et qu'il a dit pourquoi.
+    pub motif_refus: Option<MotifRefus>,
     pub cree_le: DateTime<Utc>,
     pub expire_le: DateTime<Utc>,
 }
@@ -327,6 +373,7 @@ impl Devis {
             note,
             preuve_tva_reduite: preuve,
             statut: StatutDevis::Envoye,
+            motif_refus: None,
             cree_le: maintenant,
             expire_le: maintenant + Duration::minutes(VALIDITE_MINUTES),
         })
@@ -352,6 +399,51 @@ impl Devis {
 
     pub fn appartient_a(&self, provider_id: Uuid) -> bool {
         self.provider_id == provider_id
+    }
+
+    /// Accepte le devis (FR-017 `@happy`).
+    ///
+    /// L'expiration est vérifiée **ici et pas seulement au balayage** : un devis
+    /// peut être matériellement échu sans que le balayage soit passé, et
+    /// l'accepter engagerait le prestataire sur un prix qu'il ne tient plus.
+    /// FR-017 `@edge` le nomme, et rend 410.
+    pub fn accepter(&mut self, maintenant: DateTime<Utc>) -> Result<(), DevisError> {
+        self.verifier_repondable(maintenant)?;
+        self.statut = StatutDevis::Accepte;
+        Ok(())
+    }
+
+    /// Refuse le devis, avec ou sans motif (FR-017 `@happy`).
+    ///
+    /// Le motif est facultatif : l'exiger obligerait à choisir une raison pour
+    /// dire non, ce qui n'est pas dû. Le prestataire pourra en renvoyer un
+    /// autre, dans la limite du plafond.
+    pub fn refuser(
+        &mut self,
+        motif: Option<MotifRefus>,
+        maintenant: DateTime<Utc>,
+    ) -> Result<(), DevisError> {
+        self.verifier_repondable(maintenant)?;
+        self.statut = StatutDevis::Refuse;
+        self.motif_refus = motif;
+        Ok(())
+    }
+
+    /// Les deux mêmes gardes, dans le même ordre, pour les deux réponses.
+    ///
+    /// L'ordre n'est pas arbitraire mais il ne départage rien : `est_expire` ne
+    /// parle que des devis qui attendent encore une réponse. Un devis déjà
+    /// accepté ou refusé dit donc « déjà répondu » quelle que soit l'heure, ce
+    /// qui est l'information utile — la réponse existe, et c'est elle qui
+    /// compte. Seul un devis resté en attente peut répondre « expiré ».
+    fn verifier_repondable(&self, maintenant: DateTime<Utc>) -> Result<(), DevisError> {
+        if self.est_expire(maintenant) {
+            return Err(DevisError::DevisExpire);
+        }
+        if !self.statut.est_en_cours() {
+            return Err(DevisError::DevisDejaRepondu);
+        }
+        Ok(())
     }
 
     /// Secondes restantes avant expiration, jamais négatives.
@@ -564,6 +656,123 @@ mod tests {
     }
 
     // === @security ===
+
+    // === Réponse du demandeur (FR-017) ===
+
+    #[test]
+    fn happy_le_demandeur_accepte_le_devis() {
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        assert!(devis.accepter(t0()).is_ok());
+        assert_eq!(devis.statut, StatutDevis::Accepte);
+        assert_eq!(devis.motif_refus, None);
+    }
+
+    #[test]
+    fn happy_le_demandeur_refuse_avec_un_motif() {
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        assert!(devis.refuser(Some(MotifRefus::TropCher), t0()).is_ok());
+        assert_eq!(devis.statut, StatutDevis::Refuse);
+        assert_eq!(devis.motif_refus, Some(MotifRefus::TropCher));
+    }
+
+    #[test]
+    fn happy_le_refus_sans_motif_est_permis() {
+        // Exiger une raison obligerait à en choisir une pour dire non, ce qui
+        // n'est pas dû.
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        assert!(devis.refuser(None, t0()).is_ok());
+        assert_eq!(devis.statut, StatutDevis::Refuse);
+        assert_eq!(devis.motif_refus, None);
+    }
+
+    #[test]
+    fn negative_un_devis_expire_ne_s_accepte_plus() {
+        // FR-017 `@edge` : accepter à T+10 s un devis qui expirait dans 5 s.
+        // Sans cette garde, le prestataire serait engagé sur un prix qu'il ne
+        // tient plus.
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        let apres = devis.expire_le + Duration::seconds(1);
+        assert_eq!(devis.accepter(apres), Err(DevisError::DevisExpire));
+        assert_eq!(devis.refuser(None, apres), Err(DevisError::DevisExpire));
+        assert_eq!(
+            devis.statut,
+            StatutDevis::Envoye,
+            "rien ne doit avoir bougé"
+        );
+    }
+
+    #[test]
+    fn negative_un_devis_deja_repondu_ne_se_reprend_pas() {
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        devis.accepter(t0()).unwrap();
+        assert_eq!(devis.accepter(t0()), Err(DevisError::DevisDejaRepondu));
+        assert_eq!(
+            devis.refuser(Some(MotifRefus::TropCher), t0()),
+            Err(DevisError::DevisDejaRepondu)
+        );
+        assert_eq!(devis.statut, StatutDevis::Accepte);
+    }
+
+    #[test]
+    fn edge_l_instant_exact_d_expiration_refuse_deja() {
+        // Même borne qu'au balayage : l'égalité vaut expiration, sinon deux
+        // parties du service ne diraient pas la même chose à la seconde près.
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        let expire_le = devis.expire_le;
+        assert_eq!(devis.accepter(expire_le), Err(DevisError::DevisExpire));
+        assert!(devis.accepter(expire_le - Duration::seconds(1)).is_ok());
+    }
+
+    #[test]
+    fn edge_un_devis_repondu_apres_coup_dit_deja_repondu_et_non_expire() {
+        // `est_expire` ne parle que des devis en attente : une fois la réponse
+        // donnée, c'est elle l'information utile, quelle que soit l'heure.
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        devis.refuser(None, t0()).unwrap();
+        assert_eq!(
+            devis.accepter(devis.expire_le + Duration::hours(5)),
+            Err(DevisError::DevisDejaRepondu)
+        );
+    }
+
+    #[test]
+    fn security_le_motif_de_refus_est_un_vocabulaire_ferme() {
+        // Un champ libre serait une invitation à écrire ce qu'on pense du
+        // prestataire, dans une donnée qu'il pourrait lire un jour.
+        for motif in [
+            MotifRefus::TropCher,
+            MotifRefus::DelaiTropLong,
+            MotifRefus::PlusBesoin,
+            MotifRefus::Autre,
+        ] {
+            assert_eq!(MotifRefus::parse(motif.as_str()), Some(motif));
+        }
+        assert_eq!(MotifRefus::parse("ce plombier est un voleur"), None);
+        assert_eq!(MotifRefus::parse(""), None);
+    }
+
+    #[test]
+    fn security_accepter_ne_touche_a_aucun_montant() {
+        // L'accord porte sur ce qui a été présenté, au centime près. Un
+        // recalcul à l'acceptation changerait le contrat après signature.
+        let mut devis = emettre(proposition(18_000)).unwrap();
+        let avant = (
+            devis.montant_htva,
+            devis.tva,
+            devis.total_ttc,
+            devis.delai_minutes,
+        );
+        devis.accepter(t0()).unwrap();
+        assert_eq!(
+            (
+                devis.montant_htva,
+                devis.tva,
+                devis.total_ttc,
+                devis.delai_minutes
+            ),
+            avant
+        );
+    }
 
     #[test]
     fn security_le_montant_rendu_est_exactement_celui_propose() {

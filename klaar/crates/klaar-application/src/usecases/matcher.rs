@@ -13,6 +13,7 @@
 
 use chrono::{DateTime, Utc};
 use klaar_matching::{calculer_score, Demande, Score, StatutDemande, CANDIDATS_MAX};
+use klaar_trust::note_de_matching;
 use std::fmt;
 use uuid::Uuid;
 
@@ -85,10 +86,11 @@ fn anciennete_jours(verifie_le: Option<DateTime<Utc>>, maintenant: DateTime<Utc>
     }
 }
 
-pub async fn chercher_candidats<P, D, T, H>(
+pub async fn chercher_candidats<P, D, T, N, H>(
     providers: &P,
     demandes: &D,
     traces: &T,
+    notations: &N,
     horloge: &H,
     demande: &Demande,
 ) -> Result<ResultatMatching, ErreurMatching>
@@ -96,6 +98,7 @@ where
     P: ProviderRepository,
     D: DemandeRepository,
     T: TraceRepository,
+    N: crate::ports::notation_repository::NotationRepository,
     H: Horloge,
 {
     // Une Demande annulée ne doit réveiller personne. Le contrôle est ici et
@@ -127,6 +130,12 @@ where
         return Ok(ResultatMatching::Aucun);
     }
 
+    // Les réputations en **une** requête, avant le classement : un aller-retour
+    // par candidat mettrait dix latences réseau dans un chemin censé répondre en
+    // quelques millisecondes (Story 7.1).
+    let identifiants: Vec<uuid::Uuid> = proches.iter().map(|p| p.provider.id).collect();
+    let reputations = notations.reputations_de(&identifiants).await?;
+
     let mut classes: Vec<Candidat> = proches
         .iter()
         .map(|p| Candidat {
@@ -137,9 +146,26 @@ where
                 p.distance_metres,
                 demande.rayon_metres,
                 anciennete_jours(p.provider.kyc_verifie_le, maintenant),
-                // La note n'existe pas : le bounded context Trust arrive plus
-                // tard. `None` et non zéro — voir `klaar_matching::score`.
-                None,
+                // Borne basse de Wilson, ramenée sur cinq (FR-037), et quatre
+                // étoiles quand personne n'a noté.
+                //
+                // **Toujours `Some`, y compris sans note.** Laisser le score
+                // redistribuer le poids reviendrait à noter le prestataire sur
+                // sa propre moyenne des autres critères, donc à lui prêter la
+                // meilleure note compatible avec son profil : un compte tout
+                // neuf passerait devant un artisan à cinquante avis. Le prior
+                // est une convention écrite, et c'est ce que FR-037 appelle la
+                // transparence.
+                Some(note_de_matching(
+                    reputations
+                        .get(&p.provider.id)
+                        .map(|r| r.somme_notes)
+                        .unwrap_or(0),
+                    reputations
+                        .get(&p.provider.id)
+                        .map(|r| r.nombre_notes)
+                        .unwrap_or(0),
+                )),
             ),
         })
         .collect();
@@ -183,6 +209,7 @@ where
 mod tests {
     use super::*;
     use crate::ports::horloge::HorlogeFigee;
+    use crate::ports::notation_repository::{NotationRepository, Reputation};
     use crate::ports::provider_repository::ProviderProche;
     use chrono::{Duration, TimeZone};
     use klaar_catalog::CodeCatalogue;
@@ -373,6 +400,7 @@ mod tests {
             &providers,
             &demandes,
             &traces,
+            &ReputationsMemoire::default(),
             &HorlogeFigee(instant()),
             demande,
         )
@@ -384,6 +412,118 @@ mod tests {
         ProviderProche {
             provider: provider(kyc_jours),
             distance_metres: distance,
+        }
+    }
+
+    #[tokio::test]
+    async fn happy_a_distance_egale_la_reputation_departage() {
+        // **La boucle se referme ici** (Story 7.1) : le score réservait un
+        // emplacement pour la note depuis FR-012, et il est enfin rempli.
+        //
+        // À distance égale, et pas à distance différente : la proximité pèse
+        // 0,7 contre 0,2 à la note, et c'est délibéré — quelqu'un qui a une
+        // fuite veut d'abord quelqu'un qui peut venir. Prétendre le contraire
+        // dans un test aurait demandé de tordre les poids.
+        let sans_note = provider(30);
+        let bien_note = provider(30);
+        let providers = ProvidersMemoire {
+            proches: vec![
+                ProviderProche {
+                    provider: sans_note.clone(),
+                    distance_metres: 500.0,
+                },
+                ProviderProche {
+                    provider: bien_note.clone(),
+                    distance_metres: 500.0,
+                },
+            ],
+        };
+
+        // Sans réputation d'aucun côté, c'est l'identifiant qui départage — le
+        // second critère de tri, précisément pour que l'ordre soit explicable.
+        let sans = chercher_candidats(
+            &providers,
+            &DemandesMemoire::default(),
+            &TracesMemoire::default(),
+            &ReputationsMemoire::default(),
+            &HorlogeFigee(instant()),
+            &demande(),
+        )
+        .await
+        .unwrap();
+        let ResultatMatching::Candidats(retenus) = sans else {
+            panic!("des candidats étaient attendus");
+        };
+        assert_eq!(retenus[0].score.total, retenus[1].score.total);
+
+        // À distance égale cette fois : c'est là que la réputation décide.
+        let mut par_provider = std::collections::HashMap::new();
+        par_provider.insert(
+            bien_note.id,
+            Reputation {
+                somme_notes: 250,
+                nombre_notes: 50,
+            },
+        );
+        let avec = chercher_candidats(
+            &providers,
+            &DemandesMemoire::default(),
+            &TracesMemoire::default(),
+            &ReputationsMemoire { par_provider },
+            &HorlogeFigee(instant()),
+            &demande(),
+        )
+        .await
+        .unwrap();
+        let ResultatMatching::Candidats(retenus) = avec else {
+            panic!("des candidats étaient attendus");
+        };
+        assert_eq!(
+            retenus[0].provider_id, bien_note.id,
+            "cinquante notes parfaites doivent passer devant un inconnu"
+        );
+        assert!(retenus[0].score.note.is_some());
+        // Et l'inconnu n'est pas écrasé pour autant : quatre étoiles prêtées,
+        // pas zéro.
+        assert!(retenus[1].score.note.unwrap().valeur > 0.7);
+    }
+
+    /// Réputations en mémoire, pour éprouver l'effet de la note sur le rang.
+    ///
+    /// Vide par défaut : l'absence de note est l'état le plus fréquent, et le
+    /// score la traite en redistribuant son poids.
+    #[derive(Default)]
+    struct ReputationsMemoire {
+        par_provider: std::collections::HashMap<Uuid, Reputation>,
+    }
+
+    impl NotationRepository for ReputationsMemoire {
+        async fn noter(
+            &self,
+            _: &klaar_trust::Notation,
+        ) -> Result<crate::ports::notation_repository::ResultatNotation, RepositoryError> {
+            unreachable!()
+        }
+        async fn notes_de_mission(
+            &self,
+            _: Uuid,
+        ) -> Result<crate::ports::notation_repository::NotesDeMission, RepositoryError> {
+            unreachable!()
+        }
+        async fn reputation(&self, id: Uuid) -> Result<Reputation, RepositoryError> {
+            Ok(self.par_provider.get(&id).copied().unwrap_or_default())
+        }
+        async fn reputations_de(
+            &self,
+            ids: &[Uuid],
+        ) -> Result<std::collections::HashMap<Uuid, Reputation>, RepositoryError> {
+            Ok(ids
+                .iter()
+                .filter_map(|id| self.par_provider.get(id).map(|r| (*id, *r)))
+                .collect())
+        }
+        async fn validee_le(&self, _: Uuid) -> Result<Option<DateTime<Utc>>, RepositoryError> {
+            unreachable!()
         }
     }
 
@@ -528,6 +668,7 @@ mod tests {
                 en_panne: true,
                 ..Default::default()
             },
+            &ReputationsMemoire::default(),
             &HorlogeFigee(instant()),
             &d,
         )
@@ -555,8 +696,18 @@ mod tests {
         let ligne = &lignes[0];
         assert!(ligne.score.proximite.poids > 0.0);
         assert!(ligne.score.controle.poids > 0.0);
-        // L'absence de note est visible : la trace dit de quoi le score était
-        // réellement fait, y compris de ce qui lui manquait.
-        assert!(ligne.score.note.is_none());
+        // La note figure dans la trace, y compris quand c'est le prior de
+        // FR-037 qui la fournit : un audit doit pouvoir constater qu'un
+        // prestataire a été classé sur quatre étoiles prêtées et non sur des
+        // avis réels. La trace dit de quoi le score était fait.
+        let note = ligne
+            .score
+            .note
+            .expect("la note entre toujours dans le score");
+        assert!(
+            (note.valeur - klaar_trust::PRIOR_SANS_NOTE).abs() < 1e-9,
+            "un prestataire sans avis doit porter le prior, obtenu {}",
+            note.valeur
+        );
     }
 }

@@ -197,6 +197,17 @@ mod tests {
         async fn en_cours_pour_mission(&self, _: Uuid) -> Result<Option<Devis>, RepositoryError> {
             unreachable!()
         }
+        async fn repondre(
+            &self,
+            _: Uuid,
+            _: klaar_payment::StatutDevis,
+            _: Option<&str>,
+        ) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
+        async fn par_id(&self, _: Uuid) -> Result<Option<Devis>, RepositoryError> {
+            unreachable!()
+        }
         async fn dernier_pour_mission(&self, _: Uuid) -> Result<Option<Devis>, RepositoryError> {
             unreachable!()
         }

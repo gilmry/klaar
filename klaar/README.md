@@ -585,7 +585,7 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   La bascule et l'entrée d'historique sont une seule transaction, avec garde sur
   l'état de départ. L'historique est append-only par déclencheur.
 
-  Non livré : le WebSocket (4.9), la validation de fin (FR-021), les pénalités
+  Non livré : la validation de fin (FR-021), les pénalités
   d'annulation (FR-022) — le domaine connaît la transition vers `CANCELLED`,
   aucune route ne l'expose faute de la règle qui doit l'accompagner.
 
@@ -610,8 +610,125 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Les boutons d'étape viennent du serveur (`suites`) : recopier la machine à
   états dans l'interface la ferait diverger.
 
-  Le suivi sonde toutes les cinq secondes et s'arrête quand la Demande est close.
-  Dette assumée : le temps réel appartient au WebSocket (Story 4.9).
+  Le suivi sonde et s'arrête quand la Demande est close. Depuis la Story 4.9, une
+  socket double ce sondage et le ralentit à trente secondes tant qu'elle vit.
+
+- **7.1 / 7.5** — **Notation double sens et réputation Wilson** (FR-033, FR-037) :
+  `POST /api/v1/missions/{id}/rating`, `GET .../ratings`.
+
+  **Les deux notes se dévoilent ensemble.** C'est la seule protection contre les
+  représailles : si celle du demandeur s'affichait d'abord, le prestataire
+  ajusterait la sienne. Elles se publient quand les deux existent, ou quand la
+  fenêtre de quatorze jours se ferme.
+
+  **La réputation est une borne basse de Wilson, pas une moyenne.** Un
+  prestataire avec une seule note de cinq étoiles afficherait 5,0 et passerait
+  devant quelqu'un qui en a cinquante à 4,5 ; la borne basse répond à la bonne
+  question — « quelle est la note la plus basse compatible avec ce qu'on a
+  observé ». Une note isolée est peu informative, et le calcul le dit.
+
+  **Un prior neutre pour les non-notés, adopté après avoir été écarté à tort.**
+  Le premier réflexe avait été de laisser le score redistribuer le poids de la
+  note absente, au motif que c'était plus honnête que d'inventer une réputation.
+  C'est faux : redistribuer revient à noter le prestataire sur sa propre moyenne
+  des autres critères, donc à lui prêter la meilleure note compatible avec son
+  profil. À distance égale, un compte tout neuf passait devant un artisan à
+  cinquante avis. L'inconnu vaut désormais quatre étoiles, et la trace d'audit
+  consigne qu'un classement s'est fait sur une note prêtée.
+
+  La boucle du matching se referme : le score réservait un emplacement pour la
+  note depuis FR-012, il est rempli.
+
+- **4.7** — **Annuler une intervention en cours** (FR-022) :
+  `POST /api/v1/missions/{id}/cancel`, une seule route pour les deux parties.
+
+  **Qui annule est déduit du jeton**, et c'est cela qui détermine le coût. Le
+  demandeur qui renonce récupère son argent, moins trente euros si le
+  prestataire était **déjà sur place** — en route, rien n'est dû, parce que rien
+  ne dit qu'il était arrivé. Le prestataire qui se désiste rend tout, et son
+  désistement est compté : **trois en trente jours suspendent son compte**, ce
+  que l'écran annonce avant le clic.
+
+  Le forfait est borné par ce qui était engagé : sans cela, une annulation sur
+  une Mission sans devis accepté produirait un remboursement négatif,
+  c'est-à-dire une dette inventée.
+
+  **La suspension suit l'annulation mais n'en fait pas partie** : son échec ne
+  défait pas une annulation déjà prononcée. La Mission est close, c'est le fait
+  principal, et le compteur se rattrape au désistement suivant.
+
+  Non livré : le remboursement effectif (Stripe), le signalement de fraude du
+  demandeur à cinq annulations en sept jours, et la levée automatique de la
+  suspension au bout de sept jours.
+
+- **4.2 / 4.6** — **Accepter un devis, puis valider la fin** (FR-017, FR-021) :
+  `POST /api/v1/missions/{id}/accept-quote`, `refuse-quote`, `validate`.
+
+  **Livrées sans Stripe, et c'est écrit.** L'accord et la validation sont
+  enregistrés ; la capture et le virement rejoindront l'Epic 5. Un accord sans
+  capture est un état honnête — le devis dit ce qui a été convenu — là où
+  attendre le compte aurait laissé le demandeur devant un devis qu'il ne peut ni
+  accepter ni refuser.
+
+  **La répartition est celle du PRD, au centime près** : 180 € HTVA à 21 % font
+  217,80 € ; la commission de 18 % sur le HTVA fait 32,40 €, sa TVA 6,80 €, donc
+  39,20 € TTC ; il reste 178,60 € au prestataire. L'invariant « la somme des
+  parts fait le total » est gravé par une contrainte : une erreur d'arrondi
+  échouera à l'écriture plutôt que de se retrouver dans une comptabilité. La
+  commission porte sur le hors-TVA — la TVA du devis est due à l'État, et en
+  prélever une part reviendrait à se servir dans une taxe.
+
+  **Soixante-douze heures, puis le service valide à sa place.** Sans ce délai, un
+  demandeur qui ne rouvre jamais l'application retiendrait indéfiniment l'argent
+  d'un travail fait, et c'est le prestataire qui paierait le silence. Au-delà de
+  cinq cents euros, la libération attend un second regard.
+
+  **Deux dépendances silencieuses révélées en cours de route.** `COMPLETED` a
+  cessé d'être terminal : le chiffrage d'un devis s'appuyait sur `est_terminal`
+  et aurait rouvert le devis d'une intervention faite ; et la transition vers
+  `VALIDATED` devenait atteignable par la route de statut du prestataire, qui
+  aurait pu signer la réception de son propre travail. Les deux sont fermées, et
+  testées.
+
+  Non livré : la capture 3DS2, le virement, le gel en cas de litige (FR-034), le
+  courriel récapitulatif du balayage (Story 9.2) et la console ops qui lèvera les
+  libérations `PENDING_OPS` (Epic 8).
+
+- **4.9** — **Statut de Mission en temps réel** :
+  `POST /api/v1/realtime/ticket`, `GET /api/v1/missions/{id}/events`.
+
+  **Le canal est PostgreSQL, pas la mémoire du service.** Un canal en mémoire ne
+  relie que les clients connectés au même exemplaire ; dès qu'il y en a deux, la
+  moitié des utilisateurs cesse de recevoir quoi que ce soit, et rien ne le
+  signale — l'écran ne bouge simplement plus. `LISTEN`/`NOTIFY` relie tous les
+  exemplaires par le seul point qu'ils partagent déjà.
+
+  **L'avis part dans la même transaction que le changement.** PostgreSQL ne le
+  délivre qu'au `COMMIT` : une écriture abandonnée n'annonce rien, une écriture
+  commise annonce toujours. Deux tests d'intégration le vérifient en ouvrant une
+  vraie écoute pendant qu'une vraie transaction s'écrit, y compris le cas d'une
+  transition perdue à la course.
+
+  **L'événement ne porte aucun détail** : un identifiant de Mission, un genre,
+  un instant. La charge d'un `NOTIFY` traverse la base et ses journaux et part
+  vers tous les exemplaires. Le client relit par les routes qui vérifient déjà
+  ses droits — c'est aussi ce qui permet de diffuser le même événement au
+  demandeur et au prestataire, qui ne voient pas la même chose.
+
+  **Un billet, pas un jeton dans l'URL.** Un navigateur ne peut pas poser
+  d'en-tête `Authorization` sur une WebSocket, et une URL de socket finit dans
+  les journaux du serveur, du proxy et l'historique du navigateur. Le billet
+  vaut trente secondes et une seule fois ; seul son condensé est conservé. Un
+  billet présenté est dépensé même quand l'accès est refusé, sinon le même
+  servirait à essayer des identifiants de Mission jusqu'à en trouver un.
+
+  **Le sondage reste, ralenti de cinq à trente secondes.** Une socket coupée par
+  un proxy ne se signale pas ; un écran qui cesse de bouger sans le dire est
+  pire qu'un écran lent. Le temps réel accélère, il ne remplace pas.
+
+  Écart au plan : `actix-ws` plutôt que `actix-web-actors`, l'API que le projet
+  actix recommande désormais. Limite assumée : les billets vivent en mémoire,
+  donc par exemplaire du service.
 
 - **4.1** — **Envoi d'un devis** (FR-016) : `POST /api/v1/missions/{id}/quote`,
   et le devis rendu dans les deux suivis.

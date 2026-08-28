@@ -1,7 +1,8 @@
-//! Éteint les tours de diffusion écoulés (Story 3.6, FR-015) et les devis sans
-//! réponse (Story 4.1, FR-016 `@edge`).
+//! Éteint les tours de diffusion écoulés (Story 3.6, FR-015), les devis sans
+//! réponse (Story 4.1, FR-016 `@edge`), et valide les interventions terminées
+//! depuis plus de soixante-douze heures (Story 4.6, FR-021 `@edge`).
 //!
-//! **Un seul binaire pour les deux.** Ce sont deux balayages indépendants, mais
+//! **Un seul binaire pour les trois.** Ce sont des balayages indépendants, mais
 //! les lancer séparément doublerait la configuration, la surveillance et les
 //! occasions d'en oublier un. Un échec de l'un n'empêche pas l'autre : les
 //! demandeurs n'ont pas à attendre parce qu'un devis n'a pas pu s'éteindre.
@@ -31,11 +32,12 @@ use std::sync::Arc;
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_application::usecases::expirer::expirer_les_tours;
 use klaar_application::usecases::expirer_devis::expirer_les_devis;
+use klaar_application::usecases::valider_mission::valider_les_echues;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_shared_kernel::Locale;
 use klaar_sqlx_repos::{
-    creer_pool, PgDemandeRepository, PgDevisRepository, PgProviderRepository,
-    PgPushSubscriptionRepository,
+    creer_pool, PgDemandeRepository, PgDevisRepository, PgLiberationRepository,
+    PgProviderRepository, PgPushSubscriptionRepository,
 };
 
 #[tokio::main]
@@ -83,6 +85,7 @@ async fn main() -> ExitCode {
     let demandes = PgDemandeRepository::new(pool.clone());
     let devis = PgDevisRepository::new(pool.clone());
     let prestataires = PgProviderRepository::new(pool.clone());
+    let liberations = PgLiberationRepository::new(pool.clone());
     let abonnements = PgPushSubscriptionRepository::new(pool);
 
     // Les devis d'abord, et sans que leur sort n'engage celui des tours : les
@@ -107,6 +110,27 @@ async fn main() -> ExitCode {
         }
         Ok(_) => {}
         Err(e) => tracing::error!(erreur = %e, "balayage des devis interrompu"),
+    }
+
+    // La validation automatique (FR-021 `@edge`). Sans elle, un demandeur qui
+    // ne rouvre jamais l'application retiendrait indéfiniment l'argent d'un
+    // travail fait, et c'est le prestataire qui paierait le silence.
+    //
+    // **Aucun avis n'est envoyé ici.** Prévenir demanderait de lire la fiche de
+    // chaque prestataire et le compte de chaque demandeur, pour un message que
+    // l'application affiche déjà à l'ouverture. La limite est écrite plutôt que
+    // découverte : FR-021 `@edge` demande un courriel récapitulatif, et il
+    // viendra avec l'envoi de courriels transactionnels (Story 9.2).
+    match valider_les_echues(&devis, &liberations, &HorlogeSysteme).await {
+        Ok(bilan) if bilan.validees > 0 || bilan.sans_accord > 0 => {
+            tracing::info!(
+                validees = bilan.validees,
+                sans_accord = bilan.sans_accord,
+                "interventions validées après soixante-douze heures"
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::error!(erreur = %e, "balayage des validations interrompu"),
     }
 
     match expirer_les_tours(

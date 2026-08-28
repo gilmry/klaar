@@ -152,7 +152,7 @@ where
     // passent tous, et c'est voulu — FR-016 décrit le devis à l'attribution,
     // mais un plombier chiffre après avoir vu la fuite, pas avant d'avoir
     // ouvert le placard. Refuser depuis `ON_SITE` obligerait à deviner.
-    if mission.statut.est_terminal() {
+    if !mission.statut.accepte_un_devis() {
         return Err(ErreurEmissionDevis::MissionClose);
     }
 
@@ -357,6 +357,17 @@ mod tests {
             }
         }
         async fn en_cours_pour_mission(&self, _: Uuid) -> Result<Option<Devis>, RepositoryError> {
+            unreachable!()
+        }
+        async fn repondre(
+            &self,
+            _: Uuid,
+            _: klaar_payment::StatutDevis,
+            _: Option<&str>,
+        ) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
+        async fn par_id(&self, _: Uuid) -> Result<Option<Devis>, RepositoryError> {
             unreachable!()
         }
         async fn dernier_pour_mission(&self, _: Uuid) -> Result<Option<Devis>, RepositoryError> {

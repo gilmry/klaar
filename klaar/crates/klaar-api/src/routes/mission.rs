@@ -60,6 +60,10 @@ fn statut(e: &ErreurTransition) -> actix_web::http::StatusCode {
     use actix_web::http::StatusCode;
     match e {
         ErreurTransition::PasPrestataire => StatusCode::FORBIDDEN,
+        // 403 et non 404 : le prestataire est bien chez lui, c'est ce geste
+        // précis qui ne lui appartient pas. Rien n'est révélé par ce refus,
+        // puisqu'il ne dépend d'aucune donnée.
+        ErreurTransition::ReserveAuDemandeur => StatusCode::FORBIDDEN,
         ErreurTransition::Introuvable => StatusCode::NOT_FOUND,
         ErreurTransition::StatutInconnu => StatusCode::BAD_REQUEST,
         ErreurTransition::Domaine(d) => match d.code() {

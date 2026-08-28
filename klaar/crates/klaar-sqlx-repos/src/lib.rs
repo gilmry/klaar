@@ -1,5 +1,6 @@
 //! Adapters de persistance PostgreSQL (ADR-002 : `sqlx`, SQL pur, pas d'ORM).
 
+pub mod annulation;
 pub mod audit_trace;
 mod catalogue;
 mod demande;
@@ -7,7 +8,9 @@ pub mod demonstration;
 mod devis;
 mod effacement;
 mod journal_audit;
+mod liberation;
 mod mission;
+mod notation;
 mod pool;
 mod provider;
 mod push_subscription;
@@ -15,11 +18,14 @@ mod session;
 mod trace;
 mod utilisateur;
 
+pub use annulation::PgAnnulationRepository;
 pub use catalogue::PgCatalogueRepository;
 pub use demande::{PgDemandeRepository, PgPaiementRepository};
 pub use devis::PgDevisRepository;
 pub use journal_audit::PgJournalAudit;
+pub use liberation::PgLiberationRepository;
 pub use mission::PgMissionRepository;
+pub use notation::PgNotationRepository;
 pub use pool::{creer_pool, PoolPg};
 pub use provider::PgProviderRepository;
 pub use push_subscription::PgPushSubscriptionRepository;
@@ -45,4 +51,27 @@ pub(crate) fn erreur(e: sqlx::Error) -> RepositoryError {
         }
         _ => RepositoryError::Indisponible(e.to_string()),
     }
+}
+
+/// Émet un événement de Mission sur le canal `LISTEN`/`NOTIFY` (Story 4.9).
+///
+/// **Toujours dans une transaction**, et c'est le cœur de la garantie :
+/// PostgreSQL ne délivre un `NOTIFY` qu'au `COMMIT`. Une transaction abandonnée
+/// n'annonce donc rien, et une transaction commise annonce toujours — les deux
+/// fenêtres qu'un envoi « après l'écriture » laisserait ouvertes.
+///
+/// `pg_notify` plutôt que `NOTIFY` : la charge est un paramètre lié, là où
+/// `NOTIFY canal, 'charge'` demanderait de la coller dans le texte SQL, ce qui
+/// est le chemin habituel vers l'injection.
+pub(crate) async fn notifier(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    evenement: &klaar_application::ports::evenements::EvenementMission,
+) -> Result<(), RepositoryError> {
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(klaar_application::ports::evenements::CANAL)
+        .bind(evenement.en_json())
+        .execute(&mut **tx)
+        .await
+        .map_err(erreur)?;
+    Ok(())
 }

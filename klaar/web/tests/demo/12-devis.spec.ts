@@ -106,6 +106,9 @@ test("Un devis envoyé, reçu, et le second qui ne passe pas", async ({ browser 
     await elec.montrer("[data-devis-statut]", "Son devis attend une réponse pendant une heure.");
 
     // --- Camille le reçoit, sans rien rafraîchir --------------------------
+    //
+    // Depuis la Story 4.9, une socket relaie l'événement : l'écran de Camille
+    // se met à jour en une seconde au lieu d'attendre le prochain sondage.
     await camille.raconter("Camille reçoit le devis sans rien faire.");
     await camille.page.waitForSelector("[data-devis-total]", { timeout: 30000 });
     await expect(camille.page.locator("[data-devis-total]")).toContainText("217,80", {

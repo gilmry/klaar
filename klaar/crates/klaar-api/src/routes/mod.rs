@@ -3,6 +3,7 @@
 
 pub mod acceptation;
 pub mod annulation;
+pub mod annulation_mission;
 pub mod auth;
 pub mod catalogue;
 pub mod compte;
@@ -12,7 +13,10 @@ pub mod disponibilite;
 pub mod elargissement;
 pub mod health;
 pub mod mission;
+pub mod notation;
 pub mod push;
 pub mod session;
 pub mod suivi;
+pub mod temps_reel;
+pub mod validation;
 pub mod verification;

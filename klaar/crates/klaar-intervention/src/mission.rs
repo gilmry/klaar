@@ -35,9 +35,11 @@ pub enum StatutMission {
     EnRoute,
     /// Le prestataire est sur place.
     SurPlace,
-    /// L'intervention est terminée. La validation par le demandeur est une
-    /// étape distincte (FR-021), pas encore livrée.
+    /// L'intervention est terminée, et attend la validation du demandeur.
     Terminee,
+    /// Le demandeur a validé, ou le délai de soixante-douze heures est passé
+    /// (FR-021). C'est cet état qui autorise la libération de l'argent.
+    Validee,
     /// Annulée. Les pénalités relèvent de FR-022, pas encore livrées.
     Annulee,
 }
@@ -50,6 +52,7 @@ impl StatutMission {
             Self::EnRoute => "PROVIDER_EN_ROUTE",
             Self::SurPlace => "ON_SITE",
             Self::Terminee => "COMPLETED",
+            Self::Validee => "VALIDATED",
             Self::Annulee => "CANCELLED",
         }
     }
@@ -60,6 +63,7 @@ impl StatutMission {
             "PROVIDER_EN_ROUTE" => Some(Self::EnRoute),
             "ON_SITE" => Some(Self::SurPlace),
             "COMPLETED" => Some(Self::Terminee),
+            "VALIDATED" => Some(Self::Validee),
             "CANCELLED" => Some(Self::Annulee),
             _ => None,
         }
@@ -77,9 +81,14 @@ impl StatutMission {
             Self::Acceptee => &[Self::EnRoute, Self::Annulee],
             Self::EnRoute => &[Self::SurPlace, Self::Annulee],
             Self::SurPlace => &[Self::Terminee, Self::Annulee],
+            // Terminée n'est plus terminal depuis FR-021 : le demandeur valide,
+            // ou le délai le fait pour lui. L'annulation ne figure pas ici — une
+            // intervention faite ne s'annule pas, elle se conteste, et le litige
+            // relève de FR-034.
+            Self::Terminee => &[Self::Validee],
             // Terminaux. Un retour en arrière rouvrirait une intervention dont
             // dépendent le paiement, la notation et d'éventuels litiges.
-            Self::Terminee => &[],
+            Self::Validee => &[],
             Self::Annulee => &[],
         }
     }
@@ -93,12 +102,29 @@ impl StatutMission {
     pub fn occupe_le_prestataire(&self) -> bool {
         match self {
             Self::Acceptee | Self::EnRoute | Self::SurPlace => true,
-            Self::Terminee | Self::Annulee => false,
+            // Terminée libère le prestataire : la validation est l'affaire du
+            // demandeur, et l'attendre l'empêcherait de prendre l'intervention
+            // suivante pendant trois jours.
+            Self::Terminee | Self::Validee | Self::Annulee => false,
         }
     }
 
     pub fn est_terminal(&self) -> bool {
         self.transitions_possibles().is_empty()
+    }
+
+    /// Vrai si un devis peut encore être émis pour cette Mission (FR-016).
+    ///
+    /// **Une question distincte de « est-ce terminal ».** `Terminee` a cessé
+    /// d'être terminal quand FR-021 a ajouté la validation, et s'en remettre à
+    /// `est_terminal` aurait silencieusement rouvert le chiffrage d'une
+    /// intervention déjà faite. Le `match` exhaustif oblige à répondre pour
+    /// chaque état ajouté.
+    pub fn accepte_un_devis(&self) -> bool {
+        match self {
+            Self::Acceptee | Self::EnRoute | Self::SurPlace => true,
+            Self::Terminee | Self::Validee | Self::Annulee => false,
+        }
     }
 }
 
@@ -283,11 +309,12 @@ mod tests {
         m
     }
 
-    const TOUS: [StatutMission; 5] = [
+    const TOUS: [StatutMission; 6] = [
         StatutMission::Acceptee,
         StatutMission::EnRoute,
         StatutMission::SurPlace,
         StatutMission::Terminee,
+        StatutMission::Validee,
         StatutMission::Annulee,
     ];
 
@@ -299,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn happy_les_cinq_statuts_font_l_aller_retour() {
+    fn happy_tous_les_statuts_font_l_aller_retour() {
         for statut in TOUS {
             assert_eq!(StatutMission::parse(statut.as_str()), Some(statut));
         }
@@ -442,22 +469,70 @@ mod tests {
 
     #[test]
     fn edge_les_statuts_terminaux_n_ont_aucune_suite() {
-        for statut in [StatutMission::Terminee, StatutMission::Annulee] {
+        for statut in [StatutMission::Validee, StatutMission::Annulee] {
             assert!(statut.est_terminal(), "{statut:?}");
             assert!(statut.transitions_possibles().is_empty());
+        }
+        // `Terminee` a cessé d'être terminal avec FR-021 : l'intervention est
+        // faite, mais le demandeur n'a pas encore validé.
+        assert!(!StatutMission::Terminee.est_terminal());
+        assert_eq!(
+            StatutMission::Terminee.transitions_possibles(),
+            &[StatutMission::Validee]
+        );
+    }
+
+    #[test]
+    fn edge_seuls_les_statuts_en_cours_occupent_le_prestataire() {
+        // C'est ce qui libère quelqu'un quand son intervention se termine.
+        //
+        // **La propriété n'est pas « non terminal ».** Les deux coïncidaient
+        // avant FR-021 ; depuis, `Terminee` n'est plus terminal mais n'occupe
+        // plus personne — attendre la validation du demandeur empêcherait le
+        // prestataire de travailler pendant trois jours.
+        for statut in TOUS {
+            let en_cours = matches!(
+                statut,
+                StatutMission::Acceptee | StatutMission::EnRoute | StatutMission::SurPlace
+            );
+            assert_eq!(statut.occupe_le_prestataire(), en_cours, "{statut:?}");
         }
     }
 
     #[test]
-    fn edge_seuls_les_statuts_non_terminaux_occupent_le_prestataire() {
-        // C'est ce qui libère quelqu'un quand son intervention se termine.
+    fn security_une_mission_terminee_ne_se_chiffre_plus() {
+        // `accepte_un_devis` existe précisément parce que `est_terminal` a
+        // changé de sens : s'en remettre à lui aurait rouvert le chiffrage
+        // d'une intervention déjà faite.
         for statut in TOUS {
-            assert_eq!(
-                statut.occupe_le_prestataire(),
-                !statut.est_terminal(),
-                "{statut:?}"
+            let en_cours = matches!(
+                statut,
+                StatutMission::Acceptee | StatutMission::EnRoute | StatutMission::SurPlace
             );
+            assert_eq!(statut.accepte_un_devis(), en_cours, "{statut:?}");
         }
+    }
+
+    #[test]
+    fn happy_une_mission_terminee_se_valide() {
+        let mut m = mission();
+        m.statut = StatutMission::Terminee;
+        let entree = m
+            .transiter(StatutMission::Validee, None, None, instant())
+            .expect("la validation est permise");
+        assert_eq!(entree.statut, StatutMission::Validee);
+        assert_eq!(m.statut, StatutMission::Validee);
+    }
+
+    #[test]
+    fn negative_une_mission_terminee_ne_s_annule_plus() {
+        // Une intervention faite ne s'annule pas : elle se conteste, et le
+        // litige relève de FR-034.
+        let mut m = mission();
+        m.statut = StatutMission::Terminee;
+        assert!(m
+            .transiter(StatutMission::Annulee, None, None, instant())
+            .is_err());
     }
 
     #[test]

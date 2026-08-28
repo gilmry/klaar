@@ -2,15 +2,19 @@
 //! implémente et que les use cases consomment. Aucun détail de transport,
 //! de protocole ni de fournisseur ne doit apparaître ici.
 
+pub mod annulation_repository;
 pub mod audit;
 pub mod catalogue_repository;
 pub mod courriel;
 pub mod demande_repository;
 pub mod devis_repository;
 pub mod erreurs;
+pub mod evenements;
 pub mod horloge;
 pub mod jeton_acces;
+pub mod liberation_repository;
 pub mod mission_repository;
+pub mod notation_repository;
 pub mod provider_repository;
 pub mod push;
 pub mod push_repository;

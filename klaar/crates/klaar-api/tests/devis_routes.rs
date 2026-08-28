@@ -510,3 +510,328 @@ async fn security_un_champ_inconnu_dans_le_corps_est_refuse() {
 
     assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
 }
+
+// === Réponse du demandeur (FR-017, Story 4.2 sans le séquestre) ===
+
+/// Email du demandeur d'une Demande, pour ouvrir sa session.
+async fn email_demandeur(pool: &PoolPg, demande_id: Uuid) -> String {
+    sqlx::query_scalar(
+        "SELECT u.email FROM utilisateur u
+         JOIN demande d ON d.demandeur_id = u.id WHERE d.id = $1",
+    )
+    .bind(demande_id)
+    .fetch_one(pool)
+    .await
+    .expect("demandeur")
+}
+
+fn accepter(jeton: &str, mission_id: Uuid) -> test::TestRequest {
+    test::TestRequest::post()
+        .uri(&format!("/api/v1/missions/{mission_id}/accept-quote"))
+        .insert_header(("Authorization", format!("Bearer {jeton}")))
+}
+
+fn refuser(jeton: &str, mission_id: Uuid, corps: Value) -> test::TestRequest {
+    test::TestRequest::post()
+        .uri(&format!("/api/v1/missions/{mission_id}/refuse-quote"))
+        .insert_header(("Authorization", format!("Bearer {jeton}")))
+        .set_json(corps)
+}
+
+#[actix_web::test]
+async fn happy_le_demandeur_accepte_le_devis() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "accepte").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    let reponse = test::call_service(&app, accepter(&jeton_d, mission_id).to_request()).await;
+
+    assert_eq!(reponse.status(), StatusCode::OK);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "QUOTE_ACCEPTED");
+    assert_eq!(corps["statut"], "ACCEPTED");
+
+    let (statut, motif): (String, Option<String>) =
+        sqlx::query_as("SELECT statut, motif_refus FROM devis WHERE mission_id = $1")
+            .bind(mission_id)
+            .fetch_one(&pool)
+            .await
+            .expect("devis relu");
+    assert_eq!(statut, "ACCEPTED");
+    assert_eq!(motif, None);
+}
+
+#[actix_web::test]
+async fn happy_le_demandeur_refuse_avec_un_motif() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "refuse-motif").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    let reponse = test::call_service(
+        &app,
+        refuser(
+            &jeton_d,
+            mission_id,
+            serde_json::json!({ "motif": "TOO_EXPENSIVE" }),
+        )
+        .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::OK);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "QUOTE_REFUSED");
+
+    let motif: Option<String> =
+        sqlx::query_scalar("SELECT motif_refus FROM devis WHERE mission_id = $1")
+            .bind(mission_id)
+            .fetch_one(&pool)
+            .await
+            .expect("devis relu");
+    assert_eq!(motif.as_deref(), Some("TOO_EXPENSIVE"));
+}
+
+#[actix_web::test]
+async fn happy_un_refus_libere_la_place_pour_un_nouveau_devis() {
+    // FR-017 `@happy` : « le Provider peut émettre un nouveau Devis (jusqu'à 3) ».
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "apres-refus-user").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    test::call_service(
+        &app,
+        refuser(&jeton_d, mission_id, serde_json::json!({})).to_request(),
+    )
+    .await;
+
+    let second = test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+    assert_eq!(second.status(), StatusCode::CREATED);
+}
+
+#[actix_web::test]
+async fn negative_un_motif_hors_vocabulaire_est_refuse() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "motif-libre").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    let reponse = test::call_service(
+        &app,
+        refuser(
+            &jeton_d,
+            mission_id,
+            serde_json::json!({ "motif": "ce plombier est un voleur" }),
+        )
+        .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "REASON_UNKNOWN");
+}
+
+#[actix_web::test]
+async fn negative_sans_devis_en_attente_il_n_y_a_rien_a_accepter() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, _) = prestataire(&pool, "sans-devis").await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    let reponse = test::call_service(&app, accepter(&jeton_d, mission_id).to_request()).await;
+
+    assert_eq!(reponse.status(), StatusCode::NOT_FOUND);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "QUOTE_NOT_FOUND");
+}
+
+#[actix_web::test]
+async fn edge_un_devis_expire_ne_s_accepte_plus() {
+    // FR-017 `@edge` : accepter après l'échéance rend 410, et le devis ne bouge
+    // pas. Sans cette garde, le prestataire serait engagé sur un prix qu'il ne
+    // tient plus.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "devis-expire").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    // Vieilli directement en base : attendre une heure dans un test n'a pas de
+    // sens, et le déclencheur de V20 ne gèle ni `cree_le` ni `expire_le` du
+    // même coup — il les gèle, justement, donc l'écriture passe par une
+    // désactivation locale du déclencheur pour ce test.
+    sqlx::query("ALTER TABLE devis DISABLE TRIGGER devis_contenu_fige")
+        .execute(&pool)
+        .await
+        .expect("déclencheur suspendu");
+    sqlx::query(
+        "UPDATE devis SET cree_le = now() - interval '2 hours',
+                          expire_le = now() - interval '1 hour'
+         WHERE mission_id = $1",
+    )
+    .bind(mission_id)
+    .execute(&pool)
+    .await
+    .expect("devis vieilli");
+    sqlx::query("ALTER TABLE devis ENABLE TRIGGER devis_contenu_fige")
+        .execute(&pool)
+        .await
+        .expect("déclencheur rétabli");
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    let reponse = test::call_service(&app, accepter(&jeton_d, mission_id).to_request()).await;
+
+    assert_eq!(reponse.status(), StatusCode::GONE);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "QUOTE_EXPIRED");
+
+    let statut: String = sqlx::query_scalar("SELECT statut FROM devis WHERE mission_id = $1")
+        .bind(mission_id)
+        .fetch_one(&pool)
+        .await
+        .expect("devis relu");
+    assert_eq!(statut, "SENT", "un refus ne doit rien écrire");
+}
+
+#[actix_web::test]
+async fn edge_accepter_deux_fois_ne_passe_qu_une_fois() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "double-accept").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    let premiere = test::call_service(&app, accepter(&jeton_d, mission_id).to_request()).await;
+    assert_eq!(premiere.status(), StatusCode::OK);
+
+    // La seconde ne trouve plus de devis en attente : c'est le même refus que
+    // s'il n'y en avait jamais eu, et c'est exact — il n'y a plus rien à
+    // accepter.
+    let seconde = test::call_service(&app, accepter(&jeton_d, mission_id).to_request()).await;
+    assert_eq!(seconde.status(), StatusCode::NOT_FOUND);
+}
+
+#[actix_web::test]
+async fn security_le_prestataire_ne_repond_pas_a_son_propre_devis() {
+    // Sinon il s'accorderait son prix tout seul, et l'accord du demandeur ne
+    // vaudrait plus rien.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "auto-accept").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, _) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let reponse = test::call_service(&app, accepter(&jeton_p, mission_id).to_request()).await;
+
+    assert_eq!(reponse.status(), StatusCode::NOT_FOUND);
+    let statut: String = sqlx::query_scalar("SELECT statut FROM devis WHERE mission_id = $1")
+        .bind(mission_id)
+        .fetch_one(&pool)
+        .await
+        .expect("devis relu");
+    assert_eq!(statut, "SENT");
+}
+
+#[actix_web::test]
+async fn security_un_tiers_ne_repond_pas_au_devis_d_autrui() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "tiers-devis").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, _) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let (_, email_tiers) = compte_actif(&pool, "curieux").await;
+    let jeton_tiers = jeton(&app, &email_tiers).await;
+    let reponse = test::call_service(&app, accepter(&jeton_tiers, mission_id).to_request()).await;
+
+    // 404 et non 403 : la même précédence anti-énumération que partout.
+    assert_eq!(reponse.status(), StatusCode::NOT_FOUND);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "QUOTE_NOT_FOUND");
+}
+
+#[actix_web::test]
+async fn security_l_acceptation_ne_touche_a_aucun_montant() {
+    // L'accord porte sur ce qui a été présenté, au centime près. V20 le grave
+    // dans la base ; ce test vérifie que le chemin d'acceptation ne tente même
+    // pas de le contourner.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email_p) = prestataire(&pool, "montant-fige").await;
+    let jeton_p = jeton(&app, &email_p).await;
+    let (mission_id, demande_id) = mission(&pool, p.id, "ON_SITE").await;
+    test::call_service(
+        &app,
+        devis(&jeton_p, mission_id, proposition()).to_request(),
+    )
+    .await;
+
+    let jeton_d = jeton(&app, &email_demandeur(&pool, demande_id).await).await;
+    test::call_service(&app, accepter(&jeton_d, mission_id).to_request()).await;
+
+    let (htva, tva, ttc): (i64, i64, i64) = sqlx::query_as(
+        "SELECT montant_htva_cents, tva_cents, total_ttc_cents FROM devis WHERE mission_id = $1",
+    )
+    .bind(mission_id)
+    .fetch_one(&pool)
+    .await
+    .expect("devis relu");
+    assert_eq!((htva, tva, ttc), (18_000, 3_780, 21_780));
+}

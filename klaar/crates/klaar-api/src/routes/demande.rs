@@ -113,6 +113,7 @@ pub async fn soumettre_demande(
                 etat.prestataires.as_ref(),
                 etat.demandes.as_ref(),
                 etat.traces.as_ref(),
+                etat.notations.as_ref(),
                 etat.horloge.as_ref(),
                 &demande,
             )

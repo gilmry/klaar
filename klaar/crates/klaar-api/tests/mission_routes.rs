@@ -537,3 +537,59 @@ async fn edge_une_mission_terminee_libere_le_prestataire() {
         .unwrap();
     assert_eq!(existe, 1);
 }
+
+#[actix_web::test]
+async fn security_le_prestataire_ne_valide_pas_par_la_route_de_statut() {
+    // Le domaine autorise `COMPLETED` → `VALIDATED` ; cette route est celle du
+    // prestataire, et lui laisser poser ce statut reviendrait à le laisser
+    // signer la réception de son propre travail, donc déclencher son paiement.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email) = prestataire(&pool, "auto-validation").await;
+    let jeton = jeton(&app, &email).await;
+    let id = mission(&pool, p.id, "COMPLETED").await;
+
+    let reponse = test::call_service(
+        &app,
+        avancer(&jeton, id, serde_json::json!({ "statut": "VALIDATED" })).to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::FORBIDDEN);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "RESERVED_TO_USER");
+
+    let statut: String = sqlx::query_scalar("SELECT statut FROM mission WHERE id = $1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .expect("Mission relue");
+    assert_eq!(statut, "COMPLETED", "rien ne doit avoir bougé");
+}
+
+#[actix_web::test]
+async fn security_la_vue_du_prestataire_n_offre_pas_la_validation() {
+    // Le bouton ne doit pas exister : le proposer ferait cliquer pour recevoir
+    // un refus, et c'est déjà une erreur de conception.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (p, email) = prestataire(&pool, "suites-validation").await;
+    let jeton = jeton(&app, &email).await;
+    let id = mission(&pool, p.id, "COMPLETED").await;
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!("/api/v1/missions/{id}"))
+            .insert_header(("Authorization", format!("Bearer {jeton}")))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(reponse.status(), StatusCode::OK);
+    let corps: Value = test::read_body_json(reponse).await;
+    let suites = corps["suites"].as_array().expect("suites");
+    assert!(
+        !suites.iter().any(|s| s == "VALIDATED"),
+        "suites offertes : {suites:?}"
+    );
+}

@@ -74,6 +74,8 @@ export type StatutMission =
   | "PROVIDER_EN_ROUTE"
   | "ON_SITE"
   | "COMPLETED"
+  /** Validée par le demandeur, ou par le délai de 72 h (FR-021). */
+  | "VALIDATED"
   | "CANCELLED";
 
 export interface MissionAttribuee {
@@ -110,7 +112,9 @@ export function libelleStatut(statut: StatutMission): string {
     case "ON_SITE":
       return "Sur place";
     case "COMPLETED":
-      return "Terminée";
+      return "Terminée, en attente de validation du demandeur";
+    case "VALIDATED":
+      return "Validée par le demandeur";
     case "CANCELLED":
       return "Annulée";
     default:
@@ -231,6 +235,10 @@ export type CodeErreurPrestataire =
   | "REQUEST_NOT_FOUND"
   | "MISSION_NOT_FOUND"
   | "MISSION_CLOSED"
+  | "RESERVED_TO_USER"
+  | "MISSION_NOT_COMPLETED"
+  | "ALREADY_RELEASED"
+  | "QUOTE_NOT_ACCEPTED"
   | "QUOTE_ALREADY_PENDING"
   | "MAX_QUOTES_REACHED"
   | "AMOUNT_ZERO"
@@ -263,6 +271,10 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurPrestataire, string>> = {
     REQUEST_NOT_FOUND: "Cette Demande n'existe pas.",
     MISSION_NOT_FOUND: "Cette intervention n'existe pas.",
     MISSION_CLOSED: "Cette intervention est close : elle ne peut plus être chiffrée.",
+    RESERVED_TO_USER: "C'est au demandeur de valider la fin de l'intervention.",
+    MISSION_NOT_COMPLETED: "L'intervention n'est pas déclarée terminée.",
+    ALREADY_RELEASED: "Cette intervention a déjà été validée.",
+    QUOTE_NOT_ACCEPTED: "Aucun devis accepté : il n'y a rien à libérer.",
     QUOTE_ALREADY_PENDING: "Un devis attend déjà une réponse pour cette intervention.",
     MAX_QUOTES_REACHED:
       "Trois devis ont déjà été envoyés. L'intervention a été annulée, le demandeur doit relancer.",
@@ -295,6 +307,10 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurPrestataire, string>> = {
     REQUEST_NOT_FOUND: "Deze aanvraag bestaat niet.",
     MISSION_NOT_FOUND: "Deze interventie bestaat niet.",
     MISSION_CLOSED: "Deze interventie is afgesloten: er kan geen offerte meer bij.",
+    RESERVED_TO_USER: "Het is aan de aanvrager om het einde te bevestigen.",
+    MISSION_NOT_COMPLETED: "De interventie is niet als afgerond gemeld.",
+    ALREADY_RELEASED: "Deze interventie is al bevestigd.",
+    QUOTE_NOT_ACCEPTED: "Geen aanvaarde offerte: er valt niets vrij te geven.",
     QUOTE_ALREADY_PENDING: "Er wacht al een offerte op antwoord voor deze interventie.",
     MAX_QUOTES_REACHED:
       "Er zijn al drie offertes verstuurd. De interventie is geannuleerd; de aanvrager moet opnieuw starten.",
@@ -327,6 +343,10 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurPrestataire, string>> = {
     REQUEST_NOT_FOUND: "This request does not exist.",
     MISSION_NOT_FOUND: "This job does not exist.",
     MISSION_CLOSED: "This job is closed: it can no longer be quoted.",
+    RESERVED_TO_USER: "Validating the end of the job is the requester's to do.",
+    MISSION_NOT_COMPLETED: "The job has not been reported as finished.",
+    ALREADY_RELEASED: "This job has already been validated.",
+    QUOTE_NOT_ACCEPTED: "No accepted quote: there is nothing to release.",
     QUOTE_ALREADY_PENDING: "A quote is already awaiting an answer for this job.",
     MAX_QUOTES_REACHED:
       "Three quotes have already been sent. The job was cancelled; the requester must start again.",
@@ -385,6 +405,31 @@ export async function accepter(demandeId: string): Promise<MissionAttribuee> {
 
 export async function lireMission(missionId: string): Promise<Mission> {
   return request<Mission>(`/missions/${missionId}`, { headers: autorisation() });
+}
+
+/** Motifs d'annulation d'une intervention, vocabulaire fermé (FR-022). */
+export const MOTIFS_ANNULATION_MISSION = [
+  { code: "UNAVAILABLE", libelle: "Je ne peux plus venir" },
+  { code: "NO_ACCESS", libelle: "Impossible d'accéder au lieu" },
+  { code: "DISAGREEMENT", libelle: "Désaccord sur le travail à faire" },
+  { code: "OTHER", libelle: "Autre" },
+] as const;
+
+/**
+ * Annule une intervention en cours (FR-022).
+ *
+ * La même route pour les deux parties : le service déduit du jeton qui annule,
+ * et c'est cela qui détermine ce que l'annulation coûte.
+ */
+export async function annulerMission(
+  missionId: string,
+  motif?: string,
+): Promise<{ auteur: string; prestataire_suspendu: boolean }> {
+  return request(`/missions/${missionId}/cancel`, {
+    method: "POST",
+    body: motif ? { motif } : {},
+    headers: autorisation(),
+  });
 }
 
 export async function avancerMission(

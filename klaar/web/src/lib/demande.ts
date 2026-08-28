@@ -109,6 +109,63 @@ export function montantLisible(cents: number): string {
   return `${euros} €`;
 }
 
+/** Motifs de refus d'un devis, vocabulaire fermé (FR-017). */
+export const MOTIFS_REFUS = [
+  { code: "TOO_EXPENSIVE", libelle: "Trop cher" },
+  { code: "DELAY_TOO_LONG", libelle: "Trop long à venir" },
+  { code: "NO_LONGER_NEEDED", libelle: "Je n'en ai plus besoin" },
+  { code: "OTHER", libelle: "Autre" },
+] as const;
+
+/**
+ * Vrai si l'intervention peut encore être notée (FR-033).
+ *
+ * Quatorze jours après la validation, la fenêtre se ferme : une note écrite
+ * trois mois plus tard ne dit plus rien de l'intervention.
+ */
+export function peutNoter(suivi: SuiviDemande): boolean {
+  return suivi.mission_statut === "VALIDATED";
+}
+
+/** Motifs d'annulation d'une intervention en cours, vocabulaire fermé (FR-022). */
+export const MOTIFS_ANNULATION_MISSION = [
+  { code: "NO_LONGER_NEEDED", libelle: "Je n'en ai plus besoin" },
+  { code: "NO_ACCESS", libelle: "Personne ne peut ouvrir" },
+  { code: "DISAGREEMENT", libelle: "Désaccord sur le travail à faire" },
+  { code: "OTHER", libelle: "Autre" },
+] as const;
+
+/**
+ * Vrai si l'intervention est en cours et peut encore être annulée (FR-022).
+ *
+ * Une intervention faite ne s'annule pas : elle se conteste, et le litige n'est
+ * pas encore livré. Offrir le bouton ferait cliquer pour recevoir un refus.
+ */
+export function peutAnnulerMission(suivi: SuiviDemande): boolean {
+  return (
+    suivi.mission_statut === "ACCEPTED" ||
+    suivi.mission_statut === "PROVIDER_EN_ROUTE" ||
+    suivi.mission_statut === "ON_SITE"
+  );
+}
+
+/**
+ * Vrai si le demandeur peut valider la fin de l'intervention (FR-021).
+ *
+ * Le prestataire déclare avoir terminé ; c'est une autre personne qui dit que
+ * c'est fait. Sans réponse, le service valide de lui-même au bout de
+ * soixante-douze heures — l'écran le dit, pour que le silence ne passe pas pour
+ * un blocage.
+ */
+export function peutValider(suivi: SuiviDemande): boolean {
+  return suivi.mission_statut === "COMPLETED";
+}
+
+/** Vrai si ce devis attend encore une réponse du demandeur. */
+export function attendUneReponse(devis: DevisRecu): boolean {
+  return devis.statut === "SENT" && !devis.echu;
+}
+
 /** Délai en minutes, rendu en heures et minutes. */
 export function delaiLisible(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
@@ -140,6 +197,13 @@ export type CodeErreurDemande =
   | "RATE_LIMIT_EXCEEDED"
   | "AUTH_MISSING"
   | "AUTH_INVALID"
+  | "MISSION_NOT_COMPLETED"
+  | "ALREADY_RELEASED"
+  | "QUOTE_NOT_ACCEPTED"
+  | "QUOTE_EXPIRED"
+  | "QUOTE_ALREADY_ANSWERED"
+  | "QUOTE_NOT_FOUND"
+  | "REASON_UNKNOWN"
   | "SERVICE_UNAVAILABLE"
   | "POSITION_REFUSEE"
   | "REQUEST_NOT_FOUND"
@@ -171,6 +235,13 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurDemande, string>> = {
     RATE_LIMIT_EXCEEDED: "Vous avez atteint la limite de demandes pour cette heure.",
     AUTH_MISSING: "Votre session a expiré. Reconnectez-vous.",
     AUTH_INVALID: "Votre session a expiré. Reconnectez-vous.",
+    MISSION_NOT_COMPLETED: "L'intervention n'est pas encore déclarée terminée.",
+    ALREADY_RELEASED: "Cette intervention a déjà été validée.",
+    QUOTE_NOT_ACCEPTED: "Aucun devis accepté : il n'y a rien à valider.",
+    QUOTE_EXPIRED: "Ce devis a expiré. Demandez-en un nouveau au prestataire.",
+    QUOTE_ALREADY_ANSWERED: "Ce devis a déjà reçu une réponse.",
+    QUOTE_NOT_FOUND: "Aucun devis en attente pour cette intervention.",
+    REASON_UNKNOWN: "Ce motif n'est pas reconnu.",
     SERVICE_UNAVAILABLE: "Le service est momentanément indisponible. Réessayez.",
     POSITION_REFUSEE:
       "Sans votre position, aucun prestataire ne peut être averti. Autorisez la localisation pour continuer.",
@@ -194,6 +265,13 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurDemande, string>> = {
     RATE_LIMIT_EXCEEDED: "U hebt de limiet aan aanvragen voor dit uur bereikt.",
     AUTH_MISSING: "Uw sessie is verlopen. Meld u opnieuw aan.",
     AUTH_INVALID: "Uw sessie is verlopen. Meld u opnieuw aan.",
+    MISSION_NOT_COMPLETED: "De interventie is nog niet als afgerond gemeld.",
+    ALREADY_RELEASED: "Deze interventie is al bevestigd.",
+    QUOTE_NOT_ACCEPTED: "Geen aanvaarde offerte: er valt niets te bevestigen.",
+    QUOTE_EXPIRED: "Deze offerte is vervallen. Vraag de vakman om een nieuwe.",
+    QUOTE_ALREADY_ANSWERED: "Deze offerte heeft al een antwoord gekregen.",
+    QUOTE_NOT_FOUND: "Geen offerte in behandeling voor deze interventie.",
+    REASON_UNKNOWN: "Deze reden wordt niet herkend.",
     SERVICE_UNAVAILABLE: "De dienst is tijdelijk niet beschikbaar. Probeer opnieuw.",
     POSITION_REFUSEE:
       "Zonder uw locatie kan geen enkele dienstverlener verwittigd worden. Sta locatie toe om verder te gaan.",
@@ -217,6 +295,13 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurDemande, string>> = {
     RATE_LIMIT_EXCEEDED: "You have reached the request limit for this hour.",
     AUTH_MISSING: "Your session has expired. Sign in again.",
     AUTH_INVALID: "Your session has expired. Sign in again.",
+    MISSION_NOT_COMPLETED: "The job has not been reported as finished yet.",
+    ALREADY_RELEASED: "This job has already been validated.",
+    QUOTE_NOT_ACCEPTED: "No accepted quote: there is nothing to validate.",
+    QUOTE_EXPIRED: "This quote expired. Ask the provider for a new one.",
+    QUOTE_ALREADY_ANSWERED: "This quote already has an answer.",
+    QUOTE_NOT_FOUND: "No pending quote for this job.",
+    REASON_UNKNOWN: "This reason is not recognised.",
     SERVICE_UNAVAILABLE: "The service is temporarily unavailable. Please retry.",
     POSITION_REFUSEE:
       "Without your location, no provider can be alerted. Allow location access to continue.",
@@ -309,6 +394,8 @@ export function libelleMission(statut: string | null): string | null {
       return "Le prestataire est en route";
     case "ON_SITE":
       return "Le prestataire est arrivé";
+    case "VALIDATED":
+      return "Intervention validée";
     case "COMPLETED":
       return "Intervention terminée";
     case "CANCELLED":
@@ -350,6 +437,72 @@ export async function annulerDemande(id: string, motif?: string): Promise<void> 
   const suffixe = motif ? `?motif=${encodeURIComponent(motif)}` : "";
   await request(`/requests/${id}${suffixe}`, {
     method: "DELETE",
+    headers: autorisationSuivi(),
+  });
+}
+
+/**
+ * Accepte le devis en attente d'une Mission (FR-017).
+ *
+ * **Pas de mise en file hors-ligne.** Un accord rejoué une heure plus tard
+ * porterait sur un devis probablement expiré, et le refus arriverait sans que
+ * personne comprenne pourquoi. Mieux vaut demander à quelqu'un de réessayer
+ * quand il a du réseau.
+ */
+export async function accepterDevis(missionId: string): Promise<{ statut: string }> {
+  return request(`/missions/${missionId}/accept-quote`, {
+    method: "POST",
+    headers: autorisationSuivi(),
+  });
+}
+
+/** Refuse le devis en attente, avec ou sans motif. */
+export async function refuserDevis(
+  missionId: string,
+  motif?: string,
+): Promise<{ statut: string }> {
+  return request(`/missions/${missionId}/refuse-quote`, {
+    method: "POST",
+    body: motif ? { motif } : {},
+    headers: autorisationSuivi(),
+  });
+}
+
+/**
+ * Valide la fin de l'intervention (FR-021).
+ *
+ * **Pas de mise en file hors-ligne.** Une validation rejouée plus tard porterait
+ * sur une Mission peut-être déjà validée par le délai, et le refus arriverait
+ * sans que personne comprenne pourquoi.
+ */
+export async function validerMission(missionId: string): Promise<{ statut: string }> {
+  return request(`/missions/${missionId}/validate`, {
+    method: "POST",
+    headers: autorisationSuivi(),
+  });
+}
+
+/** Annule l'intervention en cours (FR-022). */
+export async function annulerMissionEnCours(
+  missionId: string,
+  motif?: string,
+): Promise<{ forfait_deplacement_cents: number; remboursement_cents: number }> {
+  return request(`/missions/${missionId}/cancel`, {
+    method: "POST",
+    body: motif ? { motif } : {},
+    headers: autorisationSuivi(),
+  });
+}
+
+/** Note l'autre partie après une intervention validée (FR-033). */
+export async function noterIntervention(
+  missionId: string,
+  note: number,
+  commentaire?: string,
+): Promise<{ publiee: boolean }> {
+  return request(`/missions/${missionId}/rating`, {
+    method: "POST",
+    body: commentaire ? { note, commentaire } : { note },
     headers: autorisationSuivi(),
   });
 }

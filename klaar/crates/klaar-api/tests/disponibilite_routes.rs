@@ -24,6 +24,16 @@ const MDP: &str = "Marie@2026Secure";
 const LAT: f64 = 50.8467;
 const LON: f64 = 4.3525;
 
+/// Plafond de classement assez haut pour qu'aucun accumulé ne fasse écran.
+///
+/// **Ces cas portent sur le filtrage, pas sur le rang.** La base de
+/// développement est partagée avec toute la suite et accumule des prestataires
+/// posés au même endroit ; interroger un « dix plus proches » y ferait dépendre
+/// l'assertion du nombre de tests exécutés avant, ce qui la rend intermittente.
+/// Le service, lui, borne à dix — c'est `chercher_candidats` qui le fait, et
+/// ses propres cas le vérifient.
+const CLASSEMENT_COMPLET: i64 = 1_000_000;
+
 async fn pool() -> PoolPg {
     let url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL requise : `make db-up && make migrate`, ou service postgres en CI");
@@ -290,7 +300,7 @@ async fn edge_un_prestataire_occupe_n_est_plus_propose_par_le_matching() {
     let position = Geo::new(LAT, LON).unwrap();
     let secteur = CodeCatalogue::parse("plomberie").unwrap();
     let avant = depot
-        .proches(&secteur, position, 5_000.0, 1_000)
+        .proches(&secteur, position, 5_000.0, CLASSEMENT_COMPLET)
         .await
         .unwrap();
     assert!(avant.iter().any(|c| c.provider.id == p.id));
@@ -298,7 +308,7 @@ async fn edge_un_prestataire_occupe_n_est_plus_propose_par_le_matching() {
     occuper(&pool, p.id, demandeur).await;
 
     let apres = depot
-        .proches(&secteur, position, 5_000.0, 1_000)
+        .proches(&secteur, position, 5_000.0, CLASSEMENT_COMPLET)
         .await
         .unwrap();
     assert!(!apres.iter().any(|c| c.provider.id == p.id));
@@ -316,7 +326,7 @@ async fn edge_un_prestataire_hors_de_son_propre_rayon_n_est_pas_propose() {
     let secteur = CodeCatalogue::parse("plomberie").unwrap();
 
     let avant = depot
-        .proches(&secteur, position, 5_000.0, 1_000)
+        .proches(&secteur, position, 5_000.0, CLASSEMENT_COMPLET)
         .await
         .unwrap();
     assert!(avant.iter().any(|c| c.provider.id == p.id));
@@ -327,7 +337,7 @@ async fn edge_un_prestataire_hors_de_son_propre_rayon_n_est_pas_propose() {
         .unwrap();
 
     let apres = depot
-        .proches(&secteur, position, 5_000.0, 1_000)
+        .proches(&secteur, position, 5_000.0, CLASSEMENT_COMPLET)
         .await
         .unwrap();
     assert!(
@@ -346,7 +356,7 @@ async fn edge_un_prestataire_en_pause_n_est_plus_propose() {
 
     depot.definir_disponibilite(p.id, false).await.unwrap();
     let apres = depot
-        .proches(&secteur, position, 5_000.0, 1_000)
+        .proches(&secteur, position, 5_000.0, CLASSEMENT_COMPLET)
         .await
         .unwrap();
     assert!(!apres.iter().any(|c| c.provider.id == p.id));

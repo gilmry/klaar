@@ -18,11 +18,12 @@ use uuid::Uuid;
 
 use klaar_application::ports::devis_repository::{DevisRepository, ResultatEmission};
 use klaar_application::ports::erreurs::RepositoryError;
-use klaar_payment::{Devis, StatutDevis};
+use klaar_application::ports::evenements::EvenementMission;
+use klaar_payment::{Devis, MotifRefus, StatutDevis};
 use klaar_shared_kernel::{Money, VatRate};
 
-use crate::erreur;
 use crate::pool::PoolPg;
+use crate::{erreur, notifier};
 
 /// Nom de l'index qui tient « un seul devis en attente » (migration V19).
 ///
@@ -38,7 +39,7 @@ const INDEX_UN_SEUL_EN_COURS: &str = "devis_un_seul_en_cours_idx";
 /// qu'une liste divergente entre deux requêtes ne se voit qu'en production.
 const COLONNES: &str = "id, mission_id, provider_id, montant_htva_cents, taux_tva_bp, \
                         tva_cents, total_ttc_cents, delai_minutes, note, preuve_tva_reduite, \
-                        statut, cree_le, expire_le";
+                        statut, motif_refus, cree_le, expire_le";
 
 pub struct PgDevisRepository {
     pool: PoolPg,
@@ -47,6 +48,28 @@ pub struct PgDevisRepository {
 impl PgDevisRepository {
     pub fn new(pool: PoolPg) -> Self {
         Self { pool }
+    }
+
+    /// Le devis en attente, lu **dans la transaction en cours**.
+    ///
+    /// La même lecture que `en_cours_pour_mission`, mais sur la transaction
+    /// plutôt que sur le pool : passer par une seconde connexion depuis
+    /// l'intérieur d'une transaction ouverte donnerait une réponse prise à un
+    /// autre instant, et c'est précisément l'ordre des deux refus qui se joue
+    /// ici.
+    async fn en_cours_pour_mission_dans(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        mission_id: Uuid,
+    ) -> Result<Option<Devis>, RepositoryError> {
+        let ligne = sqlx::query(&format!(
+            "SELECT {COLONNES} FROM devis WHERE mission_id = $1 AND statut = 'SENT'"
+        ))
+        .bind(mission_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(erreur)?;
+        ligne.as_ref().map(depuis_ligne).transpose()
     }
 }
 
@@ -71,6 +94,10 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Devis, RepositoryError>
         preuve_tva_reduite: ligne.get("preuve_tva_reduite"),
         statut: StatutDevis::parse(&statut)
             .ok_or_else(|| RepositoryError::Contrainte(format!("statut inconnu : {statut}")))?,
+        motif_refus: ligne
+            .get::<Option<String>, _>("motif_refus")
+            .as_deref()
+            .and_then(MotifRefus::parse),
         cree_le: ligne.get("cree_le"),
         expire_le: ligne.get("expire_le"),
     })
@@ -86,6 +113,11 @@ impl DevisRepository for PgDevisRepository {
         // de témoin : aucune ligne rendue signifie que le plafond était atteint
         // au moment où cette transaction a pu écrire, quel que soit ce qu'une
         // lecture antérieure avait vu.
+        // Une transaction pour deux écritures : l'insertion et l'avis temps
+        // réel. PostgreSQL ne délivre un `NOTIFY` qu'au `COMMIT`, donc un devis
+        // refusé n'annonce rien et un devis écrit annonce toujours.
+        let mut tx = self.pool.begin().await.map_err(erreur)?;
+
         let ecrit = sqlx::query(
             "INSERT INTO devis (id, mission_id, provider_id, montant_htva_cents, taux_tva_bp,
                                 tva_cents, total_ttc_cents, delai_minutes, note,
@@ -108,11 +140,19 @@ impl DevisRepository for PgDevisRepository {
         .bind(devis.cree_le)
         .bind(devis.expire_le)
         .bind(i64::try_from(plafond).unwrap_or(i64::MAX))
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await;
 
         match ecrit {
-            Ok(Some(_)) => Ok(ResultatEmission::Emis(devis.clone())),
+            Ok(Some(_)) => {
+                notifier(
+                    &mut tx,
+                    &EvenementMission::devis_emis(devis.mission_id, devis.cree_le),
+                )
+                .await?;
+                tx.commit().await.map_err(erreur)?;
+                Ok(ResultatEmission::Emis(devis.clone()))
+            }
             Ok(None) => {
                 // Aucune ligne : le plafond était atteint. **Mais l'ordre des
                 // deux refus compte.** PostgreSQL évalue le `WHERE` avant
@@ -121,11 +161,13 @@ impl DevisRepository for PgDevisRepository {
                 // alors qu'une offre vivante est sur la table du demandeur.
                 // Une requête de plus, sur le seul chemin de refus, remet les
                 // deux dans le bon ordre.
-                if self
-                    .en_cours_pour_mission(devis.mission_id)
-                    .await?
-                    .is_some()
-                {
+                let vivant = self
+                    .en_cours_pour_mission_dans(&mut tx, devis.mission_id)
+                    .await?;
+                // Rien n'a été écrit : la transaction se ferme explicitement
+                // plutôt que de mourir avec la variable, ce qui se relit mieux.
+                tx.rollback().await.map_err(erreur)?;
+                if vivant.is_some() {
                     return Ok(ResultatEmission::DejaEnCours);
                 }
                 Ok(ResultatEmission::PlafondAtteint)
@@ -137,6 +179,7 @@ impl DevisRepository for PgDevisRepository {
                     }
                     _ => false,
                 };
+                tx.rollback().await.map_err(erreur)?;
                 if deja {
                     Ok(ResultatEmission::DejaEnCours)
                 } else {
@@ -185,11 +228,64 @@ impl DevisRepository for PgDevisRepository {
         Ok(usize::try_from(total).unwrap_or(usize::MAX))
     }
 
+    async fn repondre(
+        &self,
+        devis_id: Uuid,
+        reponse: StatutDevis,
+        motif: Option<&str>,
+    ) -> Result<bool, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(erreur)?;
+
+        // La garde `statut = 'SENT'` **et** l'heure de validité, dans la même
+        // instruction : deux « accepter » simultanés ne doivent pas tous deux
+        // aboutir, et un devis que le balayage vient d'expirer ne doit pas
+        // s'accepter entre la lecture et l'écriture.
+        let ecrit = sqlx::query(
+            "UPDATE devis SET statut = $2, motif_refus = $3
+             WHERE id = $1 AND statut = 'SENT' AND expire_le > now()
+             RETURNING mission_id",
+        )
+        .bind(devis_id)
+        .bind(reponse.as_str())
+        .bind(motif)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(erreur)?;
+
+        let Some(ligne) = ecrit else {
+            tx.rollback().await.map_err(erreur)?;
+            return Ok(false);
+        };
+
+        // L'avis prévient le prestataire, qui attend cette réponse. Même
+        // transaction : une réponse écrite sans avis le laisserait devant un
+        // écran qui ne bouge pas.
+        let mission_id: Uuid = ligne.get("mission_id");
+        notifier(
+            &mut tx,
+            &EvenementMission::devis_repondu(mission_id, reponse.as_str(), Utc::now()),
+        )
+        .await?;
+
+        tx.commit().await.map_err(erreur)?;
+        Ok(true)
+    }
+
+    async fn par_id(&self, devis_id: Uuid) -> Result<Option<Devis>, RepositoryError> {
+        let ligne = sqlx::query(&format!("SELECT {COLONNES} FROM devis WHERE id = $1"))
+            .bind(devis_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(erreur)?;
+        ligne.as_ref().map(depuis_ligne).transpose()
+    }
+
     async fn expirer_les_echus(
         &self,
         maintenant: DateTime<Utc>,
         limite: i64,
     ) -> Result<Vec<Devis>, RepositoryError> {
+        let mut tx = self.pool.begin().await.map_err(erreur)?;
         // Sélection et extinction en une seule instruction, avec
         // `FOR UPDATE SKIP LOCKED` : deux balayages simultanés ne peuvent pas
         // éteindre le même devis, donc ne peuvent pas prévenir deux fois le
@@ -208,10 +304,24 @@ impl DevisRepository for PgDevisRepository {
         ))
         .bind(maintenant)
         .bind(limite)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *tx)
         .await
         .map_err(erreur)?;
 
-        lignes.iter().map(depuis_ligne).collect()
+        let eteints: Vec<Devis> = lignes.iter().map(depuis_ligne).collect::<Result<_, _>>()?;
+
+        // Un avis par devis éteint, dans la même transaction que l'extinction :
+        // deux passages du balayage ne peuvent donc pas annoncer deux fois la
+        // même expiration.
+        for devis in &eteints {
+            notifier(
+                &mut tx,
+                &EvenementMission::devis_expire(devis.mission_id, maintenant),
+            )
+            .await?;
+        }
+
+        tx.commit().await.map_err(erreur)?;
+        Ok(eteints)
     }
 }

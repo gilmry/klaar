@@ -14,7 +14,16 @@ import {
   montantLisible,
   type Devis,
 } from "../src/lib/prestataire";
-import { libelleDevis, type DevisRecu } from "../src/lib/demande";
+import {
+  attendUneReponse,
+  libelleDevis,
+  MOTIFS_ANNULATION_MISSION,
+  MOTIFS_REFUS,
+  peutAnnulerMission,
+  peutValider,
+  type DevisRecu,
+  type SuiviDemande,
+} from "../src/lib/demande";
 
 function devis(champs: Partial<Devis> = {}): Devis {
   return {
@@ -115,5 +124,97 @@ describe("@security", () => {
     for (const [saisie, cents] of cas) {
       expect(centimesDepuisEuros(saisie), saisie).toBe(cents);
     }
+  });
+});
+
+describe("@happy réponse au devis", () => {
+  function recu(champs: Partial<DevisRecu> = {}): DevisRecu {
+    return { ...(devis() as unknown as DevisRecu), ...champs };
+  }
+
+  it("propose de répondre à un devis en attente", () => {
+    expect(attendUneReponse(recu())).toBe(true);
+  });
+});
+
+describe("@negative réponse au devis", () => {
+  function recu(champs: Partial<DevisRecu> = {}): DevisRecu {
+    return { ...(devis() as unknown as DevisRecu), ...champs };
+  }
+
+  it("ne propose rien sur un devis déjà répondu", () => {
+    for (const statut of ["ACCEPTED", "REFUSED", "EXPIRED"] as const) {
+      expect(attendUneReponse(recu({ statut })), statut).toBe(false);
+    }
+  });
+});
+
+describe("@edge réponse au devis", () => {
+  function recu(champs: Partial<DevisRecu> = {}): DevisRecu {
+    return { ...(devis() as unknown as DevisRecu), ...champs };
+  }
+
+  it("ne propose rien sur un devis échu que le balayage n'a pas vu", () => {
+    // Le statut stocké dit encore « envoyé ». Offrir un bouton « j'accepte »
+    // sur un devis mort ferait cliquer pour recevoir un 410.
+    expect(attendUneReponse(recu({ echu: true }))).toBe(false);
+  });
+});
+
+describe("@security réponse au devis", () => {
+  it("garde un vocabulaire fermé pour le motif de refus", () => {
+    // Un champ libre serait une invitation à écrire ce qu'on pense du
+    // prestataire, dans une donnée qu'il pourrait lire un jour.
+    const codes = MOTIFS_REFUS.map((m) => m.code);
+    expect(codes).toEqual(["TOO_EXPENSIVE", "DELAY_TOO_LONG", "NO_LONGER_NEEDED", "OTHER"]);
+  });
+});
+
+describe("@happy cycle de fin d'intervention", () => {
+  function suivi(mission_statut: string | null): SuiviDemande {
+    return { mission_statut } as SuiviDemande;
+  }
+
+  it("propose de valider une intervention déclarée terminée", () => {
+    expect(peutValider(suivi("COMPLETED"))).toBe(true);
+  });
+
+  it("propose d'annuler tant que l'intervention est en cours", () => {
+    for (const statut of ["ACCEPTED", "PROVIDER_EN_ROUTE", "ON_SITE"]) {
+      expect(peutAnnulerMission(suivi(statut)), statut).toBe(true);
+    }
+  });
+});
+
+describe("@negative cycle de fin d'intervention", () => {
+  function suivi(mission_statut: string | null): SuiviDemande {
+    return { mission_statut } as SuiviDemande;
+  }
+
+  it("ne propose pas de valider ce qui n'est pas terminé", () => {
+    for (const statut of ["ACCEPTED", "PROVIDER_EN_ROUTE", "ON_SITE", null]) {
+      expect(peutValider(suivi(statut)), String(statut)).toBe(false);
+    }
+  });
+
+  it("ne propose pas d'annuler une intervention faite", () => {
+    // Elle se conteste, elle ne s'annule pas : offrir le bouton ferait cliquer
+    // pour recevoir un refus.
+    for (const statut of ["COMPLETED", "VALIDATED", "CANCELLED", null]) {
+      expect(peutAnnulerMission(suivi(statut)), String(statut)).toBe(false);
+    }
+  });
+});
+
+describe("@security cycle de fin d'intervention", () => {
+  it("ne propose pas de valider une intervention déjà validée", () => {
+    // Deux validations feraient deux versements ; le service refuse, et l'écran
+    // n'a pas à mener jusque-là.
+    expect(peutValider({ mission_statut: "VALIDATED" } as SuiviDemande)).toBe(false);
+  });
+
+  it("garde un vocabulaire fermé pour le motif d'annulation", () => {
+    const codes = MOTIFS_ANNULATION_MISSION.map((m) => m.code);
+    expect(codes).toEqual(["NO_LONGER_NEEDED", "NO_ACCESS", "DISAGREEMENT", "OTHER"]);
   });
 });

@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 klaar-application = { path = "../klaar-application", version = "0.0.0" }
 klaar-payment = { path = "../klaar-payment", version = "0.0.0" }
+klaar-trust = { path = "../klaar-trust", version = "0.0.0" }
 klaar-intervention = { path = "../klaar-intervention", version = "0.0.0" }
 klaar-identity = { path = "../klaar-identity", version = "0.0.0" }
 # Le vocabulaire du domaine traverse la frontière HTTP : motif d'annulation,
@@ -30,6 +31,9 @@ refinery = { version = "0.8", features = ["tokio-postgres"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-postgres = "0.7"
 actix-web = "4"
+actix-ws = "0.4"
+# Le flux entrant d'une socket est un `Stream` : `StreamExt::next` vient de là.
+futures-util = "0.3"
 serde.workspace = true
 utoipa = { version = "5", features = ["actix_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
@@ -43,6 +47,16 @@ chrono.workspace = true
 sha2 = "0.10"
 jsonwebtoken = "9"
 base64 = "0.22"
+rand = "0.9"
+# `PgListener` pour l'écoute des événements de Mission (Story 4.9). Mêmes
+# options que dans klaar-sqlx-repos : c'est le même pilote, pas un second.
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls-ring",
+    "postgres",
+    "uuid",
+    "chrono",
+] }
 
 [[bin]]
 name = "klaar-api"

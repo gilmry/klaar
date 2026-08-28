@@ -322,10 +322,16 @@ where
         urgence: demande.urgence.as_str().to_string(),
         // L'adresse, enfin : il doit s'y rendre.
         position: demande.position,
+        // **`VALIDATED` est retiré des suites offertes au prestataire.** La
+        // machine à états l'autorise depuis `COMPLETED`, mais la validation
+        // appartient au demandeur (FR-021) : afficher le bouton ferait cliquer
+        // pour recevoir un refus, et le proposer serait déjà une erreur de
+        // conception.
         suites: mission
             .statut
             .transitions_possibles()
             .iter()
+            .filter(|s| **s != StatutMission::Validee)
             .map(|s| s.as_str())
             .collect(),
         devis,

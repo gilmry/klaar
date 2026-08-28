@@ -233,6 +233,12 @@ pub fn composer_avancement(
         (S::Annulee, Locale::Fr) => "L'intervention a été annulée",
         (S::Annulee, Locale::Nl) => "De interventie is geannuleerd",
         (S::Annulee, Locale::En) => "The job was cancelled",
+        // Surtout utile quand c'est le délai de soixante-douze heures qui a
+        // validé à sa place : il doit l'apprendre, y compris — et surtout — s'il
+        // n'a pas rouvert l'application depuis trois jours.
+        (S::Validee, Locale::Fr) => "L'intervention a été validée",
+        (S::Validee, Locale::Nl) => "De interventie is bevestigd",
+        (S::Validee, Locale::En) => "The job was validated",
         // `ACCEPTED` n'est pas une transition : c'est l'état de naissance, et
         // le demandeur l'a déjà appris par la réponse à sa Demande.
         (S::Acceptee, Locale::Fr) => "Votre demande a été acceptée",
@@ -290,6 +296,148 @@ where
         notifieur,
         &[demande.demandeur_id],
         &composer_devis_recu(demande, locale),
+    )
+    .await
+}
+
+/// Compose l'avis de réponse à un devis, pour le prestataire (FR-017).
+///
+/// **Sans le montant ni le motif.** Le prestataire connaît son prix ; ce qu'il
+/// attend est un oui ou un non. Le motif du refus, lui, reste derrière la
+/// session : « trop cher » sur un écran verrouillé, lu par-dessus une épaule,
+/// n'apporte rien et expose ce que quelqu'un a pensé de son devis.
+pub fn composer_reponse_devis(statut: klaar_payment::StatutDevis, locale: Locale) -> PushMessage {
+    use klaar_payment::StatutDevis as S;
+    let corps = match (statut, locale) {
+        (S::Accepte, Locale::Fr) => "Votre devis a été accepté.",
+        (S::Accepte, Locale::Nl) => "Uw offerte is aanvaard.",
+        (S::Accepte, Locale::En) => "Your quote was accepted.",
+        (S::Refuse, Locale::Fr) => "Votre devis a été refusé.",
+        (S::Refuse, Locale::Nl) => "Uw offerte is geweigerd.",
+        (S::Refuse, Locale::En) => "Your quote was declined.",
+        // Injoignable : seules les deux réponses du demandeur mènent ici. Le
+        // `match` reste exhaustif pour qu'un statut ajouté passe par là.
+        (_, Locale::Fr) => "Votre devis a changé d'état.",
+        (_, Locale::Nl) => "Uw offerte is van status veranderd.",
+        (_, Locale::En) => "Your quote changed state.",
+    };
+    PushMessage {
+        titre: "Klaar".to_string(),
+        corps: corps.to_string(),
+        tag: Some("devis-reponse".to_string()),
+        url: "/prestataire".to_string(),
+    }
+}
+
+/// Prévient le prestataire que son devis a reçu une réponse (FR-017).
+pub async fn notifier_reponse_devis<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    compte_prestataire: Uuid,
+    statut: klaar_payment::StatutDevis,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[compte_prestataire],
+        &composer_reponse_devis(statut, locale),
+    )
+    .await
+}
+
+/// Compose l'avis de validation, pour le prestataire (FR-021 `@happy`).
+///
+/// **Sans le montant.** Le prestataire connaît son prix ; ce qu'il attend est de
+/// savoir que l'intervention est validée. Le distinguo entre une libération
+/// autorisée et une libération en attente d'un second regard est dit, parce
+/// qu'il change ce qu'il peut espérer et quand.
+pub fn composer_liberation(statut: klaar_payment::StatutLiberation, locale: Locale) -> PushMessage {
+    use klaar_payment::StatutLiberation as S;
+    let corps = match (statut, locale) {
+        (S::Autorisee, Locale::Fr) => "Votre intervention a été validée.",
+        (S::Autorisee, Locale::Nl) => "Uw interventie is bevestigd.",
+        (S::Autorisee, Locale::En) => "Your job was validated.",
+        (S::EnAttenteOps, Locale::Fr) => "Intervention validée, versement en cours de contrôle.",
+        (S::EnAttenteOps, Locale::Nl) => "Interventie bevestigd, uitbetaling in controle.",
+        (S::EnAttenteOps, Locale::En) => "Job validated, payout under review.",
+    };
+    PushMessage {
+        titre: "Klaar".to_string(),
+        corps: corps.to_string(),
+        tag: Some("liberation".to_string()),
+        url: "/prestataire".to_string(),
+    }
+}
+
+/// Prévient le prestataire que son intervention est validée (FR-021).
+pub async fn notifier_liberation<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    compte_prestataire: Uuid,
+    statut: klaar_payment::StatutLiberation,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[compte_prestataire],
+        &composer_liberation(statut, locale),
+    )
+    .await
+}
+
+/// Compose l'avis d'annulation d'une Mission, pour l'autre partie (FR-022).
+///
+/// **Sans le motif ni le montant.** L'écran verrouillé dit qu'il s'est passé
+/// quelque chose ; ce que l'autre a coché comme raison est une opinion, et elle
+/// n'a pas à se lire par-dessus une épaule.
+pub fn composer_annulation_mission(
+    auteur: klaar_intervention::AuteurAnnulation,
+    locale: Locale,
+) -> PushMessage {
+    use klaar_intervention::AuteurAnnulation as A;
+    let corps = match (auteur, locale) {
+        (A::Demandeur, Locale::Fr) => "Le demandeur a annulé l'intervention.",
+        (A::Demandeur, Locale::Nl) => "De aanvrager heeft de interventie geannuleerd.",
+        (A::Demandeur, Locale::En) => "The requester cancelled the job.",
+        (A::Prestataire, Locale::Fr) => "Le prestataire ne peut plus venir.",
+        (A::Prestataire, Locale::Nl) => "De vakman kan niet meer komen.",
+        (A::Prestataire, Locale::En) => "The provider can no longer come.",
+    };
+    PushMessage {
+        titre: "Klaar".to_string(),
+        corps: corps.to_string(),
+        tag: Some("annulation-mission".to_string()),
+        url: "/".to_string(),
+    }
+}
+
+/// Prévient l'autre partie qu'une Mission a été annulée (FR-022 `@happy`).
+pub async fn notifier_annulation_mission<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    compte: Uuid,
+    auteur: klaar_intervention::AuteurAnnulation,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[compte],
+        &composer_annulation_mission(auteur, locale),
     )
     .await
 }

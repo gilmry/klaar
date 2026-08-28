@@ -89,6 +89,7 @@ pub async fn elargir_rayon(
                 etat.prestataires.as_ref(),
                 etat.demandes.as_ref(),
                 etat.traces.as_ref(),
+                etat.notations.as_ref(),
                 etat.horloge.as_ref(),
                 &demande,
             )

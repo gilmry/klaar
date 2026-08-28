@@ -598,8 +598,22 @@ async fn security_la_trace_conserve_la_ventilation_du_score() {
     if let Some(v) = ventilation {
         assert!(v["proximite"]["poids"].is_number(), "ventilation : {v}");
         assert!(v["controle"]["poids"].is_number());
-        // L'absence de note est visible : la trace dit aussi ce qui manquait.
-        assert!(v["note"].is_null(), "la note n'existe pas encore : {v}");
+        // **La note figure dans la trace, y compris quand c'est le prior de
+        // FR-037 qui la fournit.** Un audit doit pouvoir constater qu'un
+        // prestataire a été classé sur quatre étoiles prêtées et non sur des
+        // avis réels : c'est précisément ce que l'AI Act demande de pouvoir
+        // dire. Avant la Story 7.1, la note était absente et la trace le
+        // montrait ; maintenant elle est présente et prêtée, et la trace le
+        // montre aussi.
+        assert!(
+            v["note"]["poids"].is_number(),
+            "la note entre dans le score : {v}"
+        );
+        let valeur = v["note"]["valeur"].as_f64().expect("valeur de la note");
+        assert!(
+            (valeur - klaar_trust::PRIOR_SANS_NOTE).abs() < 1e-9,
+            "un prestataire de démonstration sans avis doit porter le prior, obtenu {valeur}"
+        );
     }
 }
 

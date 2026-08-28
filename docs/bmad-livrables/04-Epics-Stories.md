@@ -924,6 +924,25 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Application + Infra (Stripe capture) + Frontend
 - **Taille** : **L** (1 j) · **Tours** : 5
 
+> **Livrée sans le séquestre.** FR-017 fait de l'acceptation le moment où
+> Stripe capture l'argent ; le compte n'est pas ouvert. L'accord est enregistré,
+> la capture rejoindra l'Epic 5. Un accord sans capture est un état honnête — le
+> devis dit ce qui a été convenu — là où attendre Stripe aurait laissé le
+> demandeur devant un devis qu'il ne peut ni accepter ni refuser.
+>
+> **Notre Mission est déjà `ACCEPTED` quand le devis arrive.** FR-017 la fait
+> passer de `MATCHED` à `ACCEPTED` à l'acceptation du devis ; c'est une autre
+> chronologie que la nôtre, où le prestataire prend la Demande puis chiffre ce
+> qu'il a vu (arbitrage de la Story 4.1). Accepter un devis est ici une affaire
+> d'argent, pas d'état d'intervention.
+>
+> Le motif de refus est un vocabulaire fermé : un champ libre serait une
+> invitation à écrire ce qu'on pense du prestataire, dans une donnée qu'il
+> pourrait lire un jour, et il ne se compterait pas.
+>
+> Non livré : la capture, le 3DS2 et les trois tentatives, qui n'ont de sens
+> qu'avec un fournisseur de paiement.
+
 ### Story 4.3 — Machine à états Mission (FR-018) — *faite*
 - **En tant que** Provider · **je veux** faire évoluer le statut Mission · **afin de** tracer
 - **4×N** : PRD FR-018 (transitions valides/interdites, offline sync)
@@ -1172,11 +1191,67 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Application + Infra (transaction atomique SQL)
 - **Taille** : **L** (1 j) · **Tours** : 5
 
+> **Livrée sans le virement.** La validation, le délai de soixante-douze
+> heures, la répartition et la règle des quatre yeux existent ; le versement
+> Stripe rejoindra l'Epic 5, et il lira ces lignes plutôt que de recalculer —
+> recalculer après un changement de taux réécrirait ce qui a été décidé.
+>
+> **La répartition est celle du PRD, au centime près** : 180 € HTVA à 21 % font
+> 217,80 € ; la commission de 18 % sur le HTVA fait 32,40 €, sa TVA 6,80 €, donc
+> 39,20 € TTC ; il reste 178,60 € au prestataire. Les cinq nombres sont dans un
+> test, et l'invariant « la somme des parts fait le total » est gravé par une
+> contrainte de base — une erreur d'arrondi introduite un jour échouera à
+> l'écriture plutôt que de se retrouver dans une comptabilité.
+>
+> **La commission porte sur le hors-TVA.** La TVA du devis est due à l'État, pas
+> à la plateforme ; en prélever une part reviendrait à se servir dans une taxe.
+>
+> **`COMPLETED` a cessé d'être terminal**, et cela a révélé deux dépendances
+> silencieuses. Le chiffrage d'un devis s'appuyait sur `est_terminal` et aurait
+> rouvert le devis d'une intervention faite : il passe par
+> `accepte_un_devis`, un `match` exhaustif qui oblige à répondre pour chaque
+> état ajouté. Et la transition `COMPLETED` → `VALIDATED` devenait atteignable
+> par la route de statut du prestataire, qui aurait pu signer la réception de
+> son propre travail : elle lui est explicitement refusée, et la vue ne la lui
+> propose plus.
+>
+> Non livré : le courriel récapitulatif du balayage (il attend l'envoi
+> transactionnel, Story 9.2), le gel en cas de litige (FR-034), et la console
+> ops qui lèvera les libérations `PENDING_OPS` (Epic 8).
+
 ### Story 4.7 — Annulation Mission avec pénalités (FR-022)
 - **En tant que** User/Provider · **je veux** annuler une Mission · **afin de** sortir d'engagement
 - **4×N** : PRD FR-022 (pénalités, forfait déplacement, seuils fraude)
 - **Couche(s)** : Domain + Application
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Livrée sans le remboursement.** Le mouvement d'argent est Stripe ; le
+> calcul de ce qui est dû à qui, l'enregistrement, le compteur de désistements
+> et la suspension automatique existent.
+>
+> **Un statut, pas deux.** FR-022 nomme `CANCELLED_USER` et
+> `CANCELLED_PROVIDER` ; la Mission reste en `CANCELLED`, et l'auteur vit sur la
+> ligne d'annulation. Aucune transition ne dépend de qui a annulé : dédoubler le
+> statut aurait obligé à répondre deux fois dans chaque `match` de la machine à
+> états pour une distinction qui n'en change aucun.
+>
+> **Le forfait de déplacement n'est pas une pénalité.** Quand le prestataire est
+> déjà sur place, il a engagé un trajet et du temps ; les trente euros lui
+> reviennent. En route, rien n'est dû : il a commencé à se déplacer, mais rien
+> ne dit qu'il était arrivé, et le facturer ferait payer un trajet qu'on ne peut
+> pas constater. Le forfait est borné par ce qui était engagé, faute de quoi une
+> annulation sans devis accepté produirait un remboursement négatif — une dette
+> inventée.
+>
+> **La suspension suit l'annulation mais n'en fait pas partie.** Une écriture de
+> suspension qui échoue ne doit pas défaire une annulation déjà prononcée : la
+> Mission est close, c'est le fait principal, et le compteur se rattrape au
+> désistement suivant.
+>
+> Non livré : le remboursement effectif, le signalement de fraude du demandeur à
+> cinq annulations en sept jours (le compteur existe, la conséquence attend le
+> périmètre ops), et la fin automatique de la suspension au bout de sept jours —
+> elle est aujourd'hui à lever à la main.
 
 ### Story 4.8 — Re-programmation Mission (FR-023)
 - **En tant que** User · **je veux** re-programmer · **afin de** ne pas perdre le bénéfice
@@ -1189,6 +1264,46 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **4×N** : WebSocket OK / déconnecté / reconnect / multi-device
 - **Couche(s)** : Infra (actix-web-actors) + Frontend
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Faite.** Le statut arrive maintenant par socket, et le sondage passe de
+> cinq à trente secondes tant qu'elle vit.
+>
+> **Le canal est PostgreSQL, pas la mémoire du service.** Un canal en mémoire ne
+> relie que les clients connectés au même exemplaire ; dès qu'il y en a deux, la
+> moitié des utilisateurs cesse de recevoir quoi que ce soit, et rien ne le
+> signale — l'écran ne bouge simplement plus. `LISTEN`/`NOTIFY` relie tous les
+> exemplaires par le seul point qu'ils partagent déjà. L'avis part **dans la
+> même transaction** que le changement : PostgreSQL ne le délivre qu'au
+> `COMMIT`, donc une écriture abandonnée n'annonce rien et une écriture commise
+> annonce toujours.
+>
+> **L'événement ne porte aucun détail.** Un identifiant de Mission, un genre, un
+> instant. La charge d'un `NOTIFY` traverse la base, se retrouve dans ses
+> journaux et part vers tous les exemplaires ; y mettre une adresse ou un
+> montant reviendrait à les publier sur un canal que personne n'audite. Le
+> client relit par les routes qui vérifient déjà ses droits — c'est aussi ce qui
+> permet de diffuser le même événement au demandeur et au prestataire, qui ne
+> voient pas la même chose.
+>
+> **Un billet, pas un jeton dans l'URL.** Un navigateur ne peut pas poser
+> d'en-tête `Authorization` sur une WebSocket, et une URL de socket finit dans
+> les journaux du serveur, du proxy et l'historique du navigateur. Le service
+> émet donc un billet à usage unique valable trente secondes, dont seul le
+> condensé est conservé. Un billet présenté est un billet dépensé, même refusé :
+> sinon le même servirait à essayer des identifiants de Mission.
+>
+> **Le sondage reste, ralenti.** Une socket coupée par un proxy ne se signale
+> pas ; un écran qui cesse de bouger sans le dire est pire qu'un écran lent. Le
+> temps réel accélère, il ne remplace pas.
+>
+> **Écart au plan.** Le backlog disait `actix-web-actors` ; c'est `actix-ws` qui
+> est utilisé, l'API que le projet actix recommande désormais et qui ne demande
+> pas de faire entrer un système d'acteurs pour une boucle de trente lignes.
+>
+> Limite assumée : les billets vivent en mémoire, donc par exemplaire du
+> service. Derrière un répartiteur, un billet émis par l'un et présenté à
+> l'autre est refusé et le client réessaie — partager un secret qui vit trente
+> secondes coûterait un magasin commun pour rien.
 
 **Epic 4 total** : 9 stories · ~7,75 j wall-clock · ~40 tours
 
@@ -1267,6 +1382,36 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **4×N** : PRD FR-033 (double-sens, > 14 j, déjà noté)
 - **Couche(s)** : Domain + Application + Frontend
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Faite, avec 7.5 (FR-037) dans le même mouvement** : une notation qui
+> n'alimente aucun classement n'est qu'un formulaire.
+>
+> **Les deux notes se dévoilent ensemble.** C'est la seule protection contre les
+> représailles : si la note du demandeur s'affichait avant celle du prestataire,
+> celui-ci ajusterait la sienne, et les deux perdraient toute valeur. Elles se
+> publient quand les deux existent, ou quand la fenêtre de quatorze jours se
+> ferme — celui qui n'a pas noté a eu deux semaines.
+>
+> **Le prior neutre de FR-037 est adopté, après avoir été écarté à tort.** Le
+> premier réflexe avait été de laisser le score redistribuer le poids de la note
+> quand elle manque, au motif que c'était plus honnête que d'inventer une
+> réputation. C'est faux : redistribuer revient à noter le prestataire **sur sa
+> propre moyenne des autres critères**, donc à lui prêter la meilleure note
+> compatible avec son profil. À distance égale, un compte tout neuf passait
+> devant un artisan à cinquante avis — il lui aurait fallu une borne de Wilson
+> au-delà de 0,97, soit plus de cent cinquante notes parfaites, pour seulement
+> l'égaler. Le prior corrige cela : l'inconnu vaut quatre étoiles, ni la
+> perfection ni le zéro, et la trace d'audit consigne qu'un classement s'est
+> fait sur une note prêtée.
+>
+> **Les valeurs illustratives de FR-037 ne suivent pas sa propre formule** :
+> elle annonce 0,45 pour une note isolée et 0,83 pour cinquante avis à 4,5,
+> alors qu'elle donne 0,207 et 0,786. La formule est la partie normative ; la
+> propriété qu'elle sert à montrer tient. Les deux valeurs exactes sont dans un
+> test, pour que l'écart soit constaté plutôt que redécouvert.
+>
+> Non livré : la modération automatique des commentaires injurieux (FR-033
+> `@negative`), qui suppose un service de classification.
 
 ### Story 7.2 — Ouverture Litige (FR-034)
 - **En tant que** User/Provider · **je veux** ouvrir Litige · **afin de** contester
