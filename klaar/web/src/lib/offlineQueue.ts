@@ -23,6 +23,7 @@
  */
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import { ApiError, OfflineError, request } from "./api";
+import { jetonAcces, restaurerSession } from "./connexion";
 
 export interface QueuedWrite {
   id?: number;
@@ -138,6 +139,28 @@ export interface FlushReport {
 let flushing = false;
 
 /**
+ * En-tête d'autorisation pour un rejeu.
+ *
+ * **Le jeton d'accès ne survit pas au rechargement** : il vit en mémoire, ce
+ * qui le protège d'une faille XSS. Une écriture mise en file hors connexion est
+ * rejouée plus tard, souvent après un rechargement, donc sans jeton. Le refresh,
+ * lui, est dans son cookie et survit : on s'en sert pour en réobtenir un.
+ *
+ * Rend `null` si la session ne peut pas être reprise. L'écriture part alors
+ * sans autorisation, reçoit un 401, et finit dans les refusées — ce qui est la
+ * bonne issue : rejouer l'écriture de quelqu'un dont la session a expiré
+ * reviendrait à agir en son nom sans qu'il soit là.
+ */
+async function autorisationRejeu(): Promise<Record<string, string>> {
+  let jeton = jetonAcces();
+  if (!jeton) {
+    await restaurerSession();
+    jeton = jetonAcces();
+  }
+  return jeton ? { Authorization: `Bearer ${jeton}` } : {};
+}
+
+/**
  * Rejoue la file dans l'ordre d'insertion.
  *
  * L'ordre compte : « créer une Demande » puis « l'annuler » ne commutent pas.
@@ -150,13 +173,20 @@ export async function flushQueue(): Promise<FlushReport> {
   flushing = true;
   try {
     const db = await getDb();
-    for (const item of await db.getAll("queue")) {
+    const enAttente = await db.getAll("queue");
+    // La session n'est reprise que s'il y a quelque chose à rejouer : sans
+    // cela, la file ferait une rotation de refresh toutes les trente secondes
+    // pour rien, et une rotation trop fréquente finit par ressembler à un
+    // rejeu de jeton volé.
+    const autorisation = enAttente.length > 0 ? await autorisationRejeu() : {};
+    for (const item of enAttente) {
       if (item.id === undefined) continue;
       try {
         await request(item.path, {
           method: item.method,
           body: item.body,
           idempotencyKey: item.idempotencyKey,
+          headers: autorisation,
         });
         await db.delete("queue", item.id);
         report.sent += 1;

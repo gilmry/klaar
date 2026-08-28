@@ -38,7 +38,7 @@ const DEMANDEURS: [&str; 2] = ["camille", "sacha"];
 ///
 /// Positions choisies dans des communes distinctes pour que la recherche par
 /// rayon de la Story 3.2 ait quelque chose à trier.
-const PRESTATAIRES: [(&str, &str, f64, f64, &[&str]); 5] = [
+const PRESTATAIRES: [(&str, &str, f64, f64, &[&str]); 7] = [
     (
         "Plomberie Centre SRL",
         "plomberie-centre",
@@ -73,6 +73,31 @@ const PRESTATAIRES: [(&str, &str, f64, f64, &[&str]); 5] = [
         50.8367,
         4.3097,
         &["plomberie", "serrurerie", "livraison"],
+    ),
+    // Deux plombiers au même endroit, au sud de la Région.
+    //
+    // Ils servent le parcours qui montre la course à l'acceptation : il faut
+    // deux candidats à égale distance pour que « le premier arrivé gagne »
+    // signifie quelque chose. Posés loin du centre parce qu'une base de
+    // développement partagée avec la suite de tests y accumule des centaines de
+    // prestataires, qui les évinceraient du classement.
+    //
+    // **Ajoutés à la fin, et pas ailleurs.** Le rang dans cette liste est la
+    // graine du numéro d'entreprise fictif : insérer au milieu décale tous les
+    // suivants, qui tentent alors de se recréer sur des comptes déjà pris.
+    (
+        "Plomberie Sud",
+        "plomberie-sud",
+        50.8020,
+        4.3400,
+        &["plomberie"],
+    ),
+    (
+        "Dépannage Sud",
+        "depannage-sud",
+        50.8021,
+        4.3401,
+        &["plomberie"],
     ),
 ];
 

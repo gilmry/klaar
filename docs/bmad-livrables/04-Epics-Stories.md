@@ -1080,6 +1080,43 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > géolocalisation est accordée au contexte du navigateur : aucune boîte de
 > dialogue système n'est cliquée, et c'est un écart avec un usage réel.
 
+### Story 3.9 — File d'attente hors ligne pour la Demande — *faite, hors plan initial*
+- **En tant que** User sans réseau · **je veux** que ma demande parte au retour de la connexion · **afin de** ne pas la retaper
+- **4×N** : mise en file / rejeu authentifié / refus définitif / rien à rejouer
+- **Couche(s)** : Frontend
+- **Taille** : **S** (0,5 j)
+
+> **La file existait sans producteur, et son rejeu partait sans jeton.** Le
+> module d'écritures différées est là depuis la Story 0.2, avec ses clés
+> d'idempotence et son rejeu ordonné — mais aucun formulaire ne l'alimentait, et
+> `flushQueue` rejouait sans en-tête d'autorisation. Une écriture sur une route
+> authentifiée aurait donc reçu un 401 et fini dans les refusées. Pendant ce
+> temps, la pastille d'état annonçait « vos saisies sont conservées ».
+>
+> **C'est le cas d'usage central d'un service de dépannage** : la cave, le
+> parking, l'ascenseur. Faire retaper le formulaire au retour du réseau
+> reviendrait à punir quelqu'un pour un problème qui ne le concerne pas.
+>
+> **Le rejeu reprend la session.** Le jeton d'accès vit en mémoire et ne survit
+> pas au rechargement — ce qui le protège d'une faille XSS ; le refresh, lui, est
+> dans son cookie. Le rejeu s'en sert pour réobtenir un accès. Si la session ne
+> peut pas être reprise, l'écriture reçoit un 401 et part dans les refusées, et
+> c'est la bonne issue : rejouer l'écriture de quelqu'un dont la session a expiré
+> reviendrait à agir en son nom sans qu'il soit là.
+>
+> **La reprise n'a lieu que s'il y a quelque chose à rejouer.** Sans cette garde,
+> la file ferait une rotation de refresh toutes les trente secondes pour rien —
+> et une rotation trop fréquente finit par ressembler au rejeu d'un jeton volé,
+> ce que la Story 1.4 traite comme un vol.
+>
+> **Limite assumée : le service ne lit pas encore `Idempotency-Key`.** Ce qui
+> protège d'une double soumission est la fenêtre de doublon de cinq minutes
+> (FR-011), qui rend la Demande existante au lieu d'en créer une seconde. C'est
+> une garantie plus faible, et elle est écrite dans le code comme ici.
+>
+> **L'écran distingue « en file » de « créée ».** Rien n'a été envoyé au service,
+> et le dire autrement ferait croire que des prestataires ont été prévenus.
+
 ### Story 4.4 — Tracking géoloc temps réel, foreground uniquement (FR-019)
 - **En tant que** User · **je veux** voir la position Provider temps réel · **afin de** savoir quand il arrive
 - **Périmètre** : tracking **foreground**, PWA ouverte pendant EN_ROUTE (`Geolocation.watchPosition`)

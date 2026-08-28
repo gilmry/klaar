@@ -613,6 +613,24 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Le suivi sonde toutes les cinq secondes et s'arrête quand la Demande est close.
   Dette assumée : le temps réel appartient au WebSocket (Story 4.9).
 
+- **3.9** — **File d'attente hors ligne** (hors plan initial) : une Demande
+  écrite sans réseau part au retour de la connexion.
+
+  **La file existait sans producteur, et son rejeu partait sans jeton.** Le
+  module est là depuis la Story 0.2, mais aucun formulaire ne l'alimentait et
+  `flushQueue` rejouait sans autorisation — une écriture authentifiée aurait
+  reçu un 401 et fini dans les refusées. Pendant ce temps, la pastille annonçait
+  « vos saisies sont conservées ».
+
+  Le rejeu **reprend la session** depuis le cookie de rafraîchissement, le jeton
+  d'accès ne survivant pas au rechargement. Il ne le fait que s'il y a quelque
+  chose à rejouer : sinon la file ferait une rotation de refresh toutes les
+  trente secondes, et une rotation trop fréquente finit par ressembler au rejeu
+  d'un jeton volé.
+
+  Limite : le service ne lit pas encore `Idempotency-Key`. Ce qui protège d'une
+  double soumission est la fenêtre de doublon de cinq minutes.
+
 ## Parcours filmés — documentation vivante
 
 `scripts/parcours-filmes.sh` monte un service **réel** — PostgreSQL, migrations,

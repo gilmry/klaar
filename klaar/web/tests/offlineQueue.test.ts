@@ -15,6 +15,7 @@ import {
   listDead,
   closeDb,
 } from "../src/lib/offlineQueue";
+import { oublierJeton } from "../src/lib/connexion";
 
 interface AppelCapture {
   url: string;
@@ -25,10 +26,23 @@ interface AppelCapture {
 
 let appels: AppelCapture[] = [];
 
-/** Installe un `fetch` scripté : une réponse (ou une panne) par appel. */
+/**
+ * Installe un `fetch` scripté : une réponse (ou une panne) par appel.
+ *
+ * **La reprise de session est répondue à part et n'entre pas dans `appels`.**
+ * Depuis que le rejeu porte un jeton, `flushQueue` commence par réobtenir un
+ * accès quand il n'en a pas en mémoire ; le compter avec les écritures ferait
+ * porter chaque assertion sur un appel qui n'est pas celui qu'elle vise.
+ */
 function scripterFetch(...reponses: Array<Response | "panne-reseau">) {
   let i = 0;
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    if (String(url).includes("/auth/refresh")) {
+      return new Response(JSON.stringify({ jeton_acces: "jwt-de-test", expire_dans: 3600 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const headers = (init.headers ?? {}) as Record<string, string>;
     appels.push({
       url,
@@ -48,6 +62,9 @@ const erreur = (status: number, corps = "") => new Response(corps, { status });
 
 beforeEach(async () => {
   appels = [];
+  // Le jeton vit en mémoire du module : sans cet oubli, un cas laisserait au
+  // suivant une session déjà ouverte et masquerait la reprise.
+  oublierJeton();
   await closeDb();
   await deleteDB("klaar-offline");
 });
@@ -194,5 +211,66 @@ describe("@security", () => {
 
     expect(appels).toHaveLength(3);
     expect(appels.every((a) => Boolean(a.idempotencyKey))).toBe(true);
+  });
+});
+
+describe("@security rejeu authentifié", () => {
+  it("reprend la session puis porte le jeton sur l'écriture rejouée", async () => {
+    // Le jeton d'accès vit en mémoire et ne survit pas au rechargement ; une
+    // écriture mise en file hors connexion est rejouée après, donc sans jeton.
+    // Sans reprise de session, elle recevrait un 401 et finirait dans les
+    // refusées — c'est-à-dire perdue, alors que le refresh était valable.
+    const { enqueue, flushQueue } = await import("../src/lib/offlineQueue");
+    const { oublierJeton } = await import("../src/lib/connexion");
+    oublierJeton();
+
+    const appels: Array<{ url: string; entetes: Record<string, string> }> = [];
+    const origine = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown, init: RequestInit) => {
+      const chemin = String(url);
+      appels.push({ url: chemin, entetes: { ...((init?.headers as Record<string, string>) ?? {}) } });
+      if (chemin.includes("/auth/refresh")) {
+        return new Response(JSON.stringify({ jeton_acces: "jwt-de-file", expire_dans: 3600 }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    try {
+      await enqueue("POST", "/requests", { secteur: "plomberie" });
+      const rapport = await flushQueue();
+      expect(rapport.sent).toBe(1);
+
+      const rejeu = appels.find((a) => a.url.includes("/requests"));
+      expect(rejeu?.entetes.Authorization).toBe("Bearer jwt-de-file");
+      // La clé d'idempotence voyage avec, pour que le service puisse un jour
+      // s'en servir.
+      expect(rejeu?.entetes["Idempotency-Key"]).toBeTruthy();
+    } finally {
+      globalThis.fetch = origine;
+      oublierJeton();
+    }
+  });
+
+  it("ne reprend pas la session quand il n'y a rien à rejouer", async () => {
+    // Sans cette garde, la file ferait une rotation de refresh toutes les
+    // trente secondes pour rien — et une rotation trop fréquente finit par
+    // ressembler au rejeu d'un jeton volé.
+    const { flushQueue } = await import("../src/lib/offlineQueue");
+    let appels = 0;
+    const origine = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      appels += 1;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      await flushQueue();
+      expect(appels).toBe(0);
+    } finally {
+      globalThis.fetch = origine;
+    }
   });
 });

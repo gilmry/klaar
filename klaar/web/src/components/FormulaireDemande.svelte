@@ -11,6 +11,8 @@
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
   import { restaurerSession } from "../lib/connexion";
   import { chargerCatalogue, type SecteurCatalogue } from "../lib/catalogue";
+  import { OfflineError } from "../lib/api";
+  import { enqueue } from "../lib/offlineQueue";
   import {
     codeDepuisErreur,
     DESCRIPTION_MAX,
@@ -28,6 +30,14 @@
   let urgence = $state<UrgenceKlaar>("NORMAL");
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
+  /**
+   * Vrai quand la demande attend le retour du réseau.
+   *
+   * Distinct de `creee` : rien n'a encore été créé côté service, et le dire
+   * autrement ferait croire que des prestataires ont été prévenus.
+   */
+  let enFile = $state(false);
+
   let creee = $state<{
     id: string;
     doublon: boolean;
@@ -72,6 +82,31 @@
         notifies: reponse.notifies ?? 0,
       };
     } catch (e) {
+      // Hors connexion, la demande est **mise en file** plutôt que perdue.
+      //
+      // C'est le cas d'usage central d'un service de dépannage : la cave, le
+      // parking, l'ascenseur. Faire retaper le formulaire au retour du réseau
+      // reviendrait à punir quelqu'un pour un problème qui ne le concerne pas.
+      //
+      // Le rejeu porte une clé d'idempotence. Le service ne la lit pas encore ;
+      // ce qui protège d'une double soumission est la fenêtre de doublon de
+      // cinq minutes (FR-011), qui rend la Demande existante au lieu d'en créer
+      // une seconde. C'est une garantie plus faible, et elle est écrite ici.
+      if (e instanceof OfflineError) {
+        const position = await positionActuelle().catch(() => null);
+        if (position) {
+          await enqueue("POST", "/requests", {
+            secteur,
+            description,
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            urgence,
+          });
+          enFile = true;
+          occupe = false;
+          return;
+        }
+      }
       erreur =
         e instanceof Error && e.message === "POSITION_REFUSEE"
           ? messageErreur(locale, "POSITION_REFUSEE")
@@ -87,6 +122,15 @@
 {:else if !connecte}
   <p role="status" data-etat-demande="anonyme">
     Faire une demande suppose un compte. <a href="/connexion">Me connecter</a>
+  </p>
+{:else if enFile}
+  <p role="status" data-demande="en-file">
+    Aucune connexion. Votre demande est conservée sur cet appareil et partira
+    dès que le réseau reviendra. Gardez cette page ouverte.
+  </p>
+  <p class="klaar-tempere">
+    Rien n'a encore été envoyé : aucun prestataire n'a été prévenu pour
+    l'instant.
   </p>
 {:else if creee}
   <p role="status" data-demande="creee">

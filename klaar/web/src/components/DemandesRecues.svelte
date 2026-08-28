@@ -45,8 +45,17 @@
     reprise = false;
   });
 
-  async function rafraichir() {
-    erreur = null;
+  /**
+   * Recharge la liste.
+   *
+   * `effacerErreur` vaut faux quand le rechargement **suit** un refus : sinon
+   * le message qui explique pourquoi l'intervention a échappé au prestataire
+   * disparaît dans la même seconde, et il ne reste rien à l'écran. Trouvé en
+   * filmant la course entre deux prestataires : le perdant n'avait aucune
+   * explication.
+   */
+  async function rafraichir(effacerErreur = true) {
+    if (effacerErreur) erreur = null;
     try {
       demandes = await demandesRecues();
     } catch (e) {
@@ -68,8 +77,10 @@
     } catch (e) {
       erreur = messageErreur(locale, codeDepuisErreur(e));
       // La Demande a peut-être été prise entre l'affichage et le clic : on
-      // recharge plutôt que de laisser une ligne qui ne mène nulle part.
-      await rafraichir();
+      // recharge plutôt que de laisser une ligne qui ne mène nulle part. Le
+      // message, lui, reste : c'est la seule chose qui explique ce qui vient de
+      // se passer.
+      await rafraichir(false);
     } finally {
       occupe = false;
     }

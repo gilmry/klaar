@@ -123,6 +123,22 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## File d'attente hors ligne (Story 3.9)
+
+Une Demande écrite sans réseau est **conservée sur l'appareil**, dans IndexedDB,
+et part au retour de la connexion. L'écran distingue « en file » de « créée » :
+rien n'a été envoyé au service, et le dire autrement ferait croire que des
+prestataires ont été prévenus.
+
+**Le rejeu reprend la session** depuis le cookie de rafraîchissement, le jeton
+d'accès ne survivant pas au rechargement. Si la session ne peut pas être reprise,
+l'écriture est refusée plutôt que rejouée : agir au nom de quelqu'un dont la
+session a expiré serait pire que de perdre l'écriture.
+
+**Limite assumée** : le service ne lit pas encore l'en-tête `Idempotency-Key`.
+Ce qui protège d'une double soumission est la fenêtre de doublon de cinq minutes
+(FR-011), qui rend la Demande existante au lieu d'en créer une seconde.
+
 ## Parcours filmés : ce qui est publié (Story 4.11)
 
 Les vidéos publiées sur GitHub Pages sont l'enregistrement de tests joués contre

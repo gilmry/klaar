@@ -172,6 +172,8 @@ export const COMPTES = {
   serrurier: "serrurerie-midi@demo.klaar.invalid",
   electricien: "elec-schaerbeek@demo.klaar.invalid",
   multiservices: "multi-anderlecht@demo.klaar.invalid",
+  plombierSudA: "plomberie-sud@demo.klaar.invalid",
+  plombierSudB: "depannage-sud@demo.klaar.invalid",
 } as const;
 
 /** Ouvre une session par le formulaire, comme un vrai visiteur. */
@@ -224,7 +226,16 @@ export async function ranger(acteurs: Acteur[]): Promise<void> {
     const origine = await video.path();
     const cible = join(dirname(origine), `${acteur.fichier}.webm`);
     await rename(origine, cible);
-    await test.info().attach(acteur.fichier, { path: cible, contentType: "video/webm" });
+
+    // Attachée au rapport **seulement en cas d'échec**.
+    //
+    // Un parcours vert voit sa vidéo publiée sur la page d'accueil de la
+    // vitrine ; l'attacher en plus au rapport la stockait deux fois et faisait
+    // passer le site de cinquante mégaoctets à trois cents. Sur un échec, en
+    // revanche, c'est dans le rapport qu'on regarde, à côté de la trace.
+    if (test.info().errors.length > 0) {
+      await test.info().attach(acteur.fichier, { path: cible, contentType: "video/webm" });
+    }
   }
 }
 

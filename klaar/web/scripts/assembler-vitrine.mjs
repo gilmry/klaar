@@ -30,6 +30,10 @@ const SORTIE = join(RACINE, "vitrine");
 const PARCOURS = [
   {
     titre: "Découvrir le service sans compte",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Découvrir le service sans compte",
     propos:
       "Le catalogue et les fourchettes de prix sont publics. Demander de s'inscrire pour " +
       "connaître un prix reviendrait à le faire payer en données personnelles.",
@@ -37,6 +41,10 @@ const PARCOURS = [
   },
   {
     titre: "S'inscrire, et l'adresse qu'on ne confirme jamais",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "S'inscrire, et l'adresse qu'on ne confirme jamais",
     propos:
       "Réinscrire une adresse déjà prise donne mot pour mot la même réponse que la première " +
       "fois. C'est ce qui empêche de dresser la liste des personnes inscrites en essayant des " +
@@ -45,6 +53,10 @@ const PARCOURS = [
   },
   {
     titre: "Un dépannage de bout en bout",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Un dépannage de bout en bout, vu par le demandeur et par le prestataire",
     propos:
       "Le parcours qui porte la valeur du service, filmé des deux côtés à la fois. Le " +
       "prestataire ne connaît pas l'adresse avant d'avoir pris la Demande, et la connaît " +
@@ -55,7 +67,44 @@ const PARCOURS = [
     ],
   },
   {
+    titre: "Deux prestataires, une Demande : le premier arrivé gagne",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Deux prestataires, une Demande : le premier arrivé gagne",
+    propos:
+      "Cinq prestataires reçoivent la même notification et peuvent toucher « je prends » dans " +
+      "la même seconde. Un seul obtient l'intervention ; l'autre reçoit une phrase qui dit ce " +
+      "qui s'est passé, pas un code d'erreur. Côté service, une écriture que PostgreSQL " +
+      "sérialise et que rien ne peut doubler.",
+    videos: [
+      { fichier: "course-demandeuse", acteur: "Camille · demandeuse" },
+      { fichier: "course-gagnant", acteur: "Plomberie Sud · gagne" },
+      { fichier: "course-perdant", acteur: "Dépannage Sud · arrive après" },
+    ],
+  },
+  {
+    titre: "Une Demande retirée pendant qu'un prestataire la regarde",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Une Demande retirée pendant qu'un prestataire la regarde",
+    propos:
+      "L'annulation et l'acceptation portent sur la même ligne : l'une gagne. Quand c'est " +
+      "l'annulation, le prestataire apprend que la Demande a été retirée — et non qu'un autre " +
+      "a été plus rapide. Dire l'un pour l'autre l'enverrait chercher un concurrent qui " +
+      "n'existe pas.",
+    videos: [
+      { fichier: "annulation-demandeur", acteur: "Sacha · demandeur" },
+      { fichier: "annulation-prestataire", acteur: "Dépannage Sud · prestataire" },
+    ],
+  },
+  {
     titre: "Personne ne répond : élargir, puis retirer sa demande",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Personne ne répond : élargir, puis retirer sa demande",
     propos:
       "La pire issue n'est pas « personne n'est venu », c'est « on ne vous a rien dit ». " +
       "Trente secondes, une réponse, et deux choix : élargir la zone ou retirer sa demande — " +
@@ -64,19 +113,98 @@ const PARCOURS = [
   },
   {
     titre: "Un prestataire règle son flux",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Se mettre en pause, régler jusqu'où l'on se déplace",
     propos:
       "Trois raisons distinctes de ne rien recevoir — statut, pause, intervention en cours — " +
       "et l'écran les distingue. Une pause n'est pas une radiation.",
     videos: [{ fichier: "disponibilite", acteur: "Serrurerie Midi" }],
   },
   {
+    titre: "Une demande écrite sans réseau part au retour de la connexion",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Une demande écrite sans réseau part au retour de la connexion",
+    propos:
+      "Le cas d'usage central d'un service de dépannage : la cave, le parking, l'ascenseur. " +
+      "La demande est conservée sur l'appareil et part d'elle-même au retour du réseau. Le " +
+      "service dit aussi ce qui n'a pas eu lieu : aucun prestataire n'a encore été prévenu.",
+    videos: [{ fichier: "file-hors-ligne", acteur: "Camille · demandeuse" }],
+  },
+  {
+    titre: "Demander l'effacement de son compte, puis changer d'avis",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Demander l'effacement de son compte, puis changer d'avis",
+    propos:
+      "L'article 17 du RGPD donne ce droit, et l'exercer ne doit pas être un parcours du " +
+      "combattant : deux protections contre le clic malheureux, et aucune de plus. Le délai " +
+      "de trente jours est annulable, sans quoi ce seraient trente jours d'attente pour rien.",
+    videos: [{ fichier: "effacement", acteur: "Camille · demandeuse" }],
+  },
+  {
+    titre: "Mot de passe erroné : le même refus, quel que soit le compte",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "Mot de passe erroné : le même refus, puis le verrouillage",
+    propos:
+      "Deux protections distinctes, souvent confondues : le message d'erreur, qui ne dit " +
+      "jamais si l'adresse existe, et le verrouillage après cinq échecs, qui empêche " +
+      "d'essayer les mots de passe un à un.",
+    videos: [{ fichier: "verrouillage", acteur: "Quelqu'un qui essaie" }],
+  },
+  {
     titre: "L'application sans réseau",
+    // Titre du test qui produit ces vidéos. Explicite parce que le titre
+    // affiché est une accroche, pas un nom de cas — et parce qu'apparier à
+    // l'aveugle laisserait publier un parcours en échec.
+    test: "L'application sans réseau",
     propos:
       "Klaar sert un dépannage : la connexion est mauvaise précisément quand on en a besoin. " +
       "Les pages déjà visitées restent lisibles, et l'état de la connexion est signalé.",
     videos: [{ fichier: "hors-ligne", acteur: "Un visiteur hors réseau" }],
   },
 ];
+
+/**
+ * Parcours qui ont échoué, d'après le rapport JSON de Playwright.
+ *
+ * **Une vidéo existe même quand le parcours échoue** : Playwright filme jusqu'à
+ * l'interruption. Publier ces enregistrements sans le dire montrerait un
+ * parcours qui s'arrête au milieu comme s'il démontrait quelque chose. Ils sont
+ * donc écartés, et comptés dans l'avertissement.
+ *
+ * Le rapport absent est traité comme « rien n'a échoué » : c'est le cas d'un
+ * assemblage lancé à la main sur des résultats déjà là, et refuser de publier
+ * pour cette raison serait disproportionné.
+ */
+async function parcoursEnEchec() {
+  const chemin = join(RACINE, "demo-resultats.json");
+  if (!existsSync(chemin)) return { rates: new Set(), connus: new Set() };
+  try {
+    const rapport = JSON.parse(await readFile(chemin, "utf-8"));
+    const rates = new Set();
+    const connus = new Set();
+    const parcourir = (suites) => {
+      for (const suite of suites ?? []) {
+        for (const cas of suite.specs ?? []) {
+          connus.add(cas.title);
+          if (!cas.ok) rates.add(cas.title);
+        }
+        parcourir(suite.suites);
+      }
+    };
+    parcourir(rapport.suites);
+    return { rates, connus };
+  } catch {
+    return { rates: new Set(), connus: new Set() };
+  }
+}
 
 /** Retrouve une vidéo dans l'arborescence de résultats. */
 async function trouverVideo(nom) {
@@ -103,9 +231,27 @@ function echapper(texte) {
 async function main() {
   await mkdir(join(SORTIE, "videos"), { recursive: true });
 
+  const { rates: enEchec, connus } = await parcoursEnEchec();
+
+  // Un lien cassé entre la vitrine et les tests fait échouer l'assemblage.
+  // Sans ce contrôle, renommer un test rendrait son échec invisible : la
+  // vidéo serait publiée comme si le parcours avait abouti.
+  if (connus.size > 0) {
+    const orphelins = PARCOURS.filter((p) => !connus.has(p.test)).map((p) => p.test);
+    if (orphelins.length > 0) {
+      console.error(`parcours introuvables dans le rapport : ${orphelins.join(" · ")}`);
+      process.exit(1);
+    }
+  }
   const sections = [];
   const manquants = [];
   for (const parcours of PARCOURS) {
+    // Un parcours en échec n'est pas publié : sa vidéo existe, mais elle
+    // s'arrête au milieu et ne démontre rien.
+    if (enEchec.has(parcours.test)) {
+      manquants.push(`${parcours.titre} (parcours en échec)`);
+      continue;
+    }
     const lecteurs = [];
     for (const video of parcours.videos) {
       const source = await trouverVideo(video.fichier);
@@ -207,7 +353,7 @@ ${sections.join("\n")}
 <footer>
   <ul>${rapports.join("")}</ul>
   <p>
-    Klaar est un logiciel libre sous AGPL-3.0.
+    Klaar est un logiciel libre sous licence MIT (ADR-009).
     <a href="https://github.com/gilmry/klaar">Code source</a>.
   </p>
 </footer>
