@@ -16,11 +16,17 @@
 
 mod devis;
 mod liberation;
+mod methode;
 mod sequestre;
 
 pub use liberation::{
     echeance_validation, repartir, Liberation, LiberationError, OrigineValidation, Repartition,
     StatutLiberation, DELAI_VALIDATION_HEURES, SEUIL_QUATRE_YEUX_CENTS, TAUX_COMMISSION_BP,
+};
+
+pub use methode::{
+    defaut_apres_suppression, enregistrer as enregistrer_methode, expiree, utilisable,
+    CarteEnregistree, MethodeError, MethodePaiement, CARTES_MAX,
 };
 
 pub use sequestre::{Sequestre, SequestreError, StatutSequestre, AUTORISATION_JOURS};

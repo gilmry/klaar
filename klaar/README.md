@@ -961,6 +961,34 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   mais une relecture reste à faire — le néerlandais approximatif dans un service
   bruxellois se remarque.
 
+- **1.7** (règles) — **Méthodes de paiement** (FR-006) : plafond, carte par
+  défaut, échéance.
+
+  **Le numéro de carte ne passe par aucun de nos serveurs, et le type
+  l'empêche structurellement** : il n'y a aucun champ où le mettre. Le périmètre
+  PCI SAQ-A tient à cela, et cette garantie ne dépend d'aucune vigilance.
+
+  **La première carte devient celle par défaut automatiquement**, sans quoi
+  quelqu'un qui ajoute sa seule carte n'en aurait aucune de sélectionnée et sa
+  Demande serait refusée sans qu'il comprenne. **Supprimer la carte par défaut
+  en promeut une autre** — un compte sans défaut ne peut plus rien demander, et
+  un geste anodin deviendrait un blocage silencieux. Retirer sa **dernière**
+  carte reste légitime : l'interdire obligerait à en garder une pour toujours,
+  contre le droit à l'effacement.
+
+  **Une carte expire à la fin de son mois, pas au premier jour** : « 08/2026 »
+  vaut jusqu'au 31 août inclus. Et **l'échéance est recontrôlée à l'usage**, pas
+  seulement à l'enregistrement — une carte valable en janvier ne l'est plus en
+  mars, et sans ce contrôle la Demande partirait, le prestataire se mettrait en
+  route, et le paiement échouerait ensuite.
+
+  **Une référence qui ressemble à un numéro de carte est refusée.** Ce contrôle
+  ne protège de rien contre un appelant malveillant ; il protège d'une erreur de
+  câblage, qui est le cas réaliste.
+
+  Ce qui attend Stripe : l'iframe Elements, la création et le détachement de la
+  méthode, et l'écran.
+
 - **2.4** — **Administration du catalogue** (FR-010) :
   `GET`/`POST /api/v1/ops/catalog/sectors`, `/publish`, `/disable`.
 

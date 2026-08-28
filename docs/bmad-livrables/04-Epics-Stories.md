@@ -355,11 +355,54 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > `geography`, filtre de compétence en `EXISTS` — joindre dupliquerait la ligne du prestataire
 > par compétence, et la limite porterait sur les couples plutôt que sur les prestataires.
 
-### Story 1.7 — Gestion méthode paiement User (FR-006)
+### Story 1.7 — Gestion méthode paiement User (FR-006) — *règles faites ; l'enregistrement attend Stripe*
 - **En tant que** User · **je veux** enregistrer ma carte via Stripe Elements · **afin de** accélérer mes Demandes
 - **4×N** : PRD FR-006
 - **Couche(s)** : Infra (Stripe adapter) + Frontend (iframe Stripe Elements)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Le numéro de carte ne passe par aucun de nos serveurs, et le type l'empêche
+> structurellement.** Il n'y a aucun champ où le mettre : le périmètre PCI SAQ-A
+> tient à cela, et cette garantie-là ne dépend d'aucune vigilance. Ce qui est
+> conservé est ce que la norme autorise explicitement — référence opaque, quatre
+> derniers chiffres, marque, échéance.
+>
+> **Ce qui demande un compte, et ce qui n'en demande pas.** Créer la méthode chez
+> Stripe, la détacher, lire un refus de carte : cela demande un compte. Combien
+> de cartes on garde, laquelle est celle par défaut quand on en supprime une, et
+> si celle qu'on s'apprête à débiter est encore valable : cela n'en demande
+> aucun, et c'est là que se jouent les erreurs qui coûtent.
+>
+> **La première carte devient celle par défaut automatiquement** (FR-006
+> `@happy`). Sans cela, quelqu'un qui ajoute sa seule carte n'en aurait aucune de
+> sélectionnée, et sa Demande serait refusée sans qu'il comprenne pourquoi.
+>
+> **Supprimer la carte par défaut en promeut une autre.** Un compte sans carte
+> par défaut ne peut plus rien demander ; laisser le choix vide après une
+> suppression transformerait un geste anodin en blocage silencieux. Retirer sa
+> **dernière** carte reste légitime — rendre une erreur là obligerait à garder
+> une carte enregistrée pour toujours, ce qui va contre le droit à l'effacement.
+>
+> **Une carte expire à la fin de son mois, pas au premier jour.** Une carte
+> « 08/2026 » vaut jusqu'au 31 août inclus ; la refuser le 1er août priverait
+> quelqu'un d'un mois d'usage légitime.
+>
+> **L'échéance est recontrôlée au moment de s'en servir**, et pas seulement à
+> l'enregistrement (FR-006 `@edge`) : une carte valable en janvier ne l'est plus
+> en mars, et sans ce contrôle la Demande partirait, le prestataire se mettrait
+> en route, et le paiement échouerait ensuite.
+>
+> **Une référence qui ressemble à un numéro de carte est refusée** — treize à
+> dix-neuf chiffres et rien d'autre. Ce contrôle ne protège de rien contre un
+> appelant malveillant ; il protège d'une erreur de câblage, qui est le cas
+> réaliste, et il vaut mieux refuser que d'écrire un numéro en base.
+>
+> **Une seule carte par défaut, par index partiel** plutôt que par règle
+> applicative : deux écritures concurrentes en poseraient deux, et le service
+> choisirait alors arbitrairement laquelle débiter.
+>
+> **Ce qui attend Stripe** : l'iframe Elements, la création et le détachement de
+> la méthode, les codes `CARD_DECLINED` et `STRIPE_UNAVAILABLE`, et l'écran.
 
 ### Story 1.8 — Verrouillage brute-force (FR-007) — *faite*
 - **En tant que** système · **je veux** verrouiller après 5 échecs · **afin de** mitiger brute-force
@@ -988,7 +1031,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 4 — Intervention (INT) · Priorité **Must**
 
-### Story 4.1 — Envoi Devis Provider (FR-016)
+### Story 4.1 — Envoi Devis Provider (FR-016) — *faite, sans le séquestre*
 - **En tant que** Provider attribué · **je veux** envoyer un Devis · **afin de** contractualiser
 - **4×N** : PRD FR-016 (montant, délai, prix libre Invariant §10.2)
 - **Couche(s)** : Domain (Quote aggregate) + Application + Infra (Stripe pre-auth) + Frontend
@@ -1028,7 +1071,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > un. Le taux de TVA réduit exige une référence de preuve, mais celle-ci est un
 > texte libre : sa vérification relève d'un contrôle fiscal, pas du service.
 
-### Story 4.2 — Acceptation Devis User + Escrow capture (FR-017)
+### Story 4.2 — Acceptation Devis User + Escrow capture (FR-017) — *faite, sans le séquestre*
 - **En tant que** User · **je veux** accepter le Devis · **afin de** déclencher la Mission
 - **4×N** : PRD FR-017 (3DS2, fonds insuffisants, devis expiré)
 - **Couche(s)** : Application + Infra (Stripe capture) + Frontend
@@ -1417,7 +1460,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > clé KMS, le scan ClamAV, la journalisation des accès, et l'écran de prise de
 > vue.
 
-### Story 4.6 — Validation fin Mission + libération Escrow (FR-021)
+### Story 4.6 — Validation fin Mission + libération Escrow (FR-021) — *faite, sans le virement*
 - **En tant que** User · **je veux** valider la fin · **afin de** libérer l'Escrow
 - **4×N** : PRD FR-021 (validation manuelle / auto 72 h, > 500 € 4-eyes)
 - **Couche(s)** : Application + Infra (transaction atomique SQL)
@@ -1451,7 +1494,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > transactionnel, Story 9.2), le gel en cas de litige (FR-034), et la console
 > ops qui lèvera les libérations `PENDING_OPS` (Epic 8).
 
-### Story 4.7 — Annulation Mission avec pénalités (FR-022)
+### Story 4.7 — Annulation Mission avec pénalités (FR-022) — *faite, sans le remboursement*
 - **En tant que** User/Provider · **je veux** annuler une Mission · **afin de** sortir d'engagement
 - **4×N** : PRD FR-022 (pénalités, forfait déplacement, seuils fraude)
 - **Couche(s)** : Domain + Application
@@ -1485,7 +1528,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > périmètre ops), et la fin automatique de la suspension au bout de sept jours —
 > elle est aujourd'hui à lever à la main.
 
-### Story 4.8 — Re-programmation Mission (FR-023)
+### Story 4.8 — Re-programmation Mission (FR-023) — *faite*
 - **En tant que** User · **je veux** re-programmer · **afin de** ne pas perdre le bénéfice
 - **4×N** : PRD FR-023
 - **Couche(s)** : Domain + Application
@@ -1721,7 +1764,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 6 — Messaging (MSG) · Priorité **Should**
 
-### Story 6.1 — Conversation in-app User ↔ Provider (FR-030)
+### Story 6.1 — Conversation in-app User ↔ Provider (FR-030) — *faite, avec 6.3*
 - **En tant que** User/Provider · **je veux** échanger messages · **afin de** préciser la Demande
 - **4×N** : PRD FR-030 (> 4000 chars, Mission close, offline sync)
 - **Couche(s)** : Domain + Application + Infra (actix-web-actors WebSocket) + Frontend
@@ -1779,7 +1822,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 7 — Trust & Moderation (TRU) · Priorité **Must**
 
-### Story 7.1 — Notation double-sens symétrique (FR-033)
+### Story 7.1 — Notation double-sens symétrique (FR-033) — *faite, avec 7.5*
 - **En tant que** User/Provider · **je veux** noter · **afin d'** aider la communauté
 - **4×N** : PRD FR-033 (double-sens, > 14 j, déjà noté)
 - **Couche(s)** : Domain + Application + Frontend
@@ -1821,7 +1864,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain (Dispute aggregate) + Application
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 
-### Story 7.3 — Sanction auto + manuelle (FR-035)
+### Story 7.3 — Sanction auto + manuelle (FR-035) — *faite ; la médiation est en 7.4*
 - **En tant que** ops/système · **je veux** appliquer Sanction · **afin de** protéger la communauté
 - **4×N** : PRD FR-035 (seuils, appel, 4-eyes BAN)
 - **Couche(s)** : Domain + Application
@@ -1978,7 +2021,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > jointes du dossier (assurance, itsme) ne sont pas non plus affichées : elles
 > supposent le stockage objet, non provisionné (Story 4.5).
 
-### Story 8.2 — Exports régulateurs RGPD/NIS2/TVA (FR-039)
+### Story 8.2 — Exports régulateurs RGPD/NIS2/TVA (FR-039) — *faite, sans la signature*
 - **En tant que** ops · **je veux** générer exports signés · **afin de** répondre aux autorités
 - **4×N** : PRD FR-039 (période, > 100k lignes asynchrone)
 - **Couche(s)** : Application + Infra (PGP + eIDAS signature)
@@ -2093,7 +2136,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > **L'écran prévient cinq minutes avant l'échéance.** Une console qui répond 401
 > au milieu d'une médiation fait perdre ce qui était en train d'être écrit.
 
-### Story 8.4 — RBAC ops + MFA TOTP (FR-041)
+### Story 8.4 — RBAC ops + MFA TOTP (FR-041) — *faite, avec 8.5*
 - **En tant que** super-admin · **je veux** gérer ops users + rôles · **afin de** sécuriser admin
 - **4×N** : PRD FR-041 (MFA, auto-révocation 90 j)
 - **Couche(s)** : Domain + Application + Frontend
