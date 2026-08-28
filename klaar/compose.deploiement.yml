@@ -1,0 +1,116 @@
+# Déploiement du service, sur n'importe quel hôte (Story 0.7).
+#
+# **Séparé de `docker-compose.yml`, qui est un environnement de
+# développement.** Celui-là expose PostgreSQL sur l'hôte avec un mot de passe
+# écrit en clair et fait tourner le service à côté, en processus natif. Les
+# mêler donnerait un fichier qu'on croirait bon pour les deux usages, et le mot
+# de passe de développement finirait en production.
+#
+# **Ce fichier ne dépend d'aucun hébergeur.** C'était le vrai manque : le
+# service n'était déployable nulle part, faute d'image, et cela avait été pris
+# pour une dépendance à un fournisseur particulier. Il tourne sur un VPS, sur
+# une machine de bureau, sur ce qu'on veut.
+#
+#   podman compose -f compose.deploiement.yml up -d
+#   docker compose  -f compose.deploiement.yml up -d
+#
+# **Aucun secret n'est écrit ici.** Ils viennent du fichier d'environnement
+# `.env.deploiement`, absent du dépôt, dont `.env.example` donne la liste. Un
+# fichier de composition qui porte ses secrets finit poussé par mégarde.
+
+services:
+  base:
+    image: docker.io/postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: klaar
+      POSTGRES_PASSWORD: ${KLAAR_PG_PASSWORD:?mot de passe requis}
+      POSTGRES_DB: klaar
+    volumes:
+      - klaar-donnees:/var/lib/postgresql/data
+    # **Aucun port publié.** La base n'est jointe que par le réseau interne de
+    # la composition ; l'exposer sur l'hôte offrirait à l'internet un service
+    # qui n'a aucune raison d'y être.
+    healthcheck:
+      # **`-h 127.0.0.1` et non le socket.** Au tout premier démarrage,
+      # l'image officielle lance un serveur temporaire pour initialiser le
+      # répertoire de données, et celui-là n'écoute que sur le socket Unix :
+      # `pg_isready` sans hôte le trouve, déclare la base saine, et les
+      # migrations partent dans l'intervalle où le vrai serveur n'écoute pas
+      # encore. C'est arrivé au premier essai de cette composition — connexion
+      # refusée, base pourtant « healthy ».
+      test: ["CMD-SHELL", "pg_isready -U klaar -d klaar -h 127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      # Trente essais : l'initialisation d'un répertoire PostGIS neuf prend
+      # plus de temps que celle d'un PostgreSQL nu.
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  # Les migrations tournent **une fois**, avant le service, et le conteneur
+  # s'arrête. Les lancer au démarrage du service les ferait tourner une fois par
+  # exemplaire, et deux exemplaires qui migrent en même temps ne migrent pas
+  # deux fois : l'un échoue.
+  migrations:
+    image: klaar-api:local
+    command: ["klaar-migrate"]
+    environment:
+      DATABASE_URL: postgres://klaar:${KLAAR_PG_PASSWORD:?}@base:5432/klaar
+    depends_on:
+      base:
+        condition: service_healthy
+    restart: "no"
+
+  service:
+    image: klaar-api:local
+    environment:
+      DATABASE_URL: postgres://klaar:${KLAAR_PG_PASSWORD:?}@base:5432/klaar
+      KLAAR_JWT_SECRET: ${KLAAR_JWT_SECRET:?secret de signature requis}
+      KLAAR_TRACE_HMAC_KEY: ${KLAAR_TRACE_HMAC_KEY:-}
+      KLAAR_VAPID_PRIVATE_KEY: ${KLAAR_VAPID_PRIVATE_KEY:-}
+      KLAAR_VAPID_SUBJECT: ${KLAAR_VAPID_SUBJECT:-}
+      KLAAR_STRIPE_WEBHOOK_SECRET: ${KLAAR_STRIPE_WEBHOOK_SECRET:-}
+      # Vrai par défaut : le service est derrière un terminateur TLS. Le mettre
+      # à faux ici ferait refuser le cookie de session par le navigateur, ce
+      # qui se manifeste par des déconnexions inexpliquées plutôt que par une
+      # erreur.
+      KLAAR_COOKIE_SECURE: ${KLAAR_COOKIE_SECURE:-true}
+      # À poser **seulement** derrière un proxy inverse de confiance. Sans lui,
+      # `X-Forwarded-For` est ignoré et la limitation de débit compte par
+      # adresse de connexion directe ; avec lui et sans proxy, elle devient
+      # contournable par un simple en-tête.
+      KLAAR_DERRIERE_PROXY: ${KLAAR_DERRIERE_PROXY:-}
+    ports:
+      # Sur la boucle locale seulement : c'est le proxy inverse de l'hôte qui
+      # termine TLS et publie. Ouvrir 0.0.0.0 servirait l'API en clair.
+      - "127.0.0.1:${KLAAR_PORT:-8080}:8080"
+    depends_on:
+      base:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Le balayage périodique (Story 3.6, 4.1, 4.6, 4.4). **Un binaire lancé par
+  # une horloge, et non une tâche de fond dans le service** : une tâche de fond
+  # s'exécute autant de fois qu'il y a d'exemplaires du serveur, et se tait
+  # quand le serveur redémarre au mauvais moment.
+  #
+  # Ce conteneur boucle avec un `sleep`, ce qui suffit à un déploiement simple.
+  # Un ordonnanceur de l'hôte — cron, timer systemd — convient aussi bien et se
+  # surveille mieux ; le choix est laissé à qui déploie.
+  balayage:
+    image: klaar-api:local
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do klaar-expirer || true; sleep 10; done"]
+    environment:
+      DATABASE_URL: postgres://klaar:${KLAAR_PG_PASSWORD:?}@base:5432/klaar
+      KLAAR_VAPID_PRIVATE_KEY: ${KLAAR_VAPID_PRIVATE_KEY:-}
+      KLAAR_VAPID_SUBJECT: ${KLAAR_VAPID_SUBJECT:-}
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  klaar-donnees:

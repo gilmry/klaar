@@ -1401,6 +1401,49 @@ voir : deux îlots Svelte se déconnectaient mutuellement en rafraîchissant la
 session en parallèle (la rotation du refresh y voyait un rejeu), et l'indicateur
 de connexion affirmait « En ligne » avant d'avoir rien vérifié.
 
+## Déployer : ce qui manquait vraiment
+
+**L'application n'était déployable nulle part, et ce n'était pas un problème
+d'hébergeur.** Le service tournait en processus natif sur un poste de
+développement ; rien ne permettait de le construire ni de le lancer ailleurs de
+façon reproductible. Ce manque avait été rangé sous « il faut un compte OVH »,
+et c'était une erreur de diagnostic — il n'y avait pas d'image.
+
+`Containerfile` produit une image en deux étapes : **l'exécution ne contient pas
+de compilateur**, seulement les quatre binaires. Une image qui embarque la
+chaîne Rust pèse deux gigaoctets et offre à qui l'ouvre de quoi compiler ce
+qu'il veut ; celle-ci fait 206 Mo. Le service y tourne en **compte non
+privilégié** — il écoute au-dessus de 1024 et n'écrit sur aucun disque, il n'a
+donc besoin d'aucun droit. La version de base est **épinglée**, parce qu'une
+image de base qui bouge sous les pieds fait échouer une reconstruction
+identique.
+
+`compose.deploiement.yml` monte l'ensemble sur **n'importe quel hôte** : base,
+migrations en une passe, service, balayage. Séparé du `docker-compose.yml` de
+développement, qui expose PostgreSQL avec un mot de passe en clair — les mêler
+donnerait un fichier qu'on croirait bon pour les deux, et ce mot de passe
+finirait en production. La base n'y publie **aucun port**, le service publie sur
+la boucle locale seulement, et la composition **refuse de démarrer sans
+secrets** plutôt que d'en inventer.
+
+**Un défaut trouvé au premier lancement réel** : `pg_isready` sans hôte réussit
+contre le serveur temporaire que l'image officielle lance pour initialiser son
+répertoire de données, lequel n'écoute que sur le socket Unix. La base était
+déclarée saine, les migrations partaient, et la connexion était refusée. Le
+contrôle interroge désormais `127.0.0.1`. Le `docker-compose.yml` de
+développement portait la même faiblesse sans qu'elle se voie, le service y étant
+lancé à la main.
+
+Vérifié de bout en bout : image construite, base initialisée depuis zéro,
+trente-sept migrations appliquées, `/api/v1/health` et le catalogue servis, le
+balayage tournant, la base injoignable depuis l'hôte.
+
+**Ce que cela change au décompte des dépendances.** « Il faut un compte OVH »
+devient « il faut un hôte », ce qui n'est pas la même phrase : un VPS, une
+machine de bureau, ce qu'on veut. Restent les dépendances qui ne se remplacent
+pas par du code — Stripe, itsme, la BCE, un seau d'objets, un trousseau eIDAS,
+et la DPIA à signer.
+
 ## Contrat OpenAPI : une lacune trouvée au troisième passage
 
 `ErreurAuthDto` était **déclaré dans les schémas et référencé par aucune

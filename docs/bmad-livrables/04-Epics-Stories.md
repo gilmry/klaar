@@ -77,12 +77,37 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Taille** : **M** (0,75 j) · **Tours** : 3
 - **DoD** : package versionné semver · Tauri + admin consomment · breaking change = bump majeur
 
-### Story 0.7a — Terraform provisioning 4 environnements (dev/integration/staging/prod)
+### Story 0.7a — Terraform provisioning 4 environnements (dev/integration/staging/prod) — *bloquée, mais le préalable est levé*
 - **En tant que** équipe · **je veux** 4 env provisionnés via Terraform · **afin de** respecter `bootstrap-delivrabilite.md`
 - **Critères Gherkin** : `Étant donné` un clone neuf · `Quand` je lance `make env-staging` · `Alors` l'env staging est joignable sur OVH BE/EU
 - **4×N** : `@happy` env OK · `@negative` quota OVH atteint · `@edge` multi-env parallèle · `@security` secrets en vault
 - **Couche(s)** : IaC
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **Le vrai manque n'était pas l'hébergeur.** Ces trois stories étaient rangées
+> sous « il faut un compte OVH », et cela masquait un problème plus simple :
+> l'application n'était déployable **nulle part**, faute d'image de service. Le
+> binaire tournait en processus natif sur un poste de développement, et rien ne
+> permettait de le construire ailleurs de façon reproductible.
+>
+> **`Containerfile` et `compose.deploiement.yml` lèvent ce préalable**, et sont
+> vérifiés de bout en bout : image construite, base initialisée depuis zéro,
+> trente-sept migrations appliquées, service et balayage actifs, base injoignable
+> depuis l'hôte. Le service tourne en compte non privilégié, l'image d'exécution
+> ne contient pas de compilateur, et la composition refuse de démarrer sans
+> secrets.
+>
+> **Un défaut trouvé au premier lancement réel** : `pg_isready` sans hôte réussit
+> contre le serveur temporaire que l'image PostgreSQL lance pour initialiser son
+> répertoire de données, lequel n'écoute que sur le socket Unix. La base était
+> déclarée saine, les migrations partaient, la connexion était refusée.
+>
+> **Ce qui reste bloqué, et ce qui ne l'est plus.** « Il faut un compte OVH »
+> devient « il faut un hôte » : un VPS, une machine de bureau, ce qu'on veut. Ce
+> que Terraform, salt-ssh et GitOps apportent en plus — quatre environnements
+> provisionnés, durcissement CIS, réconciliation continue — demande toujours un
+> fournisseur, et écrire ce code sans pouvoir l'appliquer produirait de
+> l'infrastructure fausse le jour où quelqu'un s'en servirait.
 
 ### Story 0.7b — salt-ssh durcissement CIS + idempotence
 - **En tant que** équipe · **je veux** les serveurs durcis (CIS benchmark) idempotent · **afin de** respecter CyFun Basic

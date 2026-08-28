@@ -1,0 +1,82 @@
+# Image de service pour klaar-api (Story 0.7, préalable au déploiement).
+#
+# **Sans elle, l'application n'est déployable nulle part.** Ce n'était pas un
+# manque d'hébergeur : le service tournait en processus natif sur un poste de
+# développement, et rien ne permettait de le construire ailleurs de façon
+# reproductible. Le manque a été pris pour une dépendance à OVH ; il n'en était
+# pas une. Avec cette image, « il faut un compte OVH » devient « il faut un
+# hôte », ce qui n'est pas la même phrase.
+#
+# **Deux étapes, et l'exécution ne contient pas de compilateur.** Une image qui
+# embarque la chaîne Rust pèse deux gigaoctets et offre à qui l'ouvre de quoi
+# compiler ce qu'il veut. Ce qui part en production est le binaire et rien
+# d'autre.
+#
+# `Containerfile` et non `Dockerfile` : le format est le même, le nom ne
+# désigne pas un outil unique — podman et buildah le lisent aussi bien.
+
+# --- étape 1 : compilation -------------------------------------------------
+#
+# La version est celle de `rust-version` dans Cargo.toml. Épinglée et non
+# `latest` : une image de base qui bouge sous les pieds fait échouer une
+# reconstruction identique, et c'est le contraire d'une image reproductible.
+FROM docker.io/library/rust:1.88-bookworm AS compilation
+
+WORKDIR /src
+
+# Les manifestes d'abord, le code ensuite : une modification de source ne doit
+# pas invalider le cache des dépendances, qui est l'essentiel du temps de
+# compilation.
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+COPY migrations ./migrations
+
+# `--locked` : la compilation refuse de mettre à jour `Cargo.lock`. Une image
+# qui résoudrait ses dépendances à la construction ne produirait pas deux fois
+# le même binaire, et le SBOM publié par la CI ne décrirait plus ce qui tourne.
+RUN cargo build --release --locked \
+        --bin klaar-api \
+        --bin klaar-migrate \
+        --bin klaar-expirer \
+        --bin klaar-effacer
+
+# --- étape 2 : exécution ---------------------------------------------------
+#
+# `debian:bookworm-slim` et non `scratch` : les binaires sont liés à la glibc et
+# à OpenSSL. Une image `scratch` demanderait une compilation statique musl, donc
+# une chaîne de compilation croisée — un coût réel pour un gain qui ne se voit
+# qu'à la taille de l'image.
+FROM docker.io/library/debian:bookworm-slim AS service
+
+# `ca-certificates` : sans elles, tout appel HTTPS sortant échoue avec une
+# erreur de certificat que personne ne relie à l'image. `curl` sert au contrôle
+# de santé et rien d'autre.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# **Un compte non privilégié.** Un service qui tourne en root donne le root de
+# l'hôte à qui trouve une évasion de conteneur, et il n'a besoin d'aucun droit
+# particulier : il écoute au-dessus de 1024 et n'écrit sur aucun disque.
+RUN useradd --system --create-home --uid 10001 klaar
+USER klaar
+WORKDIR /home/klaar
+
+COPY --from=compilation /src/target/release/klaar-api /usr/local/bin/
+COPY --from=compilation /src/target/release/klaar-migrate /usr/local/bin/
+COPY --from=compilation /src/target/release/klaar-expirer /usr/local/bin/
+COPY --from=compilation /src/target/release/klaar-effacer /usr/local/bin/
+
+EXPOSE 8080
+
+# Le contrôle de santé interroge la route que le service expose déjà, plutôt
+# qu'un fichier témoin : un processus vivant qui ne répond plus est exactement
+# ce qu'un redémarrage doit corriger.
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8080/api/v1/health || exit 1
+
+# Les trois autres binaires — migrations, balayage, effacement — s'invoquent en
+# surchargeant la commande. Ils ne sont pas des services : les lancer au
+# démarrage du conteneur ferait tourner un balayage par exemplaire du serveur,
+# ce que leur en-tête interdit explicitement.
+CMD ["klaar-api"]
