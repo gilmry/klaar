@@ -123,6 +123,32 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Annulation : ce que le motif a le droit d'être (Story 3.5, FR-014)
+
+FR-014 veut le motif d'annulation « stocké pour analytics ». Le motif est un
+**vocabulaire fermé de cinq codes**, pas un texte libre : ce dernier inviterait à
+écrire une donnée personnelle non sollicitée dans un champ dont la finalité
+annoncée est statistique. Un motif hors vocabulaire est refusé, pas ramené sur
+`OTHER`.
+
+**Le motif vit sur la Demande, pas dans le journal d'audit.** Il disparaît donc
+avec elle quand le compte est effacé (art. 17), sans qu'aucune procédure de purge
+n'ait à s'en souvenir ; dans le journal, il survivrait à l'effacement. Une
+contrainte de base impose qu'un motif n'existe que sur une Demande annulée.
+
+**L'avis envoyé aux prestataires notifiés ne dit pas pourquoi.** Le motif
+appartient au demandeur ; le diffuser à dix entreprises en ferait un jugement.
+
+**Écart au FR, assumé : 404 et non 403** pour la Demande d'autrui. Distinguer
+« elle n'existe pas » de « elle n'est pas à vous » laisserait apprendre quelles
+Demandes existent. C'est la précédence de l'anti-énumération, déjà retenue
+ailleurs sur ce projet.
+
+**Après attribution, l'annulation est refusée** : le prestataire est peut-être
+déjà en route, et c'est la Mission qu'il faut alors annuler (FR-023). La course
+entre une annulation et une acceptation est tranchée par PostgreSQL, les deux
+écritures portant sur la même ligne.
+
 ## Fin de tour et élargissement (Story 3.6, FR-015)
 
 **Contradiction du PRD tranchée.** FR-013 refusait une acceptation après cinq

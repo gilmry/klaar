@@ -421,6 +421,35 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   La `Mission` n'a qu'un statut, `ASSIGNED` : sa machine à états appartient à
   FR-018. Il n'existe pas encore d'interface prestataire.
 
+- **3.5** — **Annulation par le demandeur** : `DELETE /api/v1/requests/{id}`,
+  motif facultatif en paramètre.
+
+  **Le motif est un vocabulaire fermé de cinq codes, pas un texte libre.** Le
+  FR veut le motif « pour analytics » ; un champ libre inviterait à écrire
+  « le plombier d'hier était désagréable, j'habite au 12 rue X », c'est-à-dire
+  une donnée personnelle non sollicitée dans un champ dont la finalité annoncée
+  est statistique. Un motif hors vocabulaire est **refusé** et non ramené sur
+  `OTHER` : le ramener silencieusement ferait passer une faute de frappe pour un
+  choix délibéré.
+
+  Le motif vit sur la Demande et non dans le journal d'audit : il s'efface donc
+  avec elle quand le compte est effacé (art. 17). Une contrainte de base impose
+  qu'un motif n'existe que sur une Demande annulée.
+
+  **Écart au FR : 404 et non 403** pour la Demande d'autrui. Distinguer « elle
+  n'existe pas » de « elle n'est pas à vous » laisserait apprendre quelles
+  Demandes existent, et l'élargissement répond déjà ainsi.
+
+  Après attribution, l'annulation est refusée : le prestataire est peut-être
+  déjà en route, et c'est la Mission qu'il faut alors annuler (FR-023). La
+  course annulation/acceptation est tranchée par PostgreSQL ; si l'annulation
+  gagne, le prestataire reçoit un 410 — la Demande a existé et n'existe plus, ce
+  qui n'est pas « quelqu'un d'autre l'a ».
+
+  L'avis envoyé aux prestataires ne dit pas pourquoi : le motif appartient au
+  demandeur, et « trouvé ailleurs » diffusé à dix entreprises se lit vite comme
+  un reproche.
+
 - **3.6** — **Fin de tour et élargissement** : `POST /api/v1/requests/{id}/expand-radius`,
   plus le binaire `klaar-expirer`.
 

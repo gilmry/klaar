@@ -82,6 +82,49 @@ impl Urgence {
     }
 }
 
+/// Pourquoi une Demande a été retirée (FR-014 `@security`).
+///
+/// **Un vocabulaire fermé, et pas un texte libre.** FR-014 veut le motif « pour
+/// analytics ». Un champ libre inviterait à écrire « le plombier d'hier était
+/// désagréable, j'habite au 12 rue X » : une donnée personnelle non sollicitée,
+/// dans un champ dont la finalité annoncée est statistique. Cinq codes servent
+/// la même analyse et ne peuvent rien laisser fuir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MotifAnnulation {
+    /// Le problème s'est réglé tout seul.
+    ResoluSeul,
+    /// Trop long à venir.
+    TropLong,
+    /// Quelqu'un a été trouvé ailleurs.
+    TrouveAilleurs,
+    /// Demande soumise par erreur.
+    Erreur,
+    Autre,
+}
+
+impl MotifAnnulation {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::ResoluSeul => "RESOLVED_ITSELF",
+            Self::TropLong => "TOO_SLOW",
+            Self::TrouveAilleurs => "FOUND_ELSEWHERE",
+            Self::Erreur => "MISTAKE",
+            Self::Autre => "OTHER",
+        }
+    }
+
+    pub fn parse(valeur: &str) -> Option<Self> {
+        match valeur {
+            "RESOLVED_ITSELF" => Some(Self::ResoluSeul),
+            "TOO_SLOW" => Some(Self::TropLong),
+            "FOUND_ELSEWHERE" => Some(Self::TrouveAilleurs),
+            "MISTAKE" => Some(Self::Erreur),
+            "OTHER" => Some(Self::Autre),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatutDemande {
     /// Diffusée aux prestataires, en attente d'acceptation.
@@ -184,6 +227,9 @@ pub struct Demande {
     /// Distinct de `cree_le` : un élargissement rouvre une fenêtre entière, et
     /// la faire courir depuis la création la rendrait déjà écoulée.
     pub diffuse_depuis: DateTime<Utc>,
+    /// Renseigné à l'annulation, et seulement si le demandeur en a donné un :
+    /// c'est une information qu'il offre, pas une qu'on lui réclame.
+    pub motif_annulation: Option<MotifAnnulation>,
     pub cree_le: DateTime<Utc>,
 }
 
@@ -228,6 +274,7 @@ impl Demande {
             rayon_metres: RAYONS_METRES[0],
             elargissements: 0,
             diffuse_depuis: maintenant,
+            motif_annulation: None,
             cree_le: maintenant,
         })
     }
@@ -292,12 +339,17 @@ impl Demande {
     /// Annule la Demande à la demande de son auteur (FR-014, FR-015).
     ///
     /// Rend `false` si elle était déjà attribuée : à ce stade, c'est la Mission
-    /// qu'il faut annuler (FR-023), et non la Demande.
-    pub fn annuler(&mut self) -> bool {
+    /// qu'il faut annuler (FR-023), et non la Demande. Annuler celle-ci
+    /// laisserait un prestataire en route sans que rien ne le dise.
+    ///
+    /// Le motif est facultatif : c'est une information que le demandeur offre,
+    /// pas une qu'on lui réclame pour lui rendre un droit.
+    pub fn annuler(&mut self, motif: Option<MotifAnnulation>) -> bool {
         if self.statut == StatutDemande::Attribuee {
             return false;
         }
         self.statut = StatutDemande::Annulee;
+        self.motif_annulation = motif;
         true
     }
 
@@ -651,12 +703,60 @@ mod tests {
     }
 
     #[test]
+    fn happy_les_cinq_motifs_font_l_aller_retour() {
+        for motif in [
+            MotifAnnulation::ResoluSeul,
+            MotifAnnulation::TropLong,
+            MotifAnnulation::TrouveAilleurs,
+            MotifAnnulation::Erreur,
+            MotifAnnulation::Autre,
+        ] {
+            assert_eq!(MotifAnnulation::parse(motif.as_str()), Some(motif));
+        }
+    }
+
+    #[test]
+    fn negative_un_motif_inconnu_ne_se_relit_pas() {
+        // Le vocabulaire est fermé : un champ libre inviterait à écrire une
+        // donnée personnelle dans un champ dont la finalité est statistique.
+        for inconnu in ["le plombier etait desagreable", "resolved_itself", ""] {
+            assert_eq!(MotifAnnulation::parse(inconnu), None, "motif {inconnu}");
+        }
+    }
+
+    #[test]
+    fn happy_le_motif_est_facultatif() {
+        // C'est une information que le demandeur offre, pas une qu'on lui
+        // réclame pour lui rendre un droit.
+        let mut d = demande("Fuite", bruxelles()).unwrap();
+        assert!(d.annuler(None));
+        assert_eq!(d.motif_annulation, None);
+    }
+
+    #[test]
+    fn happy_le_motif_donne_est_conserve() {
+        let mut d = demande("Fuite", bruxelles()).unwrap();
+        assert!(d.annuler(Some(MotifAnnulation::TrouveAilleurs)));
+        assert_eq!(d.motif_annulation, Some(MotifAnnulation::TrouveAilleurs));
+    }
+
+    #[test]
+    fn security_une_annulation_refusee_n_enregistre_aucun_motif() {
+        // Sinon une Demande attribuée porterait le motif d'une annulation qui
+        // n'a pas eu lieu, et l'analyse compterait des annulations imaginaires.
+        let mut d = demande("Fuite", bruxelles()).unwrap();
+        d.statut = StatutDemande::Attribuee;
+        assert!(!d.annuler(Some(MotifAnnulation::TropLong)));
+        assert_eq!(d.motif_annulation, None);
+    }
+
+    #[test]
     fn security_une_demande_attribuee_ne_s_annule_pas() {
         // À ce stade, c'est la Mission qu'il faut annuler (FR-023) : annuler la
         // Demande laisserait un prestataire en route sans que rien ne le dise.
         let mut d = demande("Fuite", bruxelles()).unwrap();
         d.statut = StatutDemande::Attribuee;
-        assert!(!d.annuler());
+        assert!(!d.annuler(Some(MotifAnnulation::Erreur)));
         assert_eq!(d.statut, StatutDemande::Attribuee);
     }
 
@@ -665,7 +765,7 @@ mod tests {
         for statut in [StatutDemande::Diffusion, StatutDemande::SansReponse] {
             let mut d = demande("Fuite", bruxelles()).unwrap();
             d.statut = statut;
-            assert!(d.annuler(), "statut {statut:?}");
+            assert!(d.annuler(None), "statut {statut:?}");
             assert_eq!(d.statut, StatutDemande::Annulee);
         }
     }

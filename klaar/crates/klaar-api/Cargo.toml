@@ -9,6 +9,10 @@ license.workspace = true
 [dependencies]
 klaar-application = { path = "../klaar-application", version = "0.0.0" }
 klaar-identity = { path = "../klaar-identity", version = "0.0.0" }
+# Le vocabulaire du domaine traverse la frontière HTTP : motif d'annulation,
+# rayons successifs, limite d'élargissements. Les recopier en constantes de
+# route les laisserait diverger sans que rien ne le signale.
+klaar-matching = { path = "../klaar-matching", version = "0.0.0" }
 klaar-catalog = { path = "../klaar-catalog", version = "0.0.0" }
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
 klaar-sqlx-repos = { path = "../klaar-sqlx-repos", version = "0.0.0" }
@@ -72,10 +76,6 @@ name = "klaar-prestataires-demo"
 path = "src/bin/prestataires_demo.rs"
 
 [dev-dependencies]
-# Les constantes du domaine — rayons successifs, limite d'élargissements — pour
-# que les tests d'API assertent sur elles plutôt que sur des chiffres recopiés
-# qui divergeraient sans que rien ne le signale.
-klaar-matching = { path = "../klaar-matching", version = "0.0.0" }
 actix-rt = "2"
 # Pour lancer deux requêtes réellement concurrentes sur le même jeton et
 # vérifier que le verrou tient.

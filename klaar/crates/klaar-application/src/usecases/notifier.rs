@@ -167,6 +167,48 @@ where
     .await
 }
 
+/// Compose l'avis « le demandeur a retiré sa Demande » (FR-014 `@happy`).
+///
+/// Ne dit pas **pourquoi**. Le motif appartient au demandeur ; le porter aux
+/// prestataires notifiés en ferait un jugement diffusé à dix entreprises, et
+/// « trouvé ailleurs » se lit vite comme un reproche.
+pub fn composer_annulation(demande: &Demande, locale: Locale) -> PushMessage {
+    let (titre, corps) = match locale {
+        Locale::Fr => ("Demande annulée", "Le demandeur l'a retirée"),
+        Locale::Nl => ("Aanvraag geannuleerd", "De aanvrager heeft ze ingetrokken"),
+        Locale::En => ("Request cancelled", "The requester withdrew it"),
+    };
+    PushMessage {
+        titre: format!("{titre} — {}", demande.secteur),
+        corps: corps.to_string(),
+        url: "/prestataire".to_string(),
+        // Même `tag` : cet avis remplace la notification d'origine au lieu de
+        // s'ajouter à elle, sinon quelqu'un part pour une Demande retirée.
+        tag: Some(format!("demande-{}", demande.id)),
+    }
+}
+
+/// Prévient les candidats notifiés que la Demande a été retirée (FR-014).
+pub async fn notifier_annulation<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    demande: &Demande,
+    comptes: &[Uuid],
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        comptes,
+        &composer_annulation(demande, locale),
+    )
+    .await
+}
+
 /// Prévient les candidats qu'un autre a pris la Demande (FR-013 `@happy`).
 ///
 /// Séparé de l'attribution elle-même : une panne du service de push ne doit pas
@@ -404,6 +446,64 @@ mod tests {
                 .push((abonnement.endpoint.clone(), message.clone()));
             Ok(())
         }
+    }
+
+    #[tokio::test]
+    async fn security_l_avis_d_annulation_ne_dit_pas_pourquoi() {
+        // Le motif appartient au demandeur ; le porter à dix entreprises en
+        // ferait un jugement diffusé, et « trouvé ailleurs » se lit vite comme
+        // un reproche.
+        let d = demande(Urgence::Haute);
+        let m = composer_annulation(&d, Locale::Fr);
+        let tout = format!("{} {} {}", m.titre, m.corps, m.url);
+        for interdit in ["FOUND_ELSEWHERE", "TOO_SLOW", "Fuite", "50.8", "4.35"] {
+            assert!(
+                !tout.contains(interdit),
+                "le message ne doit pas dire {interdit}"
+            );
+        }
+        assert!(!tout.contains(&d.demandeur_id.to_string()));
+    }
+
+    #[tokio::test]
+    async fn happy_l_avis_d_annulation_remplace_la_notification_d_origine() {
+        let d = demande(Urgence::Haute);
+        assert_eq!(
+            composer(&d, 500.0, Locale::Fr).tag,
+            composer_annulation(&d, Locale::Fr).tag
+        );
+    }
+
+    #[tokio::test]
+    async fn happy_l_avis_d_annulation_est_traduit() {
+        let d = demande(Urgence::Haute);
+        for locale in [Locale::Fr, Locale::Nl, Locale::En] {
+            let m = composer_annulation(&d, locale);
+            assert!(!m.corps.is_empty(), "locale {locale:?}");
+            assert!(m.titre.contains("plomberie"), "locale {locale:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn happy_les_candidats_notifies_apprennent_l_annulation() {
+        let a = Uuid::new_v4();
+        let abonnements = AbonnementsMemoire::default();
+        abonnements
+            .par_sujet
+            .borrow_mut()
+            .push((a, abonnement("https://push.example.net/a")));
+        let notifieur = NotifieurFactice::default();
+
+        let bilan = notifier_annulation(
+            &abonnements,
+            &notifieur,
+            &demande(Urgence::Haute),
+            &[a],
+            Locale::Fr,
+        )
+        .await
+        .unwrap();
+        assert_eq!(bilan.notifies, 1);
     }
 
     #[tokio::test]

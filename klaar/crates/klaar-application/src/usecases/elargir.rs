@@ -108,12 +108,15 @@ where
             // FR-015 `@security` : la Demande est auto-annulée. Laisser un
             // `NO_MATCH` entretiendrait l'idée que quelque chose peut encore
             // arriver.
-            demande.annuler();
+            // Aucun motif : ce n'est pas le demandeur qui renonce, c'est la règle
+            // des trois élargissements qui s'arrête. Lui prêter un motif
+            // fausserait l'analyse des annulations volontaires.
+            demande.annuler(None);
             // `annuler` et non `changer_statut` : la Demande est en `NO_MATCH`,
             // et `changer_statut` ne quitte que `BROADCASTING`. Les confondre
             // laissait la Demande en attente après le refus, ce qu'un test
             // d'intégration a attrapé.
-            demandes.annuler(demande.id).await?;
+            demandes.annuler(demande.id, None).await?;
             return Err(ErreurElargissement::RayonMaximalAtteint);
         }
         Err(_) => {
@@ -208,7 +211,11 @@ mod tests {
         ) -> Result<Vec<Demande>, RepositoryError> {
             unreachable!()
         }
-        async fn annuler(&self, _: Uuid) -> Result<bool, RepositoryError> {
+        async fn annuler(
+            &self,
+            _: Uuid,
+            _: Option<klaar_matching::MotifAnnulation>,
+        ) -> Result<bool, RepositoryError> {
             self.statuts_ecrits
                 .borrow_mut()
                 .push(StatutDemande::Annulee);

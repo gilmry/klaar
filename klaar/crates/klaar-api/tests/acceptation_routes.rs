@@ -277,6 +277,51 @@ async fn security_un_refus_hors_secteur_laisse_la_demande_prenable() {
 }
 
 #[actix_web::test]
+async fn negative_une_demande_retiree_par_son_auteur_recoit_410() {
+    // FR-014 `@edge` : quand l'annulation gagne la course, le prestataire
+    // reçoit un 410. La Demande a existé et n'existe plus ; ce n'est pas
+    // « quelqu'un d'autre l'a », qui serait un 409.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (_, email) = prestataire(&pool, "sur-annulee", true).await;
+    let jeton = jeton(&app, &email).await;
+    let demande_id = demande_diffusee(&pool, 0).await;
+    sqlx::query("UPDATE demande SET statut = 'CANCELLED' WHERE id = $1")
+        .bind(demande_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let reponse =
+        test::call_service(&app, accept(&jeton, &demande_id.to_string()).to_request()).await;
+    assert_eq!(reponse.status(), StatusCode::GONE);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "REQUEST_CANCELLED");
+}
+
+#[actix_web::test]
+async fn negative_une_demande_sans_reponse_recoit_410() {
+    // FR-015 `@edge` : l'accept tardif est rejeté en 410, pas en 409 — le tour
+    // s'est terminé sans personne, il n'y a pas de concurrent à aller chercher.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (_, email) = prestataire(&pool, "sur-nomatch", true).await;
+    let jeton = jeton(&app, &email).await;
+    let demande_id = demande_diffusee(&pool, 0).await;
+    sqlx::query("UPDATE demande SET statut = 'NO_MATCH' WHERE id = $1")
+        .bind(demande_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let reponse =
+        test::call_service(&app, accept(&jeton, &demande_id.to_string()).to_request()).await;
+    assert_eq!(reponse.status(), StatusCode::GONE);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "REQUEST_EXPIRED");
+}
+
+#[actix_web::test]
 async fn negative_une_demande_inconnue_recoit_404() {
     let pool = pool().await;
     let app = bac!(pool);

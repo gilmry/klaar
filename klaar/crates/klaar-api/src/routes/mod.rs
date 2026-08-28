@@ -2,6 +2,7 @@
 //! story et un FR du PRD.
 
 pub mod acceptation;
+pub mod annulation;
 pub mod auth;
 pub mod catalogue;
 pub mod compte;

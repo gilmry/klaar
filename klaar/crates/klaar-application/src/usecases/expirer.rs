@@ -175,7 +175,11 @@ mod tests {
             });
             Ok(eteintes)
         }
-        async fn annuler(&self, _: Uuid) -> Result<bool, RepositoryError> {
+        async fn annuler(
+            &self,
+            _: Uuid,
+            _: Option<klaar_matching::MotifAnnulation>,
+        ) -> Result<bool, RepositoryError> {
             unreachable!()
         }
         async fn relancer(&self, _: &Demande) -> Result<bool, RepositoryError> {

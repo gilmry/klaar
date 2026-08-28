@@ -7,7 +7,7 @@ use uuid::Uuid;
 use klaar_application::ports::demande_repository::{DemandeRepository, PaiementRepository};
 use klaar_application::ports::erreurs::RepositoryError;
 use klaar_catalog::CodeCatalogue;
-use klaar_matching::{Demande, StatutDemande, Urgence, FENETRE_DOUBLON_MINUTES};
+use klaar_matching::{Demande, MotifAnnulation, StatutDemande, Urgence, FENETRE_DOUBLON_MINUTES};
 use klaar_shared_kernel::Geo;
 
 use crate::erreur;
@@ -29,7 +29,7 @@ impl PgDemandeRepository {
 /// décoder sans dépendance supplémentaire, et deux réels suffisent au domaine,
 /// qui ne connaît que `Geo`.
 const COLONNES: &str = "id, demandeur_id, secteur_code, description, urgence, statut, \
-     rayon_metres, elargissements, diffuse_depuis, cree_le, \
+     rayon_metres, elargissements, diffuse_depuis, motif_annulation, cree_le, \
      ST_Y(position::geometry) AS lat, ST_X(position::geometry) AS lon";
 
 fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Demande, RepositoryError> {
@@ -56,6 +56,14 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Demande, RepositoryErro
         // bornée par la contrainte de la base.
         elargissements: ligne.get::<i16, _>("elargissements").clamp(0, 255) as u8,
         diffuse_depuis: ligne.get("diffuse_depuis"),
+        motif_annulation: ligne
+            .get::<Option<String>, _>("motif_annulation")
+            .as_deref()
+            .map(|m| {
+                MotifAnnulation::parse(m)
+                    .ok_or_else(|| RepositoryError::Contrainte(format!("motif inconnu : {m}")))
+            })
+            .transpose()?,
         cree_le: ligne.get("cree_le"),
     })
 }
@@ -214,17 +222,22 @@ impl DemandeRepository for PgDemandeRepository {
         Ok(resultat.rows_affected() > 0)
     }
 
-    async fn annuler(&self, id: Uuid) -> Result<bool, RepositoryError> {
+    async fn annuler(
+        &self,
+        id: Uuid,
+        motif: Option<MotifAnnulation>,
+    ) -> Result<bool, RepositoryError> {
         // Deux statuts de départ, et pas un : le quatrième élargissement refusé
         // annule une Demande qui est en `NO_MATCH`, pas en diffusion.
         // `MATCHED` en est exclu — à ce stade, c'est la Mission qu'il faut
         // annuler, et effacer la Demande laisserait un prestataire en route
         // sans que rien ne le dise.
         let resultat = sqlx::query(
-            "UPDATE demande SET statut = 'CANCELLED'
+            "UPDATE demande SET statut = 'CANCELLED', motif_annulation = $2
              WHERE id = $1 AND statut IN ('BROADCASTING', 'NO_MATCH')",
         )
         .bind(id)
+        .bind(motif.map(|m| m.as_str()))
         .execute(&self.pool)
         .await
         .map_err(erreur)?;

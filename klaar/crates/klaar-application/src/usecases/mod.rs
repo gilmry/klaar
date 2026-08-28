@@ -2,6 +2,7 @@
 //! propre. Chacun est tracé sur un FR du PRD.
 
 pub mod accepter;
+pub mod annuler;
 pub mod connecter;
 pub mod effacer;
 pub mod elargir;

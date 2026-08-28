@@ -9,7 +9,9 @@ use chrono::{Duration, Utc};
 use klaar_application::ports::demande_repository::DemandeRepository;
 use klaar_catalog::CodeCatalogue;
 use klaar_identity::{EmpreinteMotDePasse, MotDePasse, ParametresArgon2};
-use klaar_matching::{Demande, StatutDemande, Urgence, DUREE_DIFFUSION_SECONDES, RAYONS_METRES};
+use klaar_matching::{
+    Demande, MotifAnnulation, StatutDemande, Urgence, DUREE_DIFFUSION_SECONDES, RAYONS_METRES,
+};
 use klaar_shared_kernel::{Email, Geo};
 use klaar_sqlx_repos::demonstration::compte_actif_de_demonstration;
 use klaar_sqlx_repos::{creer_pool, PgDemandeRepository, PoolPg};
@@ -269,12 +271,45 @@ async fn happy_l_annulation_part_de_diffusion_comme_de_sans_reponse() {
     depot.expirer_echues(echeance(), 500).await.unwrap();
 
     for id in [diffusee.id, sans_reponse.id] {
-        assert!(depot.annuler(id).await.unwrap(), "Demande {id}");
+        assert!(
+            depot
+                .annuler(id, Some(MotifAnnulation::TrouveAilleurs))
+                .await
+                .unwrap(),
+            "Demande {id}"
+        );
+        let relue = depot.par_id(id).await.unwrap().unwrap();
+        assert_eq!(relue.statut, StatutDemande::Annulee);
+        // Le motif fait l'aller-retour : c'est ce que FR-014 veut conserver.
         assert_eq!(
-            depot.par_id(id).await.unwrap().unwrap().statut,
-            StatutDemande::Annulee
+            relue.motif_annulation,
+            Some(MotifAnnulation::TrouveAilleurs)
         );
     }
+}
+
+#[tokio::test]
+async fn security_une_demande_attribuee_ne_porte_jamais_de_motif() {
+    // La contrainte de base le grave : sans elle, une Demande attribuée
+    // pourrait porter le motif d'une annulation qui n'a pas eu lieu, et
+    // l'analyse compterait des annulations imaginaires.
+    let pool = pool().await;
+    let depot = PgDemandeRepository::new(pool.clone());
+    let d = demande(&depot, &pool, 0).await;
+    sqlx::query("UPDATE demande SET statut = 'MATCHED' WHERE id = $1")
+        .bind(d.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let refus = sqlx::query("UPDATE demande SET motif_annulation = 'TOO_SLOW' WHERE id = $1")
+        .bind(d.id)
+        .execute(&pool)
+        .await;
+    assert!(
+        refus.is_err(),
+        "la base doit refuser un motif sur une Demande non annulée"
+    );
 }
 
 #[tokio::test]
@@ -290,7 +325,7 @@ async fn security_une_demande_attribuee_ne_s_annule_pas() {
         .await
         .unwrap();
 
-    assert!(!depot.annuler(d.id).await.unwrap());
+    assert!(!depot.annuler(d.id, None).await.unwrap());
     assert_eq!(
         depot.par_id(d.id).await.unwrap().unwrap().statut,
         StatutDemande::Attribuee

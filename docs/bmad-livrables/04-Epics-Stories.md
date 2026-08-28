@@ -621,11 +621,55 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > Aucun paiement n'est engagé à l'acceptation (FR-024 et suivants, bloqués par
 > Stripe).
 
-### Story 3.5 — Annulation User avant matching (FR-014)
+### Story 3.5 — Annulation User avant matching (FR-014) — *faite*
 - **En tant que** User · **je veux** annuler ma Demande · **afin de** ne pas être facturé
 - **4×N** : PRD FR-014 (annulation en course)
 - **Couche(s)** : Domain + Application
 - **Taille** : **S** (0,5 j) · **Tours** : 2
+
+> **Le motif est un vocabulaire fermé, pas un texte libre.** FR-014 `@security`
+> veut le motif « stocké pour analytics ». Un champ libre inviterait à écrire
+> « le plombier d'hier était désagréable, j'habite au 12 rue X » : une donnée
+> personnelle non sollicitée, dans un champ dont la finalité annoncée est
+> statistique. Cinq codes — résolu seul, trop long, trouvé ailleurs, erreur,
+> autre — servent la même analyse et ne peuvent rien laisser fuir. Un motif hors
+> vocabulaire est **refusé** et non ramené sur `OTHER` : le ramener
+> silencieusement ferait passer une faute de frappe du client pour un choix
+> délibéré.
+>
+> **Le motif vit sur la Demande, pas dans le journal d'audit.** Il disparaît
+> donc avec elle quand le compte est effacé (art. 17), sans qu'aucune procédure
+> de purge n'ait à s'en souvenir. Dans le journal, il survivrait à
+> l'effacement. Une contrainte de base impose en outre qu'un motif n'existe que
+> sur une Demande annulée : sans elle, une Demande attribuée pourrait porter le
+> motif d'une annulation qui n'a pas eu lieu, et l'analyse compterait des
+> annulations imaginaires.
+>
+> **Écart au FR : 404 et non 403 pour la Demande d'autrui.** FR-014 `@negative`
+> demande un 403 `FORBIDDEN`. Distinguer « elle n'existe pas » de « elle n'est
+> pas à vous » laisserait apprendre quelles Demandes existent ; la précédence de
+> l'anti-énumération est une décision déjà prise sur ce projet, et rendre deux
+> codes différents sur deux routes de la même ressource — annulation et
+> élargissement — serait de surcroît incohérent.
+>
+> **La course annulation/acceptation est tranchée par la base** (FR-014
+> `@edge`). Les deux écritures portent sur la même ligne et sont chacune une
+> seule instruction : PostgreSQL les sérialise. Si l'annulation gagne, le
+> prestataire reçoit **410** — la Demande a existé et n'existe plus, ce qui
+> n'est pas « quelqu'un d'autre l'a » ; si l'acceptation gagne, le demandeur est
+> renvoyé vers FR-023.
+>
+> **Le statut reste `CANCELLED` et non `CANCELLED_USER`.** À ce stade, une
+> Demande n'a qu'un annulateur possible : son auteur. Qualifier n'ajoute rien,
+> et la distinction que FR-014 anticipe appartient à la Mission (FR-022,
+> FR-023), où les deux parties peuvent annuler.
+>
+> **« Aucun paiement n'est capturé » est vrai sans effort** : aucun paiement
+> n'est jamais capturé, Stripe étant hors du périmètre vitrine (Story 1.7).
+>
+> **L'avis envoyé aux prestataires ne dit pas pourquoi.** Le motif appartient au
+> demandeur ; le porter à dix entreprises en ferait un jugement diffusé, et
+> « trouvé ailleurs » se lit vite comme un reproche.
 
 ### Story 3.6 — Timeout NO_MATCH + élargir rayon (FR-015) — *faite*
 - **En tant que** système · **je veux** annoncer NO_MATCH après 30 s · **afin de** garder l'User informé

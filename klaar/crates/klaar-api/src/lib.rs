@@ -96,6 +96,7 @@ pub struct EtatApplication {
         routes::demande::soumettre_demande,
         routes::acceptation::accepter_demande,
         routes::elargissement::elargir_rayon,
+        routes::annulation::annuler_demande,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -120,6 +121,7 @@ pub struct EtatApplication {
         routes::demande::DemandeCreeeDto,
         routes::acceptation::MissionDto,
         routes::elargissement::ElargissementDto,
+        routes::annulation::AnnulationDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -153,6 +155,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::demande::soumettre_demande)
         .service(routes::acceptation::accepter_demande)
         .service(routes::elargissement::elargir_rayon)
+        .service(routes::annulation::annuler_demande)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);

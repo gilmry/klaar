@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use klaar_catalog::CodeCatalogue;
-use klaar_matching::{Demande, StatutDemande};
+use klaar_matching::{Demande, MotifAnnulation, StatutDemande};
 use klaar_shared_kernel::Geo;
 use uuid::Uuid;
 
@@ -71,7 +71,15 @@ pub trait DemandeRepository {
     ///
     /// Rend `false` si la Demande était déjà attribuée : à ce stade, c'est la
     /// Mission qu'il faut annuler (FR-023).
-    async fn annuler(&self, id: Uuid) -> Result<bool, RepositoryError>;
+    ///
+    /// Le motif est facultatif et pris dans un vocabulaire fermé (FR-014
+    /// `@security`) : c'est une information que le demandeur offre, pas une
+    /// qu'on lui réclame pour lui rendre un droit.
+    async fn annuler(
+        &self,
+        id: Uuid,
+        motif: Option<MotifAnnulation>,
+    ) -> Result<bool, RepositoryError>;
 
     /// Demandes du compte sur la dernière heure (FR-011 `@edge`).
     async fn compter_depuis_une_heure(

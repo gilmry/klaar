@@ -39,6 +39,10 @@ pub enum ErreurAcceptation {
     /// Le tour de diffusion est écoulé, ou la Demande est déjà `NO_MATCH`.
     Expiree,
     /// Le demandeur l'a retirée (FR-014, FR-015 `@security`).
+    ///
+    /// Rendue en 410 et non en 409 : la Demande a existé et n'existe plus,
+    /// c'est ce que FR-014 `@edge` demande, et cela distingue « c'est fini »
+    /// de « quelqu'un d'autre l'a ».
     Annulee,
     /// Une Mission en cours occupe déjà le prestataire (FR-013 `@edge`).
     Occupe,
@@ -306,7 +310,11 @@ mod tests {
         ) -> Result<Vec<Demande>, RepositoryError> {
             unreachable!()
         }
-        async fn annuler(&self, _: Uuid) -> Result<bool, RepositoryError> {
+        async fn annuler(
+            &self,
+            _: Uuid,
+            _: Option<klaar_matching::MotifAnnulation>,
+        ) -> Result<bool, RepositoryError> {
             unreachable!()
         }
         async fn relancer(&self, _: &Demande) -> Result<bool, RepositoryError> {
