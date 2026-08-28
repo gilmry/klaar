@@ -181,6 +181,49 @@ sonner à sa porte est le minimum. Rien d'autre du prestataire ne lui est expos�
 que la Demande est close. Le temps réel appartient au WebSocket de FR-018, non
 livré.
 
+## Ce que l'échange OIDC garantit sans contrat (Story 1.5, FR-002)
+
+**`state` et `nonce` sont deux protections distinctes, et les confondre en
+laisse une ouverte.** Le `state` revient dans l'URL de retour et prouve que
+l'échange vient de nous — contre une requête forgée depuis un autre site. Le
+`nonce` revient dans le jeton signé et prouve que ce jeton a été émis pour cet
+échange — contre le rejeu d'un jeton authentique capté ailleurs.
+
+**Les trois valeurs de l'échange sont tirées séparément.** Réutiliser le `state`
+comme `nonce` ferait d'une fuite du premier — qui voyage dans une URL, donc dans
+l'historique du navigateur, l'en-tête `Referer` et les journaux d'accès — une
+fuite du second.
+
+**Le vérificateur PKCE ne quitte pas le service avant l'échange du code**, et
+`Debug` est écrit à la main pour qu'il n'apparaisse pas dans un journal. La
+méthode est `S256` : `plain` enverrait le vérificateur lui-même dans le
+navigateur, ce qui revient à ne pas faire de PKCE.
+
+**Un jeton signé n'est pas un jeton valable.** La signature dit qui l'a émis ;
+elle ne dit ni pour qui, ni pour quand, ni pour quel échange. Quatre contrôles
+s'y ajoutent : l'émetteur — sans quoi n'importe quel fournisseur d'identité fait
+l'affaire, y compris un que l'attaquant contrôle ; l'audience — sans quoi un
+jeton authentique émis pour un autre service passe ; l'échéance ; et le nonce.
+
+**La durée de vie est contrôlée par le service, pas seulement par l'émetteur.**
+FR-002 admet soixante secondes ; un fournisseur qui émettrait des jetons d'une
+heure ouvrirait une fenêtre de rejeu d'une heure sans que rien ne le signale de
+notre côté. Une dérive d'horloge de trente secondes est tolérée, ni plus — elle
+rallonge d'autant la fenêtre de rejeu — ni moins, sous peine de refuser des
+jetons valables.
+
+**Le niveau eIDAS est vérifié, et son absence refusée** : un jeton qui ne dit pas
+comment la personne s'est authentifiée ne permet pas d'annoncer « identité
+vérifiée ».
+
+**Un seul code de refus pour toutes les causes.** Dire laquelle des
+vérifications a échoué renseignerait qui fabrique des jetons sur ce qui lui
+reste à corriger.
+
+**Le numéro belge est contrôlé avant de lancer l'échange**, pour qu'un numéro
+étranger reçoive le repli par courriel plutôt qu'un échec itsme qui ne lui dit
+rien.
+
 ## Preuves photographiques : une tension à trancher (Story 4.5, FR-019 vs FR-020)
 
 **Deux exigences du PRD se contredisent sur la précision de localisation, et

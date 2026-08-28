@@ -255,12 +255,72 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > entière, maillons déjà consommés compris — les laisser vivants rendrait la détection de
 > rejeu inopérante après un `logout`.
 
-### Story 1.5 — Auth itsme complet (FR-002)
+### Story 1.5 — Auth itsme complet (FR-002) — *garanties faites ; l'échange attend le contrat*
 - **En tant que** User/Provider belge · **je veux** m'authentifier itsme · **afin de** vérifier mon identité eIDAS substantial
 - **4×N** : PRD FR-002 (5 scénarios)
 - **Couche(s)** : Infra (itsme adapter OIDC) + Application + Frontend
 - **Taille** : **L** (1 j) · **Tours** : 6
 - **Dépendance** : sandbox itsme à demander (story amont)
+
+> **Le contrat manque ; les garanties, non.** Ce qui demande un contrat est
+> l'échange réseau : identifiants client, document de découverte, jeu de clés
+> publiques. Ce qui **protège** cet échange ne dépend d'aucun contrat, et c'est
+> ce qu'on ne voudrait pas écrire dans l'urgence le jour où les identifiants
+> arrivent.
+>
+> **`state` et `nonce` ne font pas le même travail, et les confondre est
+> l'erreur courante.** Le `state` revient dans l'URL de retour : il prouve que
+> l'échange vient de nous, contre une requête forgée depuis un autre site. Le
+> `nonce` revient **dans le jeton signé** : il prouve que ce jeton-là a été émis
+> pour cet échange-ci, contre le rejeu d'un jeton authentique capté ailleurs.
+> N'en avoir qu'un laisse l'autre attaque ouverte, et un test le montre dans les
+> deux sens.
+>
+> **Les trois valeurs sont tirées séparément.** Réutiliser le `state` comme
+> `nonce` ferait d'une fuite du premier — qui voyage dans une URL, donc dans
+> l'historique du navigateur et les journaux d'accès — une fuite du second.
+>
+> **PKCE en `S256`, jamais `plain`** : `plain` envoie le vérificateur lui-même
+> dans le navigateur, ce qui revient à ne pas faire de PKCE. Le vérificateur ne
+> sort pas du service avant l'échange du code, et `Debug` est écrit à la main
+> pour qu'il n'apparaisse pas dans le premier journal venu.
+>
+> **Quatre contrôles sur le jeton d'identité, et aucun n'est superflu.** Un
+> jeton signé n'est pas un jeton valable : la signature dit qui l'a émis, pas
+> pour qui ni pour quand. Sans l'**émetteur**, n'importe quel fournisseur
+> d'identité fait l'affaire — y compris un que l'attaquant contrôle. Sans
+> l'**audience**, un jeton authentique émis pour un autre service passe, et
+> c'est le défaut le plus commun des intégrations OIDC. Sans l'**échéance**, un
+> jeton fuité vaut à vie. Sans le **nonce**, il se rejoue.
+>
+> **La durée de vie est contrôlée par nous, pas seulement par l'émetteur**
+> (FR-002 `@security` : « ≤ 60 s »). Un fournisseur qui émettrait des jetons
+> d'une heure ouvrirait une fenêtre de rejeu d'une heure sans que rien ne le
+> signale de notre côté. Une dérive d'horloge de trente secondes est tolérée :
+> sans elle, deux secondes d'avance chez itsme feraient refuser des jetons
+> valables.
+>
+> **Le niveau eIDAS est vérifié, et son absence refusée.** Un jeton qui ne dit
+> pas comment la personne s'est authentifiée ne permet pas d'annoncer « identité
+> vérifiée » ; accepter n'importe quel niveau reviendrait à promettre une
+> garantie « substantial » qu'on n'a pas obtenue.
+>
+> **Un seul code de refus**, comme pour la signature Stripe : dire laquelle des
+> vérifications a échoué renseignerait qui fabrique des jetons sur ce qui lui
+> reste à corriger.
+>
+> **Le numéro belge est contrôlé avant de lancer l'échange** (FR-002 `@edge`),
+> pour qu'un numéro français reçoive le repli par courriel plutôt qu'un échec
+> itsme qui ne lui dit rien. Et les erreurs d'itsme sont traduites par une liste
+> fermée avec repli explicite : un code inconnu devient `ITSME_UNAVAILABLE`
+> plutôt que de remonter tel quel à l'écran.
+>
+> **Ce qui attend le contrat** : l'échange du code contre un jeton, la
+> récupération du JWKS et la vérification de **signature** — qui se fait contre
+> une clé obtenue au réseau, d'où sa séparation d'avec le contrôle des
+> revendications, lequel se vérifie hors ligne. Ainsi que le hachage argon2id du
+> `sub` (FR-002 `@security` : jamais en clair), la liaison de compte et son
+> conflit `ITSME_ALREADY_LINKED`, et l'écran.
 
 ### Story 1.6 — Onboarding Provider KYC BCE (FR-003) — *agrégat fait, KYC non fourni*
 - **En tant que** Provider candidat · **je veux** soumettre BCE + assurance + Skills · **afin de** recevoir des Demandes

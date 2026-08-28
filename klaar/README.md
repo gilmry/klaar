@@ -961,6 +961,43 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   mais une relecture reste à faire — le néerlandais approximatif dans un service
   bruxellois se remarque.
 
+- **1.5** (garanties) — **Échange OIDC itsme** (FR-002) : `state`, `nonce`,
+  PKCE, et le contrôle des revendications du jeton d'identité.
+
+  **Le contrat manque ; les garanties, non.** Ce qui demande un contrat est
+  l'échange réseau — identifiants, découverte, clés publiques. Ce qui protège
+  cet échange est à nous, et c'est ce qu'on ne voudrait pas écrire dans
+  l'urgence le jour où les identifiants arrivent.
+
+  **`state` et `nonce` ne font pas le même travail.** Le `state` revient dans
+  l'URL : il prouve que l'échange vient de nous, contre une requête forgée
+  depuis un autre site. Le `nonce` revient dans le **jeton signé** : il prouve
+  que ce jeton a été émis pour cet échange, contre le rejeu d'un jeton
+  authentique capté ailleurs. N'en avoir qu'un laisse l'autre attaque ouverte.
+  Les trois valeurs sont tirées séparément — réutiliser le `state` comme
+  `nonce` ferait d'une fuite du premier, qui voyage dans une URL, une fuite du
+  second.
+
+  **PKCE en `S256`, jamais `plain`** : `plain` envoie le vérificateur dans le
+  navigateur, ce qui revient à ne pas faire de PKCE. `Debug` est écrit à la main
+  pour que le vérificateur n'apparaisse pas dans un journal.
+
+  **Un jeton signé n'est pas un jeton valable.** La signature dit qui l'a émis,
+  pas pour qui ni pour quand. Sans contrôle d'**audience**, un jeton authentique
+  émis pour un autre service passe — c'est le défaut le plus commun des
+  intégrations OIDC. La **durée de vie est contrôlée par nous** et pas seulement
+  par l'émetteur : un fournisseur qui émettrait des jetons d'une heure ouvrirait
+  une fenêtre de rejeu d'une heure sans que rien ne le signale.
+
+  **Le niveau eIDAS est vérifié, et son absence refusée** : un jeton qui ne dit
+  pas comment la personne s'est authentifiée ne permet pas d'annoncer « identité
+  vérifiée ».
+
+  Ce qui attend le contrat : l'échange du code, le JWKS et la vérification de
+  signature — qui se fait contre une clé obtenue au réseau, d'où sa séparation
+  d'avec le contrôle des revendications, lequel se vérifie hors ligne. Ainsi que
+  le hachage du `sub`, la liaison de compte et l'écran.
+
 - **4.5** (validation) — **Preuves photographiques** (FR-020) : recevabilité
   d'un fichier, empreinte, quota, paire avant/après.
 
@@ -1317,13 +1354,18 @@ toutes tenant à un tiers absent et non à un manque de travail :
   aurait dû déclencher un paiement rend explicitement qu'elle ne l'a pas fait
   (`execute: false`, `effet_applique: false`), plutôt que de laisser croire à un
   virement.
-- **1.5 (itsme), 1.6 et 8.1 côté BCE réelle** : il faut les accès aux registres.
-  Le contrôle d'entreprise fonctionne, mené par un humain, et l'origine
-  `OPS_REVIEW` dit exactement cela plutôt que de se faire passer pour une
-  interrogation de la BCE.
+- **1.5 (itsme), 1.6 et 8.1 côté BCE réelle** : il faut les accès aux registres
+  et un contrat itsme. **Pas les garanties, seulement l'échange** — même
+  distinction que pour le paiement : le `state`, le `nonce`, PKCE et le contrôle
+  des revendications du jeton sont faits et vérifiés ; ce qui manque est
+  l'appel réseau et la clé de signature. Le contrôle d'entreprise fonctionne,
+  mené par un humain, et l'origine `OPS_REVIEW` dit exactement cela plutôt que
+  de se faire passer pour une interrogation de la BCE.
 - **4.5 et 6.2 (photos et pièces jointes)**, **0.7a/b/c et 0.11 (hébergement)**,
   et la **signature PGP/eIDAS des exports** : stockage objet, compte OVH,
-  trousseau de clés. Trois prérequis d'infrastructure.
+  trousseau de clés. Trois prérequis d'infrastructure — mais là encore, la
+  **recevabilité** d'une preuve photo (type décidé sur le contenu, empreinte,
+  quota, paire) ne dépend d'aucun seau et est faite.
 
 Deux prérequis ne sont pas techniques et restent entiers : la **DPIA
 géolocalisation** (RGPD art. 35), à signer avant tout traitement de position
