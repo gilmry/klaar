@@ -123,6 +123,22 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Notifications : ce qu'un écran verrouillé affiche (Story 3.3)
+
+Une notification push s'affiche sur un écran verrouillé, lisible par quiconque passe à côté
+du téléphone. Le message envoyé aux prestataires ne porte donc **ni la description du
+problème, ni l'adresse, ni rien du demandeur** : seulement le code de secteur, la distance
+arrondie à la centaine de mètres et l'urgence.
+
+Le chiffrement de la charge (RFC 8291) protège le transit, pas l'affichage : les deux
+problèmes sont distincts, et seul le second se règle en choisissant ce qu'on écrit.
+
+La distance est arrondie parce qu'au mètre près, croisée avec la position connue du
+prestataire, elle situerait le demandeur à son domicile.
+
+Un abonnement déclaré disparu par le service de push est supprimé, conformément au principe
+de limitation de conservation : un abonnement mort est une donnée personnelle sans finalité.
+
 ## Matching : ce que le score voit, et ce qu'il ne voit pas (Story 3.2, FR-012)
 
 L'AI Act exige qu'une décision automatisée puisse s'expliquer et qu'aucun attribut protégé

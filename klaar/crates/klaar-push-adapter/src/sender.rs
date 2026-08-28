@@ -171,6 +171,21 @@ impl WebPushSender {
     }
 }
 
+/// L'adaptateur satisfait le port de la couche Application.
+///
+/// L'implémentation ne fait que déléguer : la méthode inhérente existait avant
+/// le port, et les deux signatures coïncident maintenant que le port est
+/// asynchrone.
+impl klaar_application::ports::push::PushNotifier for WebPushSender {
+    async fn envoyer(
+        &self,
+        abonnement: &klaar_application::ports::push::PushSubscription,
+        message: &klaar_application::ports::push::PushMessage,
+    ) -> Result<(), klaar_application::ports::push::PushError> {
+        WebPushSender::envoyer(self, abonnement, message).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

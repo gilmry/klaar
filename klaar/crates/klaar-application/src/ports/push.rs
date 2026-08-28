@@ -69,11 +69,14 @@ impl std::error::Error for PushError {}
 
 /// Envoie une notification à un abonnement.
 ///
-/// Volontairement non `async` dans sa définition : le trait reste utilisable
-/// par un adaptateur synchrone de test. L'adaptateur réel expose une variante
-/// asynchrone.
+/// Asynchrone, comme les autres ports de cette couche. La définition initiale
+/// était synchrone « pour rester utilisable par un adaptateur de test » ; elle
+/// n'a jamais eu d'implémenteur, et l'adaptateur réel n'a jamais pu la
+/// satisfaire — un envoi push est un appel réseau. Un double de test
+/// asynchrone ne coûte rien de plus.
+#[allow(async_fn_in_trait)]
 pub trait PushNotifier {
-    fn envoyer(
+    async fn envoyer(
         &self,
         abonnement: &PushSubscription,
         message: &PushMessage,

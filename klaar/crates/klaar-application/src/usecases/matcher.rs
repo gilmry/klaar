@@ -34,6 +34,9 @@ pub const CANDIDATS_EXAMINES_MAX: i64 = 100;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Candidat {
     pub provider_id: Uuid,
+    /// Compte du prestataire : c'est lui qui porte les abonnements push, pas
+    /// la fiche d'entreprise.
+    pub utilisateur_id: Uuid,
     pub distance_metres: f64,
     pub score: Score,
 }
@@ -125,6 +128,7 @@ where
         .iter()
         .map(|p| Candidat {
             provider_id: p.provider.id,
+            utilisateur_id: p.provider.utilisateur_id,
             distance_metres: p.distance_metres,
             score: calculer_score(
                 p.distance_metres,

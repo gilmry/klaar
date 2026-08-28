@@ -5,6 +5,7 @@ pub mod connecter;
 pub mod effacer;
 pub mod inscrire_utilisateur;
 pub mod matcher;
+pub mod notifier;
 pub mod rafraichir;
 pub mod soumettre_demande;
 pub mod verifier_email;

@@ -371,6 +371,24 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   raison ; et une migration ajoutant une contrainte échouait sur les lignes déjà en base,
   faute de les reprendre d'abord.
 
+- **3.3** — **Notification des candidats** : les prestataires retenus reçoivent un push.
+
+  **Une notification s'affiche sur un écran verrouillé**, lisible par quiconque passe à côté
+  du téléphone. Elle ne porte ni la description du problème, ni l'adresse, ni rien du
+  demandeur : le secteur, la distance arrondie et l'urgence. Le chiffrement RFC 8291 n'y
+  change rien — il protège le transit, pas l'affichage, et les deux problèmes sont distincts.
+  La distance est arrondie à la centaine de mètres : au mètre près, croisée avec la position
+  du prestataire, elle situerait le demandeur chez lui.
+
+  **`candidats` et `notifies` sont deux nombres distincts** dans la réponse. Un prestataire
+  retenu sans abonnement push verra la Demande en ouvrant l'application ; les confondre ferait
+  croire à qui attend que dix personnes ont été réveillées alors que personne n'a rien reçu.
+
+  Le port `PushNotifier` est devenu asynchrone au passage. Il avait été défini synchrone au
+  Sprint 0 « pour rester utilisable par un adaptateur de test » ; il n'a jamais eu
+  d'implémenteur, et l'adaptateur réel ne pouvait pas le satisfaire — un envoi push est un
+  appel réseau.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

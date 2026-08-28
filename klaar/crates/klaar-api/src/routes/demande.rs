@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use klaar_application::usecases::matcher::{chercher_candidats, ResultatMatching};
+use klaar_application::usecases::notifier::notifier;
 use klaar_application::usecases::soumettre_demande::{
     soumettre, CommandeSoumission, ErreurSoumission, ResultatSoumission,
 };
@@ -37,6 +38,13 @@ pub struct DemandeCreeeDto {
     /// personne n'a été trouvé dans le rayon, et la Demande passe en
     /// `NO_MATCH` — une réponse utile pour qui attend, plutôt qu'un silence.
     pub candidats: usize,
+    /// Appareils réellement joints (Story 3.3).
+    ///
+    /// Distinct de `candidats` : un prestataire retenu sans abonnement push
+    /// verra la Demande en ouvrant l'application. Confondre les deux ferait
+    /// croire à qui attend que dix personnes ont été réveillées alors que
+    /// personne n'a reçu de notification.
+    pub notifies: usize,
 }
 
 fn statut(e: &ErreurSoumission) -> actix_web::http::StatusCode {
@@ -101,7 +109,7 @@ pub async fn soumettre_demande(
             // retarderait la diffusion de sa période entière, ce qui est le
             // contraire de ce qu'on veut sur un dépannage. La requête y perd
             // une requête spatiale indexée, de l'ordre de la milliseconde.
-            let candidats = match chercher_candidats(
+            let (candidats, notifies) = match chercher_candidats(
                 etat.prestataires.as_ref(),
                 etat.demandes.as_ref(),
                 etat.traces.as_ref(),
@@ -110,15 +118,39 @@ pub async fn soumettre_demande(
             )
             .await
             {
-                Ok(ResultatMatching::Candidats(c)) => c.len(),
-                Ok(ResultatMatching::Aucun) => 0,
+                Ok(ResultatMatching::Candidats(retenus)) => {
+                    // La notification suit le matching mais n'en fait pas
+                    // partie : une panne du service de push ne doit pas
+                    // effacer un classement déjà tracé.
+                    let notifies = match &etat.push {
+                        Some(sender) => notifier(
+                            etat.abonnements.as_ref(),
+                            sender.as_ref(),
+                            &demande,
+                            &retenus,
+                            klaar_shared_kernel::Locale::Fr,
+                        )
+                        .await
+                        .map(|bilan| bilan.notifies)
+                        .unwrap_or_else(|e| {
+                            tracing::error!(erreur = %e, "notification impossible");
+                            0
+                        }),
+                        // Sans clé VAPID configurée, le service tourne sans
+                        // notifications : c'est un mode de fonctionnement
+                        // légitime, pas une panne.
+                        None => 0,
+                    };
+                    (retenus.len(), notifies)
+                }
+                Ok(ResultatMatching::Aucun) => (0, 0),
                 Err(e) => {
                     // Un matching en échec ne défait pas la Demande : elle
                     // existe, et un tour ultérieur pourra la reprendre. Faire
                     // l'inverse ferait perdre à l'utilisateur ce qu'il vient
                     // d'écrire pour une panne qui ne le concerne pas.
                     tracing::error!(erreur = %e, "matching impossible");
-                    0
+                    (0, 0)
                 }
             };
 
@@ -127,6 +159,7 @@ pub async fn soumettre_demande(
                 statut: demande.statut.as_str().to_string(),
                 code: "REQUEST_CREATED",
                 candidats,
+                notifies,
             })
         }
         // 200 et non 409 : FR-011 `@edge` demande que la Demande existante soit
@@ -140,6 +173,7 @@ pub async fn soumettre_demande(
             statut: demande.statut.as_str().to_string(),
             code: "REQUEST_DUPLICATE",
             candidats: 0,
+            notifies: 0,
         }),
         Err(e) => {
             if matches!(e, ErreurSoumission::Indisponible(_)) {

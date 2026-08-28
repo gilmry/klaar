@@ -599,3 +599,48 @@ async fn security_la_trace_conserve_la_ventilation_du_score() {
         assert!(v["note"].is_null(), "la note n'existe pas encore : {v}");
     }
 }
+
+#[actix_web::test]
+async fn edge_sans_cle_vapid_le_matching_a_lieu_mais_personne_n_est_notifie() {
+    // Sans clé VAPID configurée, le service tourne sans notifications : c'est
+    // un mode de fonctionnement légitime, pas une panne. `etat_de_test` monte
+    // l'application sans push.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (_, email) = compte_actif(&pool, "sans-vapid").await;
+    let jeton = jeton(&app, &email).await;
+
+    let reponse = test::call_service(
+        &app,
+        demande(&jeton, "plomberie", "Fuite", LAT, LON).to_request(),
+    )
+    .await;
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["notifies"], 0);
+    // Le matching, lui, a bien eu lieu.
+    assert!(corps["candidats"].as_u64().is_some());
+}
+
+#[actix_web::test]
+async fn security_le_nombre_de_notifies_ne_se_confond_pas_avec_les_candidats() {
+    // Un prestataire retenu sans abonnement push verra la Demande en ouvrant
+    // l'application. Confondre les deux ferait croire à qui attend que dix
+    // personnes ont été réveillées alors que personne n'a rien reçu.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (_, email) = compte_actif(&pool, "distinction").await;
+    let jeton = jeton(&app, &email).await;
+
+    let reponse = test::call_service(
+        &app,
+        demande(&jeton, "plomberie", "Fuite", LAT, LON).to_request(),
+    )
+    .await;
+    let corps: Value = test::read_body_json(reponse).await;
+    let candidats = corps["candidats"].as_u64().unwrap();
+    let notifies = corps["notifies"].as_u64().unwrap();
+    assert!(
+        notifies <= candidats,
+        "on ne peut pas notifier plus de monde qu'on n'en retient"
+    );
+}

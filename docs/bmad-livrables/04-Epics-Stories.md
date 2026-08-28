@@ -526,11 +526,35 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > **Non fourni** : le second tour à rayon élargi (Story 3.6, FR-015), qui donnera son sens au
 > motif d'écart `HORS_RAYON` déjà prévu par la trace.
 
-### Story 3.3 — Notification push multi-Provider
+### Story 3.3 — Notification push multi-Provider — *faite*
 - **En tant que** Provider · **je veux** être notifié d'une Demande à proximité · **afin de** proposer un Devis
 - **4×N** : push delivered / refused / device unreachable / offline sync
 - **Couche(s)** : Infra (APNs + FCM adapter)
 - **Taille** : **L** (1 j) · **Tours** : 5
+
+> **Une notification s'affiche sur un écran verrouillé**, lisible par quiconque passe à côté
+> du téléphone. Elle ne porte donc ni la description du problème, ni l'adresse, ni rien du
+> demandeur : seulement le secteur, la distance **arrondie** et l'urgence. Le chiffrement de
+> la charge (RFC 8291) n'y change rien — il protège le transit, pas l'affichage, et les deux
+> problèmes sont distincts.
+>
+> La distance est arrondie à la centaine de mètres sous le kilomètre : au mètre près, croisée
+> avec la position du prestataire, elle situerait le demandeur chez lui.
+>
+> **`candidats` et `notifies` sont deux nombres distincts** dans la réponse. Un prestataire
+> retenu sans abonnement push verra la Demande en ouvrant l'application ; les confondre ferait
+> croire à qui attend que dix personnes ont été réveillées alors que personne n'a rien reçu.
+>
+> Un abonnement que le service de push déclare disparu (410) est **supprimé**, pas réessayé :
+> le garder conserverait une donnée personnelle sans finalité. Une panne de transport, elle,
+> n'interrompt pas le tour — les autres candidats n'y sont pour rien.
+>
+> **Le port `PushNotifier` est devenu asynchrone.** Il avait été défini synchrone au Sprint 0
+> « pour rester utilisable par un adaptateur de test » ; il n'a jamais eu d'implémenteur, et
+> l'adaptateur réel ne pouvait pas le satisfaire — un envoi push est un appel réseau.
+>
+> **Non vérifiable ici** : la réception effective sur un appareil, qui demande un service de
+> push distant. Le protocole reste vérifié contre les vecteurs du RFC 8291 (Story 0.12).
 
 ### Story 3.4 — Acceptation Provider atomic CAS (FR-013)
 - **En tant que** Provider · **je veux** accepter une Demande · **afin de** devenir attribué
