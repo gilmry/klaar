@@ -20,6 +20,8 @@
     type MessageLu,
   } from "../lib/conversation";
   import { ouvrirFlux } from "../lib/tempsReel";
+  import { etiquetteBcp47, restaurerLangue, t } from "../lib/i18n";
+  import type { LocaleKlaar } from "../lib/inscription";
 
   interface Props {
     /** Identifiant de la Mission. Le fil n'existe que pour une intervention. */
@@ -27,6 +29,7 @@
   }
   let { missionId }: Props = $props();
 
+  let locale = $state<LocaleKlaar>("fr");
   let fil = $state<MessageLu[]>([]);
   let saisie = $state("");
   let occupe = $state(false);
@@ -34,6 +37,7 @@
   let fermerFlux: (() => void) | null = null;
 
   onMount(async () => {
+    locale = restaurerLangue();
     await rafraichir();
     // La socket sert ici comme ailleurs : elle dit qu'il s'est passé quelque
     // chose, et c'est la relecture qui dit quoi.
@@ -72,7 +76,7 @@
 
   /** Heure lisible, sans la date : le fil est court et récent. */
   function heure(iso: string): string {
-    return new Date(iso).toLocaleTimeString("fr-BE", {
+    return new Date(iso).toLocaleTimeString(etiquetteBcp47(locale), {
       hour: "2-digit",
       minute: "2-digit",
     });
@@ -80,12 +84,11 @@
 </script>
 
 <section data-conversation aria-label="Conversation">
-  <h4>Messages</h4>
+  <h4>{t(locale, "conversation.titre")}</h4>
 
   {#if fil.length === 0}
     <p class="klaar-tempere" data-fil="vide">
-      Aucun message. Vous pouvez écrire ici tout ce qui concerne
-      l'intervention : c'est ce qui fait preuve en cas de désaccord.
+      {t(locale, "conversation.vide")}
     </p>
   {:else}
     <ul data-fil="liste">
@@ -99,10 +102,10 @@
   {/if}
 
   <form onsubmit={envoyer} data-formulaire="message">
-    <label for="message-corps">Votre message</label>
+    <label for="message-corps">{t(locale, "conversation.votre_message")}</label>
     <input id="message-corps" type="text" bind:value={saisie} data-champ="message" />
     <button type="submit" disabled={occupe || saisie.trim() === ""} data-action="envoyer-message">
-      {occupe ? "Un instant…" : "Envoyer"}
+      {occupe ? t(locale, "commun.attendez") : t(locale, "conversation.envoyer")}
     </button>
   </form>
 

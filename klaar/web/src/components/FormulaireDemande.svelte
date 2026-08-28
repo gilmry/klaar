@@ -9,7 +9,19 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t, type CleTexte } from "../lib/i18n";
+
+  /**
+   * Les trois urgences, dans l'ordre croissant.
+   *
+   * Hors du gabarit, pour que le libellé soit une clé de traduction et non un
+   * texte français figé dans la boucle.
+   */
+  const URGENCES: [UrgenceKlaar, CleTexte][] = [
+    ["LOW", "urgence.basse"],
+    ["NORMAL", "urgence.normale"],
+    ["HIGH", "urgence.haute"],
+  ];
   import { restaurerSession } from "../lib/connexion";
   import { chargerCatalogue, type SecteurCatalogue } from "../lib/catalogue";
   import { OfflineError } from "../lib/api";
@@ -119,27 +131,25 @@
 </script>
 
 {#if reprise}
-  <p data-etat-demande="reprise">Un instant…</p>
+  <p data-etat-demande="reprise">{t(locale, "commun.attendez")}</p>
 {:else if !connecte}
   <p role="status" data-etat-demande="anonyme">
-    Faire une demande suppose un compte. <a href="/connexion">Me connecter</a>
+    {t(locale, "demande.compte_requis")}
+    <a href="/connexion">{t(locale, "commun.me_connecter")}</a>
   </p>
 {:else if enFile}
   <p role="status" data-demande="en-file">
-    Aucune connexion. Votre demande est conservée sur cet appareil et partira
-    dès que le réseau reviendra. Gardez cette page ouverte.
+    {t(locale, "demande.en_file")}
   </p>
   <p class="klaar-tempere">
-    Rien n'a encore été envoyé : aucun prestataire n'a été prévenu pour
-    l'instant.
+    {t(locale, "demande.rien_envoye")}
   </p>
 {:else if creee}
   <p role="status" data-demande="creee">
     {#if creee.doublon}
-      Vous aviez déjà une demande en cours pour ce secteur, ici même. C'est
-      elle qui est en train d'être diffusée.
+      {t(locale, "demande.doublon")}
     {:else}
-      Votre demande est diffusée aux prestataires disponibles.
+      {t(locale, "demande.diffusee")}
     {/if}
   </p>
   <!--
@@ -150,27 +160,28 @@
   -->
   <p class="klaar-tempere" data-demande-diffusion>
     {#if creee.candidats === 0}
-      Aucun prestataire disponible dans la zone pour l'instant. Vous pourrez
-      élargir la recherche depuis le suivi.
+      {t(locale, "demande.aucun_candidat")}
     {:else}
-      {creee.candidats} prestataire{creee.candidats > 1 ? "s" : ""} retenu{creee.candidats > 1 ? "s" : ""},
-      dont {creee.notifies} prévenu{creee.notifies > 1 ? "s" : ""} par notification.
+      {t(locale, "demande.candidats", {
+        c: creee.candidats ?? 0,
+        n: creee.notifies ?? 0,
+      })}
     {/if}
   </p>
   <p>
-    <a href={`/demande?id=${creee.id}`} data-action="suivre">Suivre ma demande</a>
+    <a href={`/demande?id=${creee.id}`} data-action="suivre">{t(locale, "demande.suivre")}</a>
   </p>
 {:else}
   <form onsubmit={envoyer} data-formulaire="demande" novalidate>
-    <label for="demande-secteur">Secteur</label>
+    <label for="demande-secteur">{t(locale, "demande.secteur")}</label>
     <select id="demande-secteur" bind:value={secteur} data-champ="secteur" required>
-      <option value="" disabled>Choisissez…</option>
+      <option value="" disabled>{t(locale, "demande.choisissez")}</option>
       {#each secteurs as s (s.code)}
         <option value={s.code}>{s.libelle}</option>
       {/each}
     </select>
 
-    <label for="demande-description">Que se passe-t-il ?</label>
+    <label for="demande-description">{t(locale, "demande.que_se_passe_t_il")}</label>
     <textarea
       id="demande-description"
       bind:value={description}
@@ -179,24 +190,23 @@
       data-champ="description"
       required
     ></textarea>
-    <p class="klaar-tempere" data-restant>{restant} caractères restants</p>
+    <p class="klaar-tempere" data-restant>{t(locale, "demande.restants", { n: restant })}</p>
 
     <fieldset>
-      <legend>Urgence</legend>
-      {#each [["LOW", "Peut attendre"], ["NORMAL", "Dans la journée"], ["HIGH", "Tout de suite"]] as [valeur, libelle] (valeur)}
+      <legend>{t(locale, "demande.urgence")}</legend>
+      {#each URGENCES as [valeur, cle] (valeur)}
         <label>
           <input type="radio" bind:group={urgence} value={valeur} name="urgence" />
-          {libelle}
+          {t(locale, cle)}
         </label>
       {/each}
     </fieldset>
 
     <button type="submit" disabled={occupe || !complet} data-action="envoyer-demande">
-      {occupe ? "Un instant…" : "Envoyer ma demande"}
+      {occupe ? t(locale, "commun.attendez") : t(locale, "demande.envoyer")}
     </button>
     <p class="klaar-tempere">
-      Votre position sera demandée à l'envoi : sans elle, aucun prestataire ne
-      peut être averti.
+      {t(locale, "demande.position_requise")}
     </p>
   </form>
 {/if}

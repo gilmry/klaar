@@ -13,7 +13,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t } from "../lib/i18n";
   import { restaurerSession } from "../lib/connexion";
   import {
     annulerEffacement,
@@ -71,37 +71,35 @@
 </script>
 
 {#if reprise}
-  <p data-etat-compte="reprise">Reprise de session…</p>
+  <p data-etat-compte="reprise">{t(locale, "connexion.reprise")}</p>
 {:else if !connecte}
   <p role="status" data-etat-compte="anonyme">
-    Cette page demande d'être connecté. <a href="/connexion">Me connecter</a>
+    {t(locale, "commun.connexion_requise")}
+    <a href="/connexion">{t(locale, "commun.me_connecter")}</a>
   </p>
 {:else if programme !== null}
   <p role="status" data-effacement="programme">
-    L'effacement de votre compte est programmé dans {programme} jours. Vos données
-    personnelles seront supprimées à cette échéance. Vous pouvez encore changer
-    d'avis jusque-là.
+    {t(locale, "compte.effacement_programme", { n: programme })}
   </p>
   <button type="button" onclick={annuler} disabled={occupe} data-action="annuler-effacement">
-    {occupe ? "Un instant…" : "Annuler l'effacement"}
+    {occupe ? t(locale, "commun.attendez") : t(locale, "compte.annuler_effacement")}
   </button>
 {:else if !deplie}
   <button type="button" onclick={() => (deplie = true)} data-action="ouvrir-effacement">
-    Effacer mon compte
+    {t(locale, "compte.ouvrir_effacement")}
   </button>
 {:else}
   <p>
-    Cette demande supprimera votre adresse, votre mot de passe, vos sessions et
-    vos abonnements aux notifications, après un délai de trente jours pendant
-    lequel vous pourrez encore l'annuler.
+    {t(locale, "compte.ce_qui_part")}
   </p>
   <p class="klaar-tempere">
-    Le journal d'audit, lui, est conservé : il ne porte ni votre adresse ni
-    aucun contenu, seulement la trace horodatée que ce droit a été exercé.
+    {t(locale, "compte.ce_qui_reste")}
   </p>
 
   <label for="effacement-confirmation">
-    Recopiez <code>{MOT_DE_CONFIRMATION}</code> pour confirmer
+    {t(locale, "compte.recopier_avant")}
+    <code>{MOT_DE_CONFIRMATION}</code>
+    {t(locale, "compte.recopier_apres")}
   </label>
   <input
     id="effacement-confirmation"
@@ -117,10 +115,10 @@
     disabled={occupe || !confirmationValide}
     data-action="confirmer-effacement"
   >
-    {occupe ? "Un instant…" : "Effacer définitivement"}
+    {occupe ? t(locale, "commun.attendez") : t(locale, "compte.effacer_definitivement")}
   </button>
   <button type="button" onclick={() => (deplie = false)} data-action="renoncer">
-    Renoncer
+    {t(locale, "compte.renoncer")}
   </button>
 {/if}
 

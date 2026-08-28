@@ -11,6 +11,7 @@
 import { ApiError, OfflineError, request } from "./api";
 import { jetonAcces } from "./connexion";
 import type { LocaleKlaar } from "./inscription";
+import { etiquetteBcp47, t, type CleTexte } from "./i18n";
 
 export interface Proposee {
   id: string;
@@ -95,55 +96,64 @@ export interface MissionAttribuee {
 }
 
 /** Libellé du bouton qui mène à ce statut. */
-export function libelleTransition(statut: StatutMission): string {
+export function libelleTransition(
+  statut: StatutMission,
+  locale: LocaleKlaar = "fr",
+): string {
   switch (statut) {
     case "PROVIDER_EN_ROUTE":
-      return "Je pars";
+      return t(locale, "transition.partir");
     case "ON_SITE":
-      return "Je suis arrivé";
+      return t(locale, "transition.arrive");
     case "COMPLETED":
-      return "L'intervention est terminée";
+      return t(locale, "transition.termine");
     case "CANCELLED":
-      return "Annuler";
+      return t(locale, "commun.annuler");
     default:
       return statut;
   }
 }
 
 /** Ce que le statut courant veut dire, en clair. */
-export function libelleStatut(statut: StatutMission): string {
+export function libelleStatut(
+  statut: StatutMission,
+  locale: LocaleKlaar = "fr",
+): string {
   switch (statut) {
     case "ACCEPTED":
-      return "Acceptée, pas encore commencée";
+      return t(locale, "pro.statut_acceptee");
     case "PROVIDER_EN_ROUTE":
-      return "En route";
+      return t(locale, "pro.statut_en_route");
     case "ON_SITE":
-      return "Sur place";
+      return t(locale, "pro.statut_sur_place");
     case "COMPLETED":
-      return "Terminée, en attente de validation du demandeur";
+      return t(locale, "pro.statut_terminee");
     case "VALIDATED":
-      return "Validée par le demandeur";
+      return t(locale, "pro.statut_validee");
     case "CANCELLED":
-      return "Annulée";
+      return t(locale, "pro.statut_annulee");
     default:
       return statut;
   }
 }
 
 /** Ce que le statut d'un devis veut dire, en clair. */
-export function libelleStatutDevis(devis: Devis): string {
+export function libelleStatutDevis(
+  devis: Devis,
+  locale: LocaleKlaar = "fr",
+): string {
   // L'échéance passe avant le statut : le balayage peut n'être pas encore venu,
   // et afficher « en attente » sur un devis mort ferait attendre pour rien.
-  if (devis.statut === "SENT" && devis.echu) return "Expiré sans réponse";
+  if (devis.statut === "SENT" && devis.echu) return t(locale, "pro.devis_expire");
   switch (devis.statut) {
     case "SENT":
-      return "En attente de réponse";
+      return t(locale, "pro.devis_attente");
     case "ACCEPTED":
-      return "Accepté";
+      return t(locale, "pro.devis_accepte");
     case "REFUSED":
-      return "Refusé";
+      return t(locale, "pro.devis_refuse");
     case "EXPIRED":
-      return "Expiré sans réponse";
+      return t(locale, "pro.devis_expire");
     default:
       return devis.statut;
   }
@@ -156,8 +166,8 @@ export function libelleStatutDevis(devis: Devis): string {
  * front où un montant cesse d'être un entier, et il ne repart jamais dans
  * l'autre sens.
  */
-export function montantLisible(cents: number): string {
-  const euros = (cents / 100).toLocaleString("fr-BE", {
+export function montantLisible(cents: number, locale: LocaleKlaar = "fr"): string {
+  const euros = (cents / 100).toLocaleString(etiquetteBcp47(locale), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -207,14 +217,14 @@ export function centimesDepuisEuros(saisie: string): number | null {
   return negatif ? -total : total;
 }
 
-export function libelleUrgence(urgence: string): string {
+export function libelleUrgence(urgence: string, locale: LocaleKlaar = "fr"): string {
   switch (urgence) {
     case "HIGH":
-      return "tout de suite";
+      return t(locale, "urgence.phrase_haute");
     case "NORMAL":
-      return "dans la journée";
+      return t(locale, "urgence.phrase_normale");
     case "LOW":
-      return "peut attendre";
+      return t(locale, "urgence.phrase_basse");
     default:
       return urgence;
   }
@@ -417,11 +427,11 @@ export async function lireMission(missionId: string): Promise<Mission> {
 
 /** Motifs d'annulation d'une intervention, vocabulaire fermé (FR-022). */
 export const MOTIFS_ANNULATION_MISSION = [
-  { code: "UNAVAILABLE", libelle: "Je ne peux plus venir" },
-  { code: "NO_ACCESS", libelle: "Impossible d'accéder au lieu" },
-  { code: "DISAGREEMENT", libelle: "Désaccord sur le travail à faire" },
-  { code: "OTHER", libelle: "Autre" },
-] as const;
+  { code: "UNAVAILABLE", cle: "motif.pro_empeche" },
+  { code: "NO_ACCESS", cle: "motif.pro_inaccessible" },
+  { code: "DISAGREEMENT", cle: "motif.desaccord" },
+  { code: "OTHER", cle: "motif.autre" },
+] as const satisfies readonly { code: string; cle: CleTexte }[];
 
 /**
  * Annule une intervention en cours (FR-022).

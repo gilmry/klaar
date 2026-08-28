@@ -935,10 +935,31 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   vérifie en plus qu'aucune traduction n'est identique d'une langue à l'autre,
   ce qui trahit presque toujours un oubli.
 
+  **Tous les écrans publics sont traduits**, et pas seulement le sélecteur :
+  demande, connexion, inscription, compte, catalogue, disponibilité, messagerie,
+  vérification, notifications, suivi de Demande et espace prestataire. Y compris
+  les **vocabulaires fermés** — motifs de refus, de litige, d'annulation — qui
+  portent des clés et non des libellés français figés : ce sont les listes qu'un
+  demandeur néerlandophone lit le plus. Les statuts et les montants suivent la
+  langue eux aussi, via une étiquette BCP 47 dérivée de la locale.
+
+  **Trois tests exhaustifs, et non trois clés choisies à la main** : ils
+  parcourent la table entière — aucune traduction vide, aucune identique d'une
+  langue à l'autre hors homographes inscrits un par un, mêmes variables de
+  gabarit partout. Ils ont trouvé deux défauts réels dès leur première
+  exécution, dont un **marqueur de pluriel passé en variable** (`{n} refusée{s}`)
+  calculé côté français : une lettre de pluriel n'est pas une donnée, et le
+  néerlandais n'accorde pas ce participe.
+
   **Ce qui reste en français, et pourquoi.** La coquille Astro : les pages sont
   générées statiquement, les traduire demande soit trois jeux de pages, soit un
   rendu au serveur — un choix d'architecture, pas un oubli. Et la console
   d'exploitation, qui s'adresse aux équipes de klaar et non aux Bruxellois.
+
+  **Limite écrite plutôt que tue** : les traductions néerlandaises et anglaises
+  n'ont pas été relues par un locuteur natif. Elles valent mieux qu'une machine,
+  mais une relecture reste à faire — le néerlandais approximatif dans un service
+  bruxellois se remarque.
 
 - **7.4** — **Médiation d'un litige** (FR-036) : `GET /api/v1/ops/disputes`,
   `/disputes/{id}`, `POST /disputes/{id}/resolve`, et l'écran de médiation dans
@@ -1129,10 +1150,32 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
 
 ## Parcours filmés — documentation vivante
 
-`scripts/parcours-filmes.sh` monte un service **réel** — PostgreSQL, migrations,
-jeu de démonstration, `klaar-api` — puis déroule chaque parcours dans un
-navigateur et en garde la vidéo. `npm run vitrine` assemble ensuite la page
-publiée, vidéos incluses ; la CI la déploie sur GitHub Pages.
+`make demo` — c'est-à-dire `scripts/parcours-filmes.sh` — monte un service
+**réel** (PostgreSQL, migrations, jeu de démonstration, `klaar-api`), puis
+déroule chaque parcours dans un navigateur et en garde la vidéo. `npm run
+vitrine` assemble ensuite la page publiée, vidéos incluses ; la CI la déploie sur
+GitHub Pages.
+
+**Passer par là, et pas par `npm run demo` seul.** Ce que le script pose n'est
+pas du confort, et le contourner fait échouer les parcours pour des raisons qui
+n'apprennent rien sur l'application :
+
+- `KLAAR_EXIGER_METHODE_PAIEMENT=0` — Stripe est hors périmètre ; exiger une
+  carte bloque toute soumission de Demande, donc cinq parcours sur douze ;
+- `KLAAR_QUOTA_ECRITURE_SENSIBLE` — cinq connexions par adresse et par heure,
+  juste en production, épuisées au troisième parcours depuis 127.0.0.1 ;
+- `KLAAR_MAX_DEMANDES_PAR_HEURE` — **ce quota-là est compté en base**, donc il
+  survit au redémarrage du service : une exécution rejouée dans l'heure bute
+  sinon sur un refus sans rapport avec ce qu'elle démontre ;
+- le **repeuplement** avant de filmer — les parcours mutent l'état qu'ils
+  trouvent (un prestataire mis en pause, un rayon serré, des Missions créées), et
+  rejoués tels quels un « Enregistrer » reste inerte parce que le rayon vaut déjà
+  la valeur qu'on tente de poser.
+
+Constaté en lançant la suite à la main : sept parcours en échec au premier
+passage, cinq au second, **aucun pour une raison qui tenait au code**. La
+procédure existait dans le script depuis le début ; ce qui manquait était un
+chemin vers elle depuis le point d'entrée habituel, d'où la cible `make demo`.
 
 **Une suite à part, et pas un interrupteur sur l'existante.** Les tests de
 `tests/e2e` vérifient : ils vont vite, simulent l'API et n'ont pas à être

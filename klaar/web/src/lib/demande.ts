@@ -4,7 +4,7 @@
 import { ApiError, OfflineError, request } from "./api";
 import { jetonAcces } from "./connexion";
 import type { LocaleKlaar } from "./inscription";
-import { t } from "./i18n";
+import { etiquetteBcp47, t, type CleTexte } from "./i18n";
 
 export type UrgenceKlaar = "LOW" | "NORMAL" | "HIGH";
 
@@ -85,25 +85,27 @@ export interface DevisRecu {
  * L'échéance passe avant le statut : le balayage peut n'être pas encore venu,
  * et proposer de répondre à un devis mort ferait espérer pour rien.
  */
-export function libelleDevis(devis: DevisRecu): string {
-  if (devis.statut === "SENT" && devis.echu) return "Ce devis a expiré sans réponse.";
+export function libelleDevis(devis: DevisRecu, locale: LocaleKlaar = "fr"): string {
+  if (devis.statut === "SENT" && devis.echu) return t(locale, "devis.expire");
   switch (devis.statut) {
     case "SENT":
-      return "Un devis vous attend.";
+      return t(locale, "devis.vous_attend");
     case "ACCEPTED":
-      return "Vous avez accepté ce devis.";
+      return t(locale, "devis.accepte");
     case "REFUSED":
-      return "Vous avez refusé ce devis.";
+      return t(locale, "devis.refuse");
     case "EXPIRED":
-      return "Ce devis a expiré sans réponse.";
+      return t(locale, "devis.expire");
     default:
+      // Un statut inconnu est rendu tel quel plutôt que masqué : le masquer
+      // laisserait un devis sans état lisible à l'écran.
       return devis.statut;
   }
 }
 
 /** Montant en centimes, rendu en euros. La seule division du module. */
-export function montantLisible(cents: number): string {
-  const euros = (cents / 100).toLocaleString("fr-BE", {
+export function montantLisible(cents: number, locale: LocaleKlaar = "fr"): string {
+  const euros = (cents / 100).toLocaleString(etiquetteBcp47(locale), {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -112,11 +114,11 @@ export function montantLisible(cents: number): string {
 
 /** Motifs de refus d'un devis, vocabulaire fermé (FR-017). */
 export const MOTIFS_REFUS = [
-  { code: "TOO_EXPENSIVE", libelle: "Trop cher" },
-  { code: "DELAY_TOO_LONG", libelle: "Trop long à venir" },
-  { code: "NO_LONGER_NEEDED", libelle: "Je n'en ai plus besoin" },
-  { code: "OTHER", libelle: "Autre" },
-] as const;
+  { code: "TOO_EXPENSIVE", cle: "motif.trop_cher" },
+  { code: "DELAY_TOO_LONG", cle: "motif.trop_long" },
+  { code: "NO_LONGER_NEEDED", cle: "motif.plus_besoin" },
+  { code: "OTHER", cle: "motif.autre" },
+] as const satisfies readonly { code: string; cle: CleTexte }[];
 
 /**
  * Vrai si l'intervention peut encore être notée (FR-033).
@@ -130,11 +132,11 @@ export function peutNoter(suivi: SuiviDemande): boolean {
 
 /** Motifs de litige ouverts au demandeur, vocabulaire fermé (FR-034). */
 export const MOTIFS_LITIGE = [
-  { code: "QUALITY", libelle: "Le travail est mal fait" },
-  { code: "NOT_DONE", libelle: "Rien n'a été fait" },
-  { code: "AMOUNT_DISPUTED", libelle: "Le montant ne correspond pas à ce qui était convenu" },
-  { code: "OTHER", libelle: "Autre" },
-] as const;
+  { code: "QUALITY", cle: "motif.mal_fait" },
+  { code: "NOT_DONE", cle: "motif.rien_fait" },
+  { code: "AMOUNT_DISPUTED", cle: "motif.montant_conteste" },
+  { code: "OTHER", cle: "motif.autre" },
+] as const satisfies readonly { code: string; cle: CleTexte }[];
 
 /** Caractères minimaux du récit : « pas content » ne permet pas de trancher. */
 export const RECIT_MIN_CARACTERES = 20;
@@ -152,11 +154,11 @@ export function peutContester(suivi: SuiviDemande): boolean {
 
 /** Motifs d'annulation d'une intervention en cours, vocabulaire fermé (FR-022). */
 export const MOTIFS_ANNULATION_MISSION = [
-  { code: "NO_LONGER_NEEDED", libelle: "Je n'en ai plus besoin" },
-  { code: "NO_ACCESS", libelle: "Personne ne peut ouvrir" },
-  { code: "DISAGREEMENT", libelle: "Désaccord sur le travail à faire" },
-  { code: "OTHER", libelle: "Autre" },
-] as const;
+  { code: "NO_LONGER_NEEDED", cle: "motif.plus_besoin" },
+  { code: "NO_ACCESS", cle: "motif.pas_d_acces" },
+  { code: "DISAGREEMENT", cle: "motif.desaccord" },
+  { code: "OTHER", cle: "motif.autre" },
+] as const satisfies readonly { code: string; cle: CleTexte }[];
 
 /**
  * Vrai si l'intervention est en cours et peut encore être annulée (FR-022).
@@ -199,12 +201,12 @@ export function delaiLisible(minutes: number): string {
 
 /** Motifs d'annulation, vocabulaire fermé (FR-014). */
 export const MOTIFS_ANNULATION = [
-  { code: "RESOLVED_ITSELF", libelle: "Le problème s'est réglé tout seul" },
-  { code: "TOO_SLOW", libelle: "Trop long à venir" },
-  { code: "FOUND_ELSEWHERE", libelle: "J'ai trouvé quelqu'un d'autre" },
-  { code: "MISTAKE", libelle: "Je me suis trompé" },
-  { code: "OTHER", libelle: "Autre" },
-] as const;
+  { code: "RESOLVED_ITSELF", cle: "motif.regle_seul" },
+  { code: "TOO_SLOW", cle: "motif.trop_long" },
+  { code: "FOUND_ELSEWHERE", cle: "motif.trouve_ailleurs" },
+  { code: "MISTAKE", cle: "motif.erreur" },
+  { code: "OTHER", cle: "motif.autre" },
+] as const satisfies readonly { code: string; cle: CleTexte }[];
 
 /** Longueur maximale, alignée sur le domaine. */
 export const DESCRIPTION_MAX = 2000;
@@ -392,37 +394,43 @@ export async function soumettreDemande(demande: DemandeASoumettre): Promise<Dema
 }
 
 /** Ce que le statut veut dire, pour celui qui attend. */
-export function libelleStatutDemande(suivi: SuiviDemande): string {
+export function libelleStatutDemande(
+  suivi: SuiviDemande,
+  locale: LocaleKlaar = "fr",
+): string {
   if (suivi.statut === "MATCHED") {
     return suivi.prestataire
-      ? `${suivi.prestataire} a pris votre demande`
-      : "Un prestataire a pris votre demande";
+      ? t(locale, "statut.pris_par", { nom: suivi.prestataire })
+      : t(locale, "statut.pris_anonyme");
   }
-  if (suivi.statut === "CANCELLED") return "Demande annulée";
-  if (suivi.statut === "NO_MATCH") return "Personne n'a répondu";
+  if (suivi.statut === "CANCELLED") return t(locale, "statut.annulee");
+  if (suivi.statut === "NO_MATCH") return t(locale, "statut.personne");
   // `BROADCASTING` recouvre deux situations que le demandeur ne doit pas
   // confondre : le tour court encore, ou il est écoulé et le balayage n'est
   // pas passé. Dire « en cours » dans le second cas ferait attendre pour rien.
   return suivi.tour_ecoule
-    ? "Personne n'a répondu"
-    : "Recherche d'un prestataire en cours…";
+    ? t(locale, "statut.personne")
+    : t(locale, "statut.recherche");
 }
 
 /** Ce que l'intervention en est, une fois attribuée. */
-export function libelleMission(statut: string | null): string | null {
+export function libelleMission(
+  statut: string | null,
+  locale: LocaleKlaar = "fr",
+): string | null {
   switch (statut) {
     case "ACCEPTED":
-      return "Acceptée, le prestataire va partir";
+      return t(locale, "mission.acceptee");
     case "PROVIDER_EN_ROUTE":
-      return "Le prestataire est en route";
+      return t(locale, "mission.en_route");
     case "ON_SITE":
-      return "Le prestataire est arrivé";
+      return t(locale, "mission.sur_place");
     case "VALIDATED":
-      return "Intervention validée";
+      return t(locale, "mission.validee");
     case "COMPLETED":
-      return "Intervention terminée";
+      return t(locale, "mission.terminee");
     case "CANCELLED":
-      return "Intervention annulée";
+      return t(locale, "mission.annulee");
     default:
       return null;
   }

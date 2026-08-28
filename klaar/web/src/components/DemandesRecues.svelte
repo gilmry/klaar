@@ -373,18 +373,19 @@
 </script>
 
 {#if reprise}
-  <p data-etat-demandes="reprise">Reprise de session…</p>
+  <p data-etat-demandes="reprise">{t(locale, "connexion.reprise")}</p>
 {:else if !connecte}
   <p role="status" data-etat-demandes="anonyme">
-    Cette page demande d'être connecté. <a href="/connexion">Me connecter</a>
+    {t(locale, "commun.connexion_requise")}
+    <a href="/connexion">{t(locale, "commun.me_connecter")}</a>
   </p>
 {:else if mission}
   <section data-mission={mission.statut}>
-    <h3>Intervention en cours — {mission.secteur}</h3>
-    <p data-mission-statut>{libelleStatut(mission.statut)}</p>
+    <h3>{t(locale, "pro.intervention_en_cours", { secteur: mission.secteur })}</h3>
+    <p data-mission-statut>{libelleStatut(mission.statut, locale)}</p>
     <p>{mission.description}</p>
     <p class="klaar-tempere">
-      Urgence : {libelleUrgence(mission.urgence)} · Adresse :
+      {t(locale, "pro.urgence_adresse", { urgence: libelleUrgence(mission.urgence, locale) })}
       <span data-mission-position>{mission.latitude.toFixed(5)}, {mission.longitude.toFixed(5)}</span>
     </p>
 
@@ -392,18 +393,20 @@
 
     {#if mission.devis}
       <section data-devis={mission.devis.statut} class="devis">
-        <h4>Devis envoyé</h4>
+        <h4>{t(locale, "pro.devis_envoye")}</h4>
         <p data-devis-total>
-          {montantLisible(mission.devis.total_ttc_cents)} TTC
+          {montantLisible(mission.devis.total_ttc_cents, locale)} {t(locale, "devis.ttc")}
           <span class="klaar-tempere">
-            ({montantLisible(mission.devis.montant_htva_cents)} HTVA + {montantLisible(
-              mission.devis.tva_cents,
-            )} de TVA à {mission.devis.taux_tva_bp / 100} %)
+            {t(locale, "pro.devis_detail", {
+              htva: montantLisible(mission.devis.montant_htva_cents, locale),
+              tva: montantLisible(mission.devis.tva_cents, locale),
+              taux: mission.devis.taux_tva_bp / 100,
+            })}
           </span>
         </p>
         <p class="klaar-tempere">
-          Intervention sous {delaiLisible(mission.devis.delai_minutes)} ·
-          <span data-devis-statut>{libelleStatutDevis(mission.devis)}</span>
+          {t(locale, "pro.intervention_sous", { delai: delaiLisible(mission.devis.delai_minutes) })} ·
+          <span data-devis-statut>{libelleStatutDevis(mission.devis, locale)}</span>
         </p>
         {#if mission.devis.note}
           <p>{mission.devis.note}</p>
@@ -414,22 +417,17 @@
     {#if mission.suites.length > 0 && !devisEnAttente}
       {#if mission.devis_restants === 0}
         <p role="status" data-devis="plafond">
-          Trois devis ont déjà été envoyés pour cette intervention. Un de plus
-          l'annulerait.
+          {t(locale, "pro.plafond_devis")}
         </p>
       {:else}
         <form onsubmit={proposer} data-formulaire="devis">
-          <h4>Envoyer un devis</h4>
+          <h4>{t(locale, "pro.envoyer_devis_titre")}</h4>
           <p class="klaar-tempere">
-            Vous fixez votre prix. Klaar n'en propose aucun, n'en suggère aucun
-            et n'en corrige aucun. Il vous reste {mission.devis_restants} envoi{mission.devis_restants >
-            1
-              ? "s"
-              : ""}.
+            {t(locale, "pro.prix_libre", { n: mission.devis_restants })}
           </p>
 
           <label>
-            Montant hors TVA, en euros
+            {t(locale, "pro.montant_htva")}
             <input
               type="text"
               inputmode="decimal"
@@ -440,23 +438,23 @@
           </label>
 
           <label>
-            Taux de TVA
+            {t(locale, "pro.taux_tva")}
             <select bind:value={tauxSaisi} name="taux">
-              <option value="2100">21 % — taux normal</option>
-              <option value="600">6 % — logement de plus de 5 ans</option>
-              <option value="1200">12 % — isolation thermique</option>
+              <option value="2100">{t(locale, "pro.taux_normal")}</option>
+              <option value="600">{t(locale, "pro.taux_logement")}</option>
+              <option value="1200">{t(locale, "pro.taux_isolation")}</option>
             </select>
           </label>
 
           {#if tauxSaisi !== "2100"}
             <label>
-              Preuve du taux réduit
+              {t(locale, "pro.preuve_taux")}
               <input type="text" bind:value={preuveSaisie} name="preuve" required />
             </label>
           {/if}
 
           <label>
-            Délai d'intervention, en minutes
+            {t(locale, "pro.delai_minutes")}
             <input
               type="text"
               inputmode="numeric"
@@ -467,18 +465,18 @@
           </label>
 
           <label>
-            Note pour le demandeur
+            {t(locale, "pro.note_demandeur")}
             <input type="text" bind:value={noteSaisie} name="note" />
           </label>
 
           {#if apercuTtc !== null}
             <p class="klaar-tempere" data-devis-apercu>
-              Le demandeur verra {montantLisible(apercuTtc)} TTC.
+              {t(locale, "pro.apercu", { ttc: montantLisible(apercuTtc, locale) })}
             </p>
           {/if}
 
           <button type="submit" disabled={occupe} data-action="envoyer-devis">
-            {occupe ? "Un instant…" : "Envoyer le devis"}
+            {occupe ? t(locale, "commun.attendez") : t(locale, "pro.envoyer_devis")}
           </button>
         </form>
       {/if}
@@ -520,19 +518,18 @@
       {/if}
 
       <div data-bloc="desistement">
-        <label for="motif-desistement">Si vous ne pouvez plus venir, pourquoi</label>
+        <label for="motif-desistement">{t(locale, "pro.motif_desistement")}</label>
         <select id="motif-desistement" bind:value={motifAnnulation} data-champ="motif-desistement">
-          <option value="">Sans motif</option>
+          <option value="">{t(locale, "commun.sans_motif")}</option>
           {#each MOTIFS_ANNULATION_MISSION as m}
-            <option value={m.code}>{m.libelle}</option>
+            <option value={m.code}>{t(locale, m.cle)}</option>
           {/each}
         </select>
         <button type="button" onclick={seDesister} disabled={occupe} data-action="se-desister">
-          {occupe ? "Un instant…" : "Je ne peux plus assurer cette intervention"}
+          {occupe ? t(locale, "commun.attendez") : t(locale, "pro.se_desister")}
         </button>
         <p class="klaar-tempere">
-          Trois désistements en trente jours suspendent votre compte pendant une
-          semaine.
+          {t(locale, "pro.suspension")}
         </p>
       </div>
 
@@ -544,7 +541,7 @@
           data-action="avancer"
           data-vers={suite}
         >
-          {occupe ? "Un instant…" : libelleTransition(suite)}
+          {occupe ? t(locale, "commun.attendez") : libelleTransition(suite, locale)}
         </button>
       {/each}
     {/if}
@@ -556,8 +553,7 @@
 
   {#if demandes.length === 0}
     <p role="status" data-demandes="aucune">
-      Aucune Demande en attente. Elles apparaissent ici pendant les trente
-      secondes qui suivent leur diffusion.
+      {t(locale, "pro.aucune_demande")}
     </p>
   {:else}
     <ul data-demandes="liste">
@@ -566,10 +562,13 @@
           <h3>{d.secteur} · {distanceLisible(d.distance_metres)}</h3>
           <p>{d.description}</p>
           <p class="klaar-tempere">
-            Urgence : {libelleUrgence(d.urgence)} · Encore {d.secondes_restantes} s
+            {t(locale, "pro.urgence_restant", {
+              urgence: libelleUrgence(d.urgence, locale),
+              s: d.secondes_restantes,
+            })}
           </p>
           <p class="klaar-tempere">
-            L'adresse exacte vous sera donnée si vous prenez cette intervention.
+            {t(locale, "pro.adresse_apres")}
           </p>
           <button
             type="button"
@@ -577,7 +576,7 @@
             disabled={occupe}
             data-action="accepter"
           >
-            {occupe ? "Un instant…" : "Je prends"}
+            {occupe ? t(locale, "commun.attendez") : t(locale, "pro.je_prends")}
           </button>
         </li>
       {/each}

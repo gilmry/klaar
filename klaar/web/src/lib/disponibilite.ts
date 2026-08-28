@@ -10,6 +10,7 @@
 import { ApiError, OfflineError, request } from "./api";
 import { jetonAcces } from "./connexion";
 import type { LocaleKlaar } from "./inscription";
+import { t } from "./i18n";
 
 /** Bornes du rayon d'intervention, alignées sur le domaine. */
 export const RAYON_MIN_METRES = 1_000;
@@ -90,18 +91,15 @@ export function codeDepuisErreur(erreur: unknown): CodeErreurDisponibilite {
  * lui-même ; l'occupation ensuite, qui passera toute seule ; le statut en
  * dernier, qui ne dépend pas de lui.
  */
-export function raisonDeSilence(etat: Disponibilite): string | null {
+export function raisonDeSilence(
+  etat: Disponibilite,
+  locale: LocaleKlaar = "fr",
+): string | null {
   if (etat.sollicitable) return null;
-  if (etat.statut === "PENDING_KYC") {
-    return "Votre inscription attend son contrôle. Vous ne recevrez rien avant.";
-  }
-  if (etat.statut === "SUSPENDED") {
-    return "Votre compte est suspendu. Se remettre en service ne le réactive pas.";
-  }
-  if (!etat.disponible) return "Vous êtes en pause : aucune Demande ne vous parvient.";
-  if (etat.occupe) {
-    return "Une intervention est en cours. Vous recevrez à nouveau des Demandes quand elle sera terminée.";
-  }
+  if (etat.statut === "PENDING_KYC") return t(locale, "silence.kyc");
+  if (etat.statut === "SUSPENDED") return t(locale, "silence.suspendu");
+  if (!etat.disponible) return t(locale, "silence.pause");
+  if (etat.occupe) return t(locale, "silence.occupe");
   return null;
 }
 

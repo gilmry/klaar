@@ -8,7 +8,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t } from "../lib/i18n";
   import {
     chargerCatalogue,
     codeDepuisErreur,
@@ -37,12 +37,12 @@
 </script>
 
 {#if chargement}
-  <p data-etat-catalogue="chargement">Chargement du catalogue…</p>
+  <p data-etat-catalogue="chargement">{t(locale, "catalogue.chargement")}</p>
 {:else if erreur}
   <p role="alert" data-erreur-catalogue>{erreur}</p>
 {:else if secteurs.length === 0}
   <p data-etat-catalogue="vide">
-    Le catalogue est vide pour le moment.
+    {t(locale, "catalogue.vide")}
   </p>
 {:else}
   <ul data-liste="secteurs">

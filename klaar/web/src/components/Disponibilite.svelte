@@ -14,7 +14,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t } from "../lib/i18n";
   import { restaurerSession } from "../lib/connexion";
   import {
     codeDepuisErreur,
@@ -42,7 +42,7 @@
     reprise = false;
   });
 
-  const silence = $derived(etat ? raisonDeSilence(etat) : null);
+  const silence = $derived(etat ? raisonDeSilence(etat, locale) : null);
 
   async function charger() {
     try {
@@ -79,19 +79,20 @@
 </script>
 
 {#if reprise}
-  <p data-etat-dispo="reprise">Reprise de session…</p>
+  <p data-etat-dispo="reprise">{t(locale, "connexion.reprise")}</p>
 {:else if !connecte}
   <p role="status" data-etat-dispo="anonyme">
-    Cette page demande d'être connecté. <a href="/connexion">Me connecter</a>
+    {t(locale, "commun.connexion_requise")}
+    <a href="/connexion">{t(locale, "commun.me_connecter")}</a>
   </p>
 {:else if etat === null}
   <p role="alert" data-etat-dispo="indisponible">
-    {erreur ?? "Votre disponibilité n'a pas pu être lue."}
+    {erreur ?? t(locale, "dispo.illisible")}
   </p>
 {:else}
   <p role="status" data-sollicitable={etat.sollicitable}>
     {#if etat.sollicitable}
-      Vous recevez les Demandes de vos secteurs.
+      {t(locale, "dispo.sollicitable")}
     {:else}
       {silence}
     {/if}
@@ -104,21 +105,20 @@
     data-action="basculer-disponibilite"
   >
     {#if occupe}
-      Un instant…
+      {t(locale, "commun.attendez")}
     {:else if etat.disponible}
-      Me mettre en pause
+      {t(locale, "dispo.pause")}
     {:else}
-      Me remettre en service
+      {t(locale, "dispo.reprendre")}
     {/if}
   </button>
 
-  <h2>Jusqu'où je me déplace</h2>
+  <h2>{t(locale, "dispo.titre_rayon")}</h2>
   <p class="klaar-tempere">
-    Au-delà de cette distance, les Demandes ne vous seront pas proposées. C'est
-    votre limite à vous ; celle de la recherche peut être plus courte.
+    {t(locale, "dispo.explication_rayon")}
   </p>
 
-  <label for="rayon">Rayon d'intervention : {rayonKm} km</label>
+  <label for="rayon">{t(locale, "dispo.rayon", { km: rayonKm })}</label>
   <input
     id="rayon"
     type="range"
@@ -135,7 +135,7 @@
     disabled={occupe || rayonKm * 1000 === etat.rayon_intervention_metres}
     data-action="enregistrer-rayon"
   >
-    Enregistrer
+    {t(locale, "dispo.enregistrer")}
   </button>
 {/if}
 

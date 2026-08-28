@@ -21,7 +21,7 @@
     messageSucces,
     type LocaleKlaar,
   } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t } from "../lib/i18n";
 
   let email = $state("");
   let motDePasse = $state("");
@@ -59,7 +59,7 @@
 </script>
 
 <form onsubmit={soumettre} data-formulaire="inscription" novalidate>
-  <label for="inscription-email">Adresse email</label>
+  <label for="inscription-email">{t(locale, "champ.email")}</label>
   <input
     id="inscription-email"
     name="email"
@@ -70,7 +70,7 @@
     required
   />
 
-  <label for="inscription-mot-de-passe">Mot de passe</label>
+  <label for="inscription-mot-de-passe">{t(locale, "champ.mot_de_passe")}</label>
   <input
     id="inscription-mot-de-passe"
     name="mot_de_passe"
@@ -81,18 +81,19 @@
     required
   />
   <p id="inscription-aide-mot-de-passe" class="klaar-tempere">
-    Au moins {LONGUEUR_MIN_MOT_DE_PASSE} caractères. Aucune règle de composition :
-    une phrase que vous retenez vaut mieux qu'un sigle que vous oublierez.
+    {t(locale, "inscription.aide_mot_de_passe", { n: LONGUEUR_MIN_MOT_DE_PASSE })}
   </p>
 
   {#if motDePasseTropCourt}
     <p class="klaar-tempere" data-avertissement="mot-de-passe-court">
-      Encore {LONGUEUR_MIN_MOT_DE_PASSE - [...motDePasse].length} caractère(s).
+      {t(locale, "inscription.encore_caracteres", {
+        n: LONGUEUR_MIN_MOT_DE_PASSE - [...motDePasse].length,
+      })}
     </p>
   {/if}
 
   <button type="submit" disabled={occupe} data-action="inscrire">
-    {occupe ? "Un instant…" : "Créer mon compte"}
+    {occupe ? t(locale, "commun.attendez") : t(locale, "inscription.creer")}
   </button>
 </form>
 

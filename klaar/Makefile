@@ -48,6 +48,21 @@ db-down:
 migrate:
 	cargo run -p klaar-api --bin klaar-migrate
 
+# Parcours filmés — documentation vivante.
+#
+# **Délègue au script, et n'en refait pas la moitié.** `parcours-filmes.sh`
+# monte le service avec les réglages sans lesquels les parcours échouent — pas
+# de méthode de paiement exigée (Stripe est hors périmètre), quotas d'écritures
+# et de Demandes relevés, dont l'un est compté en base et survit au redémarrage
+# — puis repeuple le jeu de démonstration, que les parcours mutent en le
+# jouant. Lancer `npm run demo` seul contre une API démarrée à la main échoue
+# pour ces raisons-là, et pour aucune qui tienne au code.
+#
+# Une cible ici plutôt qu'une ligne à retenir : la procédure existait déjà dans
+# le script, mais rien ne menait à lui depuis le point d'entrée habituel.
+demo:
+	scripts/parcours-filmes.sh
+
 # Story 0.9 — hooks Git locaux DRY avec la CI (Story 0.4).
 # git rev-parse --git-path (pas ".git/hooks" en dur) : correct aussi
 # quand ce repo est un submodule ou un worktree (.git est alors un fichier).

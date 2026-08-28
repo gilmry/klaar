@@ -23,6 +23,10 @@
     stopAutoSync,
   } from "../lib/offlineQueue";
   import { sonderReseau } from "../lib/api";
+  import { restaurerLangue, t } from "../lib/i18n";
+  import type { LocaleKlaar } from "../lib/inscription";
+
+  let locale = $state<LocaleKlaar>("fr");
 
   /**
    * `null` tant que rien n'a été vérifié.
@@ -54,6 +58,7 @@
   }
 
   onMount(() => {
+    locale = restaurerLangue();
     const surChangementReseau = () => void reevaluer();
     window.addEventListener("online", surChangementReseau);
     window.addEventListener("offline", surChangementReseau);
@@ -76,16 +81,16 @@
     data-etat={enLigne === null ? "inconnu" : enLigne ? "en-ligne" : "hors-ligne"}
   ></span>
   {#if enLigne === null}
-    Vérification de la connexion…
+    {t(locale, "connexion.verification")}
   {:else if enLigne}
-    En ligne
+    {t(locale, "connexion.en_ligne")}
   {:else}
-    Hors ligne, vos saisies sont conservées
+    {t(locale, "connexion.hors_ligne")}
   {/if}
   {#if enAttente > 0}
-    · {enAttente} en attente d'envoi
+    · {t(locale, "connexion.en_attente", { n: enAttente })}
   {/if}
   {#if echecs > 0}
-    · <strong>{echecs} refusée{echecs > 1 ? "s" : ""}</strong>
+    · <strong>{t(locale, "connexion.refusees", { n: echecs })}</strong>
   {/if}
 </p>

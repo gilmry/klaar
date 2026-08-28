@@ -144,8 +144,8 @@
     });
   }
 
-  const etat = $derived(suivi ? libelleStatutDemande(suivi) : null);
-  const intervention = $derived(suivi ? libelleMission(suivi.mission_statut) : null);
+  const etat = $derived(suivi ? libelleStatutDemande(suivi, locale) : null);
+  const intervention = $derived(suivi ? libelleMission(suivi.mission_statut, locale) : null);
 
   async function rafraichir() {
     try {
@@ -326,13 +326,14 @@
 </script>
 
 {#if reprise}
-  <p data-etat-suivi="reprise">Reprise de session…</p>
+  <p data-etat-suivi="reprise">{t(locale, "connexion.reprise")}</p>
 {:else if !connecte}
   <p role="status" data-etat-suivi="anonyme">
-    Cette page demande d'être connecté. <a href="/connexion">Me connecter</a>
+    {t(locale, "commun.connexion_requise")}
+    <a href="/connexion">{t(locale, "commun.me_connecter")}</a>
   </p>
 {:else if suivi === null}
-  <p role="alert" data-etat-suivi="introuvable">{erreur ?? "Demande introuvable."}</p>
+  <p role="alert" data-etat-suivi="introuvable">{erreur ?? t(locale, "suivi.introuvable")}</p>
 {:else}
   <section data-suivi={suivi.statut} data-direct={socketOuverte ? "ouvert" : "ferme"}>
     <p role="status" data-suivi-etat>{etat}</p>
@@ -354,28 +355,33 @@
       </p>
     {/if}
     <p class="klaar-tempere">
-      {suivi.secteur} · zone de {(suivi.rayon_metres / 1000).toFixed(0)} km{#if suivi.elargissements > 0}, élargie {suivi.elargissements} fois sur 3{/if}
+      {t(locale, "suivi.km", {
+        secteur: suivi.secteur,
+        km: (suivi.rayon_metres / 1000).toFixed(0),
+      })}{#if suivi.elargissements > 0}, {t(locale, "suivi.elargie", { n: suivi.elargissements })}{/if}
     </p>
     <p>{suivi.description}</p>
 
     {#if suivi.devis}
       <section data-devis={suivi.devis.statut} class="devis">
-        <h3>Devis reçu</h3>
+        <h3>{t(locale, "suivi.devis_recu")}</h3>
         <p data-devis-total>
-          <strong>{montantLisible(suivi.devis.total_ttc_cents)} TTC</strong>
+          <strong>{montantLisible(suivi.devis.total_ttc_cents, locale)} {t(locale, "devis.ttc")}</strong>
           <span class="klaar-tempere">
-            ({montantLisible(suivi.devis.montant_htva_cents)} hors TVA + {montantLisible(
-              suivi.devis.tva_cents,
-            )} de TVA à {suivi.devis.taux_tva_bp / 100} %)
+            {t(locale, "devis.detail", {
+              htva: montantLisible(suivi.devis.montant_htva_cents, locale),
+              tva: montantLisible(suivi.devis.tva_cents, locale),
+              taux: suivi.devis.taux_tva_bp / 100,
+            })}
           </span>
         </p>
         <p class="klaar-tempere">
-          Intervention annoncée sous {delaiLisible(suivi.devis.delai_minutes)}.
+          {t(locale, "devis.delai", { delai: delaiLisible(suivi.devis.delai_minutes) })}
         </p>
         {#if suivi.devis.note}
           <p data-devis-note>{suivi.devis.note}</p>
         {/if}
-        <p role="status" data-devis-etat>{libelleDevis(suivi.devis)}</p>
+        <p role="status" data-devis-etat>{libelleDevis(suivi.devis, locale)}</p>
 
         {#if attendUneReponse(suivi.devis)}
           <div data-bloc="reponse-devis">
@@ -385,14 +391,14 @@
               disabled={occupe}
               data-action="accepter-devis"
             >
-              {occupe ? "Un instant…" : "J'accepte ce devis"}
+              {occupe ? t(locale, "commun.attendez") : t(locale, "devis.accepter")}
             </button>
 
-            <label for="motif-refus">Si vous refusez, pourquoi (facultatif)</label>
+            <label for="motif-refus">{t(locale, "devis.motif_refus")}</label>
             <select id="motif-refus" bind:value={motifRefus} data-champ="motif-refus">
-              <option value="">Sans motif</option>
+              <option value="">{t(locale, "commun.sans_motif")}</option>
               {#each MOTIFS_REFUS as m}
-                <option value={m.code}>{m.libelle}</option>
+                <option value={m.code}>{t(locale, m.cle)}</option>
               {/each}
             </select>
             <button
@@ -401,34 +407,32 @@
               disabled={occupe}
               data-action="refuser-devis"
             >
-              {occupe ? "Un instant…" : "Je refuse"}
+              {occupe ? t(locale, "commun.attendez") : t(locale, "devis.refuser")}
             </button>
           </div>
         {/if}
 
         <p class="klaar-tempere">
-          C'est le prestataire qui fixe son prix. Klaar ne le lui suggère pas et
-          ne le corrige pas.
+          {t(locale, "devis.prix_libre")}
           <!-- Le paiement lui-même relève de l'Epic 5 (Stripe). L'accord est
                enregistré ; le règlement se fait pour l'instant entre les deux
                parties, et le dire vaut mieux que de laisser croire le contraire. -->
-          L'accord est enregistré ici ; le règlement se fait pour l'instant
-          directement avec le prestataire.
+          {t(locale, "devis.reglement_direct")}
         </p>
       </section>
     {/if}
 
     {#if peutNoter(suivi) && !noteEnvoyee}
       <div data-bloc="notation">
-        <p>Comment s'est passée l'intervention ?</p>
-        <label for="note-etoiles">De 1 à 5 étoiles</label>
+        <p>{t(locale, "note.question")}</p>
+        <label for="note-etoiles">{t(locale, "note.etoiles")}</label>
         <select id="note-etoiles" bind:value={noteChoisie} data-champ="note">
-          <option value={0} disabled>Choisissez…</option>
+          <option value={0} disabled>{t(locale, "demande.choisissez")}</option>
           {#each [1, 2, 3, 4, 5] as etoiles}
             <option value={etoiles}>{etoiles} ★</option>
           {/each}
         </select>
-        <label for="note-commentaire">Un mot (facultatif)</label>
+        <label for="note-commentaire">{t(locale, "note.commentaire")}</label>
         <input id="note-commentaire" type="text" bind:value={commentaireNote} data-champ="commentaire-note" />
         <button
           type="button"
@@ -436,17 +440,15 @@
           disabled={occupe || noteChoisie < 1}
           data-action="noter"
         >
-          {occupe ? "Un instant…" : "Envoyer ma note"}
+          {occupe ? t(locale, "commun.attendez") : t(locale, "note.envoyer")}
         </button>
         <p class="klaar-tempere">
-          Votre note reste cachée tant que le prestataire n'a pas donné la
-          sienne : les deux s'affichent ensemble, pour que personne n'ajuste la
-          sienne en fonction de l'autre.
+          {t(locale, "note.cachee")}
         </p>
       </div>
     {:else if peutNoter(suivi) && noteEnvoyee}
       <p role="status" data-notation="envoyee">
-        Merci. Votre note s'affichera quand le prestataire aura donné la sienne.
+        {t(locale, "note.merci")}
       </p>
     {/if}
 
@@ -456,19 +458,18 @@
 
     {#if peutContester(suivi) && !litigeOuvert}
       <details data-bloc="litige">
-        <summary>L'intervention s'est mal passée ?</summary>
+        <summary>{t(locale, "litige.ouvrir_details")}</summary>
         <p class="klaar-tempere">
-          Vous pouvez ouvrir un litige pendant quatorze jours. Il sera examiné,
-          et le prestataire pourra donner sa version.
+          {t(locale, "litige.explication")}
         </p>
-        <label for="motif-litige">Que s'est-il passé</label>
+        <label for="motif-litige">{t(locale, "litige.motif")}</label>
         <select id="motif-litige" bind:value={motifLitige} data-champ="motif-litige">
-          <option value="" disabled>Choisissez…</option>
+          <option value="" disabled>{t(locale, "demande.choisissez")}</option>
           {#each MOTIFS_LITIGE as m}
-            <option value={m.code}>{m.libelle}</option>
+            <option value={m.code}>{t(locale, m.cle)}</option>
           {/each}
         </select>
-        <label for="recit-litige">Racontez, en quelques phrases</label>
+        <label for="recit-litige">{t(locale, "litige.recit")}</label>
         <textarea
           id="recit-litige"
           bind:value={recitLitige}
@@ -481,22 +482,22 @@
           disabled={occupe || motifLitige === "" || recitLitige.trim().length < RECIT_MIN_CARACTERES}
           data-action="ouvrir-litige"
         >
-          {occupe ? "Un instant…" : "Ouvrir un litige"}
+          {occupe ? t(locale, "commun.attendez") : t(locale, "litige.ouvrir")}
         </button>
       </details>
     {:else if litigeOuvert}
       <p role="status" data-litige="ouvert">
-        Votre litige est ouvert. Il sera examiné, et vous serez tenu au courant.
+        {t(locale, "litige.ouvert")}
       </p>
     {/if}
 
     {#if peutAnnulerMission(suivi)}
       <div data-bloc="arret-intervention">
-        <label for="motif-arret">Annuler l'intervention (facultatif : pourquoi)</label>
+        <label for="motif-arret">{t(locale, "arret.motif")}</label>
         <select id="motif-arret" bind:value={motifArret} data-champ="motif-arret">
-          <option value="">Sans motif</option>
+          <option value="">{t(locale, "commun.sans_motif")}</option>
           {#each MOTIFS_ANNULATION_MISSION as m}
-            <option value={m.code}>{m.libelle}</option>
+            <option value={m.code}>{t(locale, m.cle)}</option>
           {/each}
         </select>
         <button
@@ -505,12 +506,11 @@
           disabled={occupe}
           data-action="annuler-intervention"
         >
-          {occupe ? "Un instant…" : "Annuler l'intervention"}
+          {occupe ? t(locale, "commun.attendez") : t(locale, "arret.bouton")}
         </button>
         {#if suivi.mission_statut === "ON_SITE"}
           <p class="klaar-tempere">
-            Le prestataire est déjà sur place : 30 € lui resteront pour son
-            déplacement, le reste vous est rendu.
+            {t(locale, "arret.forfait")}
           </p>
         {/if}
       </div>
@@ -519,36 +519,34 @@
     {#if peutValider(suivi)}
       <div data-bloc="validation">
         <p>
-          Le prestataire a déclaré avoir terminé. Si c'est bien le cas,
-          confirmez-le : c'est ce qui déclenche son paiement.
+          {t(locale, "validation.question")}
         </p>
         <button type="button" onclick={valider} disabled={occupe} data-action="valider">
-          {occupe ? "Un instant…" : "L'intervention est bien terminée"}
+          {occupe ? t(locale, "commun.attendez") : t(locale, "validation.bouton")}
         </button>
         <p class="klaar-tempere">
-          Sans réponse de votre part, elle sera validée automatiquement dans les
-          72 heures.
+          {t(locale, "validation.automatique")}
         </p>
       </div>
     {/if}
 
     {#if peutElargir(suivi)}
       <button type="button" onclick={elargir} disabled={occupe} data-action="elargir">
-        {occupe ? "Un instant…" : "Élargir la zone de recherche"}
+        {occupe ? t(locale, "commun.attendez") : t(locale, "suivi.elargir")}
       </button>
     {/if}
 
     {#if peutAnnuler(suivi)}
       <div data-bloc="annulation">
-        <label for="motif-annulation">Pourquoi (facultatif)</label>
+        <label for="motif-annulation">{t(locale, "suivi.motif_retrait")}</label>
         <select id="motif-annulation" bind:value={motif} data-champ="motif">
-          <option value="">Sans motif</option>
+          <option value="">{t(locale, "commun.sans_motif")}</option>
           {#each MOTIFS_ANNULATION as m}
-            <option value={m.code}>{m.libelle}</option>
+            <option value={m.code}>{t(locale, m.cle)}</option>
           {/each}
         </select>
         <button type="button" onclick={annuler} disabled={occupe} data-action="annuler">
-          {occupe ? "Un instant…" : "Retirer ma demande"}
+          {occupe ? t(locale, "commun.attendez") : t(locale, "suivi.retirer")}
         </button>
       </div>
     {/if}

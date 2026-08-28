@@ -13,7 +13,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t } from "../lib/i18n";
   import { codeDepuisErreur, jetonDepuisUrl, messageErreur, messageSucces, verifier } from "../lib/verification";
 
   type Etat = "en-cours" | "confirme" | "echec";
@@ -44,13 +44,13 @@
 </script>
 
 {#if etat === "en-cours"}
-  <p data-etat-verification="en-cours">Confirmation en cours…</p>
+  <p data-etat-verification="en-cours">{t(locale, "verification.en_cours")}</p>
 {:else if etat === "confirme"}
   <p role="status" data-etat-verification="confirme">{message}</p>
-  <p><a href="/">Retour à l'accueil</a></p>
+  <p><a href="/">{t(locale, "verification.accueil")}</a></p>
 {:else}
   <p role="alert" data-etat-verification="echec">{message}</p>
-  <p><a href="/inscription">Recommencer l'inscription</a></p>
+  <p><a href="/inscription">{t(locale, "verification.recommencer")}</a></p>
 {/if}
 
 <style>

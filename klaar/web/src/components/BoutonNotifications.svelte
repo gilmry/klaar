@@ -9,12 +9,17 @@
    */
   import { onMount } from "svelte";
   import { activer, desactiver, etatActuel, pushDisponible, type EtatPush } from "../lib/push";
+  import { restaurerLangue, t } from "../lib/i18n";
+  import type { LocaleKlaar } from "../lib/inscription";
+
+  let locale = $state<LocaleKlaar>("fr");
 
   let etat = $state<EtatPush>("non-supporte");
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
 
   onMount(async () => {
+    locale = restaurerLangue();
     if (!pushDisponible()) {
       etat = "non-supporte";
       return;
@@ -37,27 +42,24 @@
 
 {#if etat === "non-supporte"}
   <p class="klaar-tempere" data-etat-push="non-supporte">
-    Ce navigateur ne délivre pas de notifications. Sur iPhone, ajoutez d'abord
-    Klaar à votre écran d'accueil : Safari ne les délivre qu'aux applications
-    installées.
+    {t(locale, "push.non_supporte")}
   </p>
 {:else if etat === "non-configure"}
   <p class="klaar-tempere" data-etat-push="non-configure">
-    Les notifications ne sont pas activées sur ce déploiement.
+    {t(locale, "push.non_configure")}
   </p>
 {:else if etat === "refuse"}
   <p class="klaar-tempere" data-etat-push="refuse">
-    Les notifications sont bloquées pour ce site. Le rétablir se fait dans les
-    réglages du navigateur, pas depuis cette page.
+    {t(locale, "push.refuse")}
   </p>
 {:else}
   <button type="button" onclick={basculer} disabled={occupe} data-etat-push={etat}>
     {#if occupe}
-      Un instant…
+      {t(locale, "commun.attendez")}
     {:else if etat === "actif"}
-      Désactiver les notifications
+      {t(locale, "push.desactiver")}
     {:else}
-      Recevoir les notifications
+      {t(locale, "push.activer")}
     {/if}
   </button>
 {/if}

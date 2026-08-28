@@ -10,6 +10,8 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   appliquerLangue,
   choisirLangue,
+  CLES,
+  etiquetteBcp47,
   LANGUES,
   langueChoisie,
   restaurerLangue,
@@ -35,14 +37,60 @@ describe("@happy", () => {
 });
 
 describe("@security", () => {
-  it("aucune traduction ne se répète d'une langue à l'autre par paresse", () => {
-    // Un texte identique en français et en néerlandais signale presque toujours
-    // une traduction oubliée. Les rares homographes justifiés seraient à
-    // inscrire ici explicitement.
-    const cles = ["trajet.perdue", "trajet.arrete", "commun.rafraichir"] as const;
-    for (const cle of cles) {
-      expect(t("fr", cle)).not.toBe(t("nl", cle));
-      expect(t("fr", cle)).not.toBe(t("en", cle));
+  /**
+   * Homographes légitimes : un mot qui s'écrit pareil dans deux langues.
+   *
+   * Inscrits ici un par un plutôt que tolérés par une règle générale, pour
+   * qu'ajouter une clé non traduite oblige à s'expliquer dans ce fichier.
+   */
+  const HOMOGRAPHES: Record<string, ("fr-nl" | "fr-en" | "nl-en")[]> = {
+    "app.ville": ["fr-en"],
+    "conversation.titre": ["fr-en", "nl-en"],
+    "connexion.en_ligne": ["fr-nl", "fr-en", "nl-en"],
+    "connexion.me_connecter": [],
+    "demande.secteur": ["fr-en", "nl-en"],
+    "demande.urgence": [],
+    "pro.devis_accepte": [],
+    "motif.autre": [],
+    "dispo.enregistrer": [],
+  };
+
+  it("chaque clé a trois traductions réellement distinctes", () => {
+    // Un texte identique d'une langue à l'autre signale presque toujours une
+    // traduction oubliée. Le vérifier sur la table **entière** plutôt que sur
+    // quelques clés choisies : c'est dans celles qu'on n'a pas regardées qu'un
+    // oubli se cache.
+    const suspects: string[] = [];
+    for (const cle of CLES) {
+      const [fr, nl, en] = [t("fr", cle), t("nl", cle), t("en", cle)];
+      const permis = HOMOGRAPHES[cle] ?? [];
+      if (fr === nl && !permis.includes("fr-nl")) suspects.push(`${cle} (fr = nl)`);
+      if (fr === en && !permis.includes("fr-en")) suspects.push(`${cle} (fr = en)`);
+      if (nl === en && !permis.includes("nl-en")) suspects.push(`${cle} (nl = en)`);
+    }
+    expect(suspects, `traductions probablement oubliées :\n${suspects.join("\n")}`).toEqual(
+      [],
+    );
+  });
+
+  it("aucune traduction n'est vide", () => {
+    // Une chaîne vide compile mais laisse un bouton sans texte.
+    for (const cle of CLES) {
+      for (const l of ["fr", "nl", "en"] as const) {
+        expect(t(l, cle).trim().length, `${cle} en ${l}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("les gabarits portent les mêmes variables dans les trois langues", () => {
+    // Une variable oubliée en néerlandais laisse un « {n} » à l'écran, ou pire,
+    // fait disparaître le nombre sans que rien ne le signale.
+    const variables = (texte: string) =>
+      [...texte.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+    for (const cle of CLES) {
+      const fr = variables(t("fr", cle));
+      expect(variables(t("nl", cle)), `${cle} en nl`).toEqual(fr);
+      expect(variables(t("en", cle)), `${cle} en en`).toEqual(fr);
     }
   });
 });
@@ -74,6 +122,12 @@ describe("@edge", () => {
     document.documentElement.lang = "fr-BE";
     expect(restaurerLangue()).toBe("nl");
     expect(document.documentElement.lang).toBe("nl-BE");
+  });
+
+  it("rend l'étiquette BCP 47 attendue par les formats", () => {
+    expect(etiquetteBcp47("fr")).toBe("fr-BE");
+    expect(etiquetteBcp47("nl")).toBe("nl-BE");
+    expect(etiquetteBcp47("en")).toBe("en");
   });
 
   it("ignore une valeur enregistrée qui n'est pas une langue connue", () => {

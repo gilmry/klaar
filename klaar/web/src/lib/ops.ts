@@ -131,6 +131,8 @@ export function pourcentage(taux: number | null): string {
 
 /** Un montant en centimes, en euros lisibles. */
 export function montantOps(cents: number): string {
+  // La console d'exploitation reste en français (voir Story 9.1) ; le format
+  // belge est donc celui qui convient à ses lecteurs.
   return `${(cents / 100).toLocaleString("fr-BE", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,

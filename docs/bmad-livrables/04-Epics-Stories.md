@@ -1882,7 +1882,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 9 — i18n · Priorité **Must**
 
-### Story 9.1 — i18n FR/NL/EN toutes surfaces (FR-043) — *service et sélecteur faits ; coquille Astro en français*
+### Story 9.1 — i18n FR/NL/EN toutes surfaces (FR-043) — *faite pour les surfaces publiques*
 - **En tant que** User · **je veux** choisir ma langue · **afin d'** utiliser l'app confortablement
 - **4×N** : PRD FR-043
 - **Couche(s)** : Frontend (catalogues compilés) + Backend (emails)
@@ -1913,11 +1913,45 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > magasin partagé que chacun devrait penser à écouter, et le premier oubli
 > laisserait un écran à moitié traduit.
 >
+> **Tous les écrans publics sont traduits**, et pas seulement le sélecteur :
+> demande, connexion, inscription, compte, catalogue, disponibilité, messagerie,
+> vérification d'adresse, notifications, état de connexion, suivi de Demande et
+> espace prestataire. Y compris les **vocabulaires fermés** — motifs de refus,
+> de litige, d'annulation — qui portent désormais des clés de traduction et non
+> des libellés français figés dans le code : ce sont précisément les listes
+> qu'un demandeur néerlandophone lit le plus.
+>
+> **Les statuts aussi.** `libelleStatutDemande`, `libelleMission`,
+> `libelleStatut`, `libelleStatutDevis`, `libelleTransition`, `libelleUrgence`
+> et `libelleDevis` prennent une locale. Un statut est ce qu'on lit en premier
+> sur un écran d'attente ; le laisser en français aurait vidé la traduction du
+> reste de son intérêt.
+>
+> **Les nombres suivent la langue.** `montantLisible` et l'heure d'un message
+> passent par une étiquette BCP 47 dérivée de la locale : « fr-BE » et « nl-BE »
+> ne formatent pas comme « fr-FR » et « nl-NL », et l'anglais n'a pas de variante
+> belge — lui en inventer une donnerait des formats que personne n'attend.
+>
+> **Trois tests exhaustifs, et non trois clés choisies à la main.** Ils
+> parcourent la table entière : aucune traduction vide, aucune traduction
+> identique d'une langue à l'autre hors homographes inscrits un par un, et les
+> mêmes variables de gabarit dans les trois langues. Ils ont trouvé deux défauts
+> réels dès leur première exécution — un « Sector » néerlandais et anglais non
+> déclaré comme homographe, et surtout un **marqueur de pluriel passé en
+> variable** (`{n} refusée{s}`), calculé côté français : une lettre de pluriel
+> n'est pas une donnée, et le néerlandais n'accorde pas ce participe du tout.
+>
 > **Ce qui reste en français, et pourquoi.** La coquille Astro : les pages sont
 > générées statiquement à la construction, les traduire demande soit trois jeux
 > de pages, soit un rendu au serveur — un choix d'architecture, pas un oubli de
 > traduction. Et la **console d'exploitation**, qui s'adresse aux équipes de
 > klaar et non aux Bruxellois ; FR-043 porte sur l'usage du public.
+>
+> **Limite de qualité, écrite plutôt que tue** : les traductions néerlandaises
+> et anglaises n'ont pas été relues par un locuteur natif. Elles sont écrites, ce
+> qui vaut mieux qu'une machine, mais une relecture reste à faire avant tout
+> usage réel — le néerlandais approximatif dans un service bruxellois se
+> remarque.
 >
 > **Faite côté service ; les écrans restent à traduire.** Ce qui est livré : la
 > route de changement de langue, et surtout la correction d'un défaut réel — la

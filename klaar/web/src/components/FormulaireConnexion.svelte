@@ -13,7 +13,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
-  import { restaurerLangue } from "../lib/i18n";
+  import { restaurerLangue, t } from "../lib/i18n";
   import {
     codeDepuisErreur,
     messageErreur,
@@ -69,17 +69,17 @@
 </script>
 
 {#if reprise}
-  <p data-etat-session="reprise">Reprise de session…</p>
+  <p data-etat-session="reprise">{t(locale, "connexion.reprise")}</p>
 {:else if connecte}
   <p role="status" data-succes-connexion>
-    Vous êtes connecté. La session se renouvelle d'elle-même avant d'expirer.
+    {t(locale, "connexion.connecte")}
   </p>
   <button type="button" onclick={deconnecter} disabled={occupe} data-action="deconnecter">
-    {occupe ? "Un instant…" : "Me déconnecter"}
+    {occupe ? t(locale, "commun.attendez") : t(locale, "connexion.deconnecter")}
   </button>
 {:else}
   <form onsubmit={soumettre} data-formulaire="connexion" novalidate>
-    <label for="connexion-email">Adresse email</label>
+    <label for="connexion-email">{t(locale, "champ.email")}</label>
     <input
       id="connexion-email"
       name="email"
@@ -90,7 +90,7 @@
       required
     />
 
-    <label for="connexion-mot-de-passe">Mot de passe</label>
+    <label for="connexion-mot-de-passe">{t(locale, "champ.mot_de_passe")}</label>
     <input
       id="connexion-mot-de-passe"
       name="mot_de_passe"
@@ -101,7 +101,7 @@
     />
 
     <button type="submit" disabled={occupe} data-action="connecter">
-      {occupe ? "Un instant…" : "Me connecter"}
+      {occupe ? t(locale, "commun.attendez") : t(locale, "commun.me_connecter")}
     </button>
   </form>
 {/if}
