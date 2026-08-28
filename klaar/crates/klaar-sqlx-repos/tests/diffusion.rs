@@ -67,17 +67,27 @@ async fn happy_un_tour_ecoule_passe_en_no_match_et_est_rendu() {
 
     // La file est vidée plutôt que balayée une fois : un passage rend les plus
     // anciennes d'abord, et une base qui garde les Demandes des exécutions
-    // précédentes évince facilement celle-ci du premier lot. Ce qu'on vérifie
-    // est qu'elle est bien rendue, pas qu'elle l'est en premier.
-    let mut rendue = false;
+    // précédentes évince facilement celle-ci du premier lot.
     loop {
-        let moisson = depot.expirer_echues(echeance(), 500).await.unwrap();
-        if moisson.is_empty() {
+        if depot
+            .expirer_echues(echeance(), 500)
+            .await
+            .unwrap()
+            .is_empty()
+        {
             break;
         }
-        rendue |= moisson.iter().any(|e| e.id == d.id);
     }
-    assert!(rendue, "la Demande échue doit être rendue");
+
+    // **Ce qui est asserté est l'issue, pas qui l'a produite.** Un autre binaire
+    // de test balaie la même table au même moment : si son passage éteint cette
+    // Demande avant le nôtre, le nôtre ne la rendra pas — et ce serait le
+    // comportement correct, puisqu'un balayage ne rend que ce qu'il vient
+    // d'éteindre. Assertée telle quelle, la propriété « elle nous est rendue »
+    // dépendait de ce qui tournait en parallèle.
+    //
+    // Que le balayage rende exactement ce qu'il éteint est vérifié là où c'est
+    // isolable : `usecases::expirer`, sur un double en mémoire.
     let relue = depot.par_id(d.id).await.unwrap().expect("la Demande");
     assert_eq!(relue.statut, StatutDemande::SansReponse);
 }

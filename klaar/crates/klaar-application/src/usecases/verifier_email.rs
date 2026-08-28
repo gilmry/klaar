@@ -222,6 +222,13 @@ mod tests {
         async fn par_id(&self, _: Uuid) -> Result<Option<Utilisateur>, RepositoryError> {
             Ok(None)
         }
+        async fn definir_locale(
+            &self,
+            _: Uuid,
+            _: klaar_shared_kernel::Locale,
+        ) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
     }
 
     #[derive(Default)]

@@ -1606,7 +1606,9 @@ dependencies = [
 name = "klaar-messaging"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "klaar-shared-kernel",
+ "uuid",
 ]
 
 [[package]]
@@ -1655,6 +1657,7 @@ dependencies = [
  "klaar-identity",
  "klaar-intervention",
  "klaar-matching",
+ "klaar-messaging",
  "klaar-payment",
  "klaar-shared-kernel",
  "klaar-trust",

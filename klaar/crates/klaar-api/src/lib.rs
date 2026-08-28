@@ -18,9 +18,9 @@ use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
     PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository, PgDevisRepository,
-    PgJournalAudit, PgLiberationRepository, PgMissionRepository, PgNotationRepository,
-    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
-    PgTraceRepository, PgUtilisateurRepository,
+    PgJournalAudit, PgLiberationRepository, PgLitigeRepository, PgMessageRepository,
+    PgMissionRepository, PgNotationRepository, PgPaiementRepository, PgProviderRepository,
+    PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -60,6 +60,8 @@ pub struct EtatApplication {
     pub liberations: Arc<PgLiberationRepository>,
     pub annulations: Arc<PgAnnulationRepository>,
     pub notations: Arc<PgNotationRepository>,
+    pub messages: Arc<PgMessageRepository>,
+    pub litiges: Arc<PgLitigeRepository>,
     /// Diffusion temps réel des événements de Mission (Story 4.9).
     pub evenements: crate::evenements::BusEvenements,
     /// Billets d'ouverture de socket, à usage unique et de courte vie.
@@ -127,6 +129,11 @@ pub struct EtatApplication {
         routes::annulation_mission::annuler_intervention,
         routes::notation::noter_intervention,
         routes::notation::lire_notes,
+        routes::conversation::envoyer_message,
+        routes::conversation::lire_conversation,
+        routes::litige::ouvrir_litige,
+        routes::litige::lire_litige,
+        routes::langue::changer_langue,
         routes::temps_reel::demander_billet,
         routes::temps_reel::suivre_en_direct,
         routes::suivi::suivre_demande,
@@ -172,6 +179,16 @@ pub struct EtatApplication {
         routes::notation::NoteEcriteDto,
         routes::notation::NoteVisibleDto,
         routes::notation::NotesDeMissionDto,
+        routes::conversation::MessageDto,
+        routes::conversation::MessageEnvoyeDto,
+        routes::conversation::MessageLuDto,
+        routes::conversation::FilDto,
+        routes::conversation::RefusCoordonneesDto,
+        routes::litige::LitigeDto,
+        routes::litige::LitigeOuvertDto,
+        routes::litige::LitigeLuDto,
+        routes::langue::LangueDto,
+        routes::langue::LangueChoisieDto,
         routes::temps_reel::BilletDto,
         routes::suivi::SuiviDemandeDto,
         routes::suivi::DemandeProposeeDto,
@@ -193,6 +210,8 @@ pub struct EtatApplication {
         (name = "prestataires", description = "Disponibilité et rayon d\'intervention (FR-003)"),
         (name = "missions", description = "Cycle de vie d\'une intervention (FR-018)"),
         (name = "devis", description = "Devis du prestataire (FR-016)"),
+        (name = "litige", description = "Recours après intervention (FR-034)"),
+        (name = "conversation", description = "Messagerie entre les deux parties (FR-030)"),
         (name = "notation", description = "Notation double sens (FR-033)"),
         (name = "temps-réel", description = "Flux d'événements d'une Mission (Story 4.9)"),
         (name = "push", description = "Abonnements Web Push (ADR-010)"),
@@ -226,6 +245,11 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::annulation_mission::annuler_intervention)
         .service(routes::notation::noter_intervention)
         .service(routes::notation::lire_notes)
+        .service(routes::conversation::envoyer_message)
+        .service(routes::conversation::lire_conversation)
+        .service(routes::litige::ouvrir_litige)
+        .service(routes::litige::lire_litige)
+        .service(routes::langue::changer_langue)
         .service(routes::temps_reel::demander_billet)
         .service(routes::temps_reel::suivre_en_direct)
         .service(routes::suivi::suivre_demande)
@@ -262,7 +286,9 @@ pub fn etat_de_test(
         devis: Arc::new(PgDevisRepository::new(pool.clone())),
         liberations: Arc::new(PgLiberationRepository::new(pool.clone())),
         annulations: Arc::new(PgAnnulationRepository::new(pool.clone())),
-        notations: Arc::new(PgNotationRepository::new(pool)),
+        notations: Arc::new(PgNotationRepository::new(pool.clone())),
+        messages: Arc::new(PgMessageRepository::new(pool.clone())),
+        litiges: Arc::new(PgLitigeRepository::new(pool)),
         evenements: crate::evenements::BusEvenements::new(),
         billets: Arc::new(crate::billet::BilletsMemoire::new()),
         jetons: Arc::new(

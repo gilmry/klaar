@@ -14,6 +14,7 @@ klaar-catalog = { path = "../klaar-catalog", version = "0.0.0" }
 klaar-matching = { path = "../klaar-matching", version = "0.0.0" }
 klaar-intervention = { path = "../klaar-intervention", version = "0.0.0" }
 klaar-payment = { path = "../klaar-payment", version = "0.0.0" }
+klaar-messaging = { path = "../klaar-messaging", version = "0.0.0" }
 klaar-trust = { path = "../klaar-trust", version = "0.0.0" }
 # Signature chaînée de la trace de matching (AI Act art. 12, Story 3.8).
 klaar-audit-adapter = { path = "../klaar-audit-adapter", version = "0.0.0" }

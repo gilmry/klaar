@@ -270,6 +270,13 @@ mod tests {
     }
 
     impl UtilisateurRepository for DepotMemoire {
+        async fn definir_locale(
+            &self,
+            _: Uuid,
+            _: klaar_shared_kernel::Locale,
+        ) -> Result<bool, RepositoryError> {
+            unreachable!()
+        }
         async fn creer_si_absent(
             &self,
             _: &Utilisateur,

@@ -1359,6 +1359,40 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain + Application + Infra (actix-web-actors WebSocket) + Frontend
 - **Taille** : **L** (1 j) · **Tours** : 5
 
+> **Faite, avec 6.3 (FR-032) dans le même mouvement** : une messagerie sans
+> anti-contournement n'aurait été qu'un canal d'échange de numéros.
+>
+> **Il n'y a pas d'agrégat « Conversation ».** Une Mission en tient lieu : elle
+> désigne exactement deux personnes, elle a une naissance et une fin, et c'est
+> d'elle que dépendent l'ouverture et la fermeture des échanges. Une entité qui
+> n'aurait qu'un identifiant de Mission aurait été un détour.
+>
+> **La détection de coordonnées est un frein, pas un mur.** Quelqu'un de
+> déterminé écrira « mon numéro finit par les deux chiffres de l'année » et
+> passera. Le but n'est pas de rendre le contournement impossible — il ne peut
+> pas l'être dans du texte libre — mais de le rendre délibéré : personne ne peut
+> plus prétendre avoir échangé un numéro par mégarde, et la tentative est
+> consignée. La limite est écrite dans le module plutôt que découverte par
+> quelqu'un qui croirait la barrière étanche.
+>
+> **Les faux positifs coûtent plus cher que les faux négatifs.** Un message
+> légitime bloqué est une conversation cassée entre deux personnes qui ont un
+> problème à régler ; un numéro qui passe est une commission perdue. Le seuil
+> est donc à neuf chiffres — une date écrite `24/12/2026` en fait huit une fois
+> les séparateurs retirés, et la bloquer casserait la moitié des prises de
+> rendez-vous. Un faux positif a été trouvé et fermé en chemin : recoller
+> aveuglément les espaces autour des points transformait « @Camille. Je suis
+> là » en adresse électronique.
+>
+> **Le message refusé n'est pas conservé.** Garder le texte reviendrait à
+> constituer un fichier de ce que les gens ont essayé de s'écrire, pour une
+> finalité — compter les récidives — qui n'en a pas besoin. Ce qui est consigné :
+> qui, quand, sur quelle Mission, et quel genre de coordonnée.
+>
+> Non livré : le scan antivirus des pièces jointes, qui attend le stockage
+> d'objets (Story 6.2), et le signalement effectif à l'exploitation, qui attend
+> la console ops (Epic 8) — le compteur, lui, existe et est rendu à l'appelant.
+
 ### Story 6.2 — Photos dans conversation (FR-031)
 - **En tant que** User · **je veux** envoyer photos · **afin de** montrer le problème
 - **4×N** : PRD FR-031 (> 5 Mo, EXIF strippé, quota 10)
@@ -1425,6 +1459,36 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain + Application
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 
+> **Faite pour l'ouverture ; la résolution appartient à l'Epic 8.** Ce qui
+> existe : ouvrir, borner, compter. Trancher demande un humain, et une console
+> pour lui.
+>
+> **Un litige est l'issue que l'annulation refuse.** Une intervention faite ne
+> s'annule pas — elle a eu lieu — mais elle peut être contestée. Sans ce
+> recours, le seul geste possible après un travail mal fait serait une mauvaise
+> note, ce qui ne rend l'argent à personne.
+>
+> **Le vocabulaire des motifs est fermé et asymétrique.** Les griefs des deux
+> parties ne sont pas les mêmes : le demandeur conteste un travail, le
+> prestataire constate une porte close. Un vocabulaire commun aurait obligé
+> chacun à choisir dans une liste dont la moitié ne le concerne pas, et un
+> prestataire ouvrant un litige « qualité » contre lui-même rendrait tout
+> comptage par motif ininterprétable.
+>
+> **La sanction ne compte que les litiges perdus.** Un prestataire attaqué trois
+> fois et blanchi trois fois n'a rien fait de mal ; le suspendre reviendrait à
+> punir le fait d'avoir été accusé. Et le seuil du demandeur — deux litiges en
+> sept jours — n'est pas une sanction mais un signal : quelqu'un peut
+> légitimement tomber deux fois sur un mauvais prestataire.
+>
+> **Le récit ne se réécrit pas.** Laisser modifier la description après coup
+> permettrait d'adapter son histoire à la décision qui se dessine, ce qui
+> viderait l'examen de son objet.
+>
+> Non livré : le gel du séquestre à l'ouverture (Stripe), les preuves
+> photographiques chiffrées (elles attendent le stockage d'objets), et la
+> résolution elle-même.
+
 ### Story 7.4 — Médiation ops workflow (FR-036)
 - **En tant que** ops · **je veux** médiater un Litige · **afin de** trancher
 - **4×N** : PRD FR-036 (timeout 7 j, escalade 30 j)
@@ -1484,6 +1548,34 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **4×N** : PRD FR-043
 - **Couche(s)** : Frontend (catalogues compilés) + Backend (emails)
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **Faite côté service ; les écrans restent à traduire.** Ce qui est livré : la
+> route de changement de langue, et surtout la correction d'un défaut réel — la
+> locale vivait sur le compte depuis la Story 1.1, mais **chaque avis partait en
+> français**, les appelants passant `Locale::Fr` en dur avec un commentaire
+> disant que lire la vraie langue « demanderait un dépôt de plus ». C'était
+> vrai, et c'était un mauvais arbitrage : un prestataire néerlandophone recevait
+> ses notifications en français, dans un pays où c'est exactement le genre de
+> détail qui décide de l'usage.
+>
+> **Un port étroit plutôt qu'un dépôt entier.** Composer un avis a besoin de
+> savoir dans quelle langue l'écrire, et de rien d'autre du compte. Faire
+> dépendre le notifieur du dépôt d'utilisateurs l'aurait couplé à l'inscription,
+> à la vérification d'email et au verrouillage, et aurait obligé chaque test de
+> notification à doubler neuf méthodes pour en utiliser une.
+>
+> **Le message est composé par destinataire.** Un tour de matching réveille
+> jusqu'à dix prestataires, et rien ne dit qu'ils parlent la même langue : à
+> Bruxelles, c'est le contraire qu'il faut supposer. Composer une fois pour tous
+> coûtait une allocation de moins et envoyait du français à un néerlandophone.
+>
+> **Une langue non parlée ne fait pas échouer la requête** (FR-043
+> `@negative`) : le repli sur le français est appliqué et **annoncé** dans la
+> réponse, pour que le client puisse le dire plutôt que de laisser croire que le
+> changement a eu lieu.
+>
+> Reste à faire : la traduction du texte statique des écrans. Les tables de
+> messages d'erreur sont déjà trilingues ; le texte de mise en page ne l'est pas.
 
 ### Story 9.2 — i18n factures + emails (FR-044)
 - **En tant que** User/Provider · **je veux** docs dans ma langue · **afin de** comprendre

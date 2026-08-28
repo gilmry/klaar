@@ -20,9 +20,10 @@ use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
     creer_pool, PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository,
-    PgDevisRepository, PgJournalAudit, PgLiberationRepository, PgMissionRepository,
-    PgNotationRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
-    PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
+    PgDevisRepository, PgJournalAudit, PgLiberationRepository, PgLitigeRepository,
+    PgMessageRepository, PgMissionRepository, PgNotationRepository, PgPaiementRepository,
+    PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository,
+    PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -254,6 +255,8 @@ async fn main() -> std::io::Result<()> {
             liberations: Arc::new(PgLiberationRepository::new(pool.clone())),
             annulations: Arc::new(PgAnnulationRepository::new(pool.clone())),
             notations: Arc::new(PgNotationRepository::new(pool.clone())),
+            messages: Arc::new(PgMessageRepository::new(pool.clone())),
+            litiges: Arc::new(PgLitigeRepository::new(pool.clone())),
             // Le bus et les billets sont **partagés entre les fabriques
             // d'application** : `HttpServer::new` appelle sa fermeture une fois
             // par fil d'exécution, et un bus par fil ne relierait qu'un

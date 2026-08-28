@@ -9,6 +9,8 @@ use klaar_application::ports::provider_repository::ProviderRepository;
 use klaar_application::usecases::notifier::notifier_liberation;
 use klaar_application::usecases::valider_mission::{valider, ErreurValidation, MissionValidee};
 
+use klaar_application::usecases::langue::langue_de;
+
 use crate::auth::Authentifie;
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -133,7 +135,7 @@ async fn prevenir_le_prestataire(etat: &EtatApplication, validee: &MissionValide
         sender.as_ref(),
         compte,
         validee.liberation.statut,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), compte).await,
     )
     .await
     .map(|bilan| bilan.notifies > 0)

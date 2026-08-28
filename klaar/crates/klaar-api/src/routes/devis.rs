@@ -18,6 +18,8 @@ use klaar_application::usecases::repondre_devis::{
 };
 use klaar_payment::Proposition;
 
+use klaar_application::usecases::langue::langue_de;
+
 use crate::auth::Authentifie;
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -188,7 +190,7 @@ async fn prevenir_du_devis(etat: &EtatApplication, emis: &DevisEmis) -> bool {
         etat.abonnements.as_ref(),
         sender.as_ref(),
         &demande,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), demande.demandeur_id).await,
     )
     .await
     .map(|bilan| bilan.notifies > 0)
@@ -214,7 +216,7 @@ async fn prevenir_de_l_annulation(etat: &EtatApplication, mission_id: Uuid) {
         sender.as_ref(),
         &demande,
         klaar_intervention::StatutMission::Annulee,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), demande.demandeur_id).await,
     )
     .await
     {
@@ -448,7 +450,7 @@ async fn prevenir_le_prestataire(etat: &EtatApplication, repondu: &DevisRepondu)
         sender.as_ref(),
         compte,
         repondu.devis.statut,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), compte).await,
     )
     .await
     .map(|bilan| bilan.notifies > 0)

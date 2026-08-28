@@ -12,6 +12,8 @@ use klaar_application::usecases::transiter_mission::{
 };
 use klaar_shared_kernel::Geo;
 
+use klaar_application::usecases::langue::langue_de;
+
 use crate::auth::Authentifie;
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -200,7 +202,7 @@ async fn prevenir_le_demandeur(etat: &EtatApplication, avancement: &Avancement) 
         sender.as_ref(),
         &demande,
         avancement.mission.statut,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), demande.demandeur_id).await,
     )
     .await
     .map(|bilan| bilan.notifies > 0)

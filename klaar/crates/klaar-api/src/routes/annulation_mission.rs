@@ -15,6 +15,8 @@ use klaar_application::usecases::annuler_mission::{
 };
 use klaar_application::usecases::notifier::notifier_annulation_mission;
 
+use klaar_application::usecases::langue::langue_de;
+
 use crate::auth::Authentifie;
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -157,7 +159,7 @@ async fn prevenir_l_autre_partie(etat: &EtatApplication, annulee: &MissionAnnule
         sender.as_ref(),
         compte,
         annulee.annulation.auteur,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), compte).await,
     )
     .await
     .map(|bilan| bilan.notifies > 0)

@@ -241,4 +241,18 @@ impl UtilisateurRepository for PgUtilisateurRepository {
             .map_err(erreur)?;
         ligne.as_ref().map(depuis_ligne).transpose()
     }
+
+    async fn definir_locale(
+        &self,
+        utilisateur_id: Uuid,
+        locale: klaar_shared_kernel::Locale,
+    ) -> Result<bool, RepositoryError> {
+        let ecrit = sqlx::query("UPDATE utilisateur SET locale = $2 WHERE id = $1 RETURNING id")
+            .bind(utilisateur_id)
+            .bind(locale.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(erreur)?;
+        Ok(ecrit.is_some())
+    }
 }

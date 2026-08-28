@@ -26,6 +26,7 @@
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
   import { restaurerSession } from "../lib/connexion";
   import { ouvrirFlux } from "../lib/tempsReel";
+  import Conversation from "./Conversation.svelte";
   import {
     accepter,
     annulerMission,
@@ -276,6 +277,8 @@
       Urgence : {libelleUrgence(mission.urgence)} · Adresse :
       <span data-mission-position>{mission.latitude.toFixed(5)}, {mission.longitude.toFixed(5)}</span>
     </p>
+
+    <Conversation missionId={mission.id} />
 
     {#if mission.devis}
       <section data-devis={mission.devis.statut} class="devis">

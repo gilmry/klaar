@@ -10,6 +10,8 @@ use klaar_application::usecases::annuler::{annuler, ErreurAnnulation};
 use klaar_application::usecases::notifier::notifier_annulation;
 use klaar_matching::MotifAnnulation;
 
+use klaar_application::usecases::langue::langue_de;
+
 use crate::auth::Authentifie;
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -159,7 +161,7 @@ async fn prevenir_les_candidats(
         sender.as_ref(),
         demande,
         &comptes,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), demande.demandeur_id).await,
     )
     .await
     .map(|bilan| bilan.notifies)

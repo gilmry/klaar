@@ -79,6 +79,16 @@ pub trait UtilisateurRepository {
     async fn par_email(&self, email: &Email) -> Result<Option<Utilisateur>, RepositoryError>;
 
     async fn par_id(&self, id: Uuid) -> Result<Option<Utilisateur>, RepositoryError>;
+
+    /// Change la langue d'un compte (FR-043).
+    ///
+    /// Rend `false` si le compte n'existe pas. La langue est validée en amont :
+    /// ce port reçoit un code que le service parle, pas une chaîne du réseau.
+    async fn definir_locale(
+        &self,
+        utilisateur_id: Uuid,
+        locale: klaar_shared_kernel::Locale,
+    ) -> Result<bool, RepositoryError>;
 }
 
 /// Port d'effacement (FR-005).

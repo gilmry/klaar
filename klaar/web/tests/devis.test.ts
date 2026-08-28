@@ -18,8 +18,10 @@ import {
   attendUneReponse,
   libelleDevis,
   MOTIFS_ANNULATION_MISSION,
+  MOTIFS_LITIGE,
   MOTIFS_REFUS,
   peutAnnulerMission,
+  peutContester,
   peutValider,
   type DevisRecu,
   type SuiviDemande,
@@ -216,5 +218,43 @@ describe("@security cycle de fin d'intervention", () => {
   it("garde un vocabulaire fermé pour le motif d'annulation", () => {
     const codes = MOTIFS_ANNULATION_MISSION.map((m) => m.code);
     expect(codes).toEqual(["NO_LONGER_NEEDED", "NO_ACCESS", "DISAGREEMENT", "OTHER"]);
+  });
+});
+
+describe("@happy recours", () => {
+  function suivi(mission_statut: string | null): SuiviDemande {
+    return { mission_statut } as SuiviDemande;
+  }
+
+  it("propose de contester une intervention terminée ou validée", () => {
+    // Une intervention faite ne s'annule pas, elle se conteste : le recours
+    // doit rester ouvert après la validation, pas seulement avant.
+    for (const statut of ["COMPLETED", "VALIDATED"]) {
+      expect(peutContester(suivi(statut)), statut).toBe(true);
+    }
+  });
+});
+
+describe("@negative recours", () => {
+  function suivi(mission_statut: string | null): SuiviDemande {
+    return { mission_statut } as SuiviDemande;
+  }
+
+  it("ne propose pas de contester ce qui n'a pas eu lieu", () => {
+    for (const statut of ["ACCEPTED", "PROVIDER_EN_ROUTE", "ON_SITE", "CANCELLED", null]) {
+      expect(peutContester(suivi(statut)), String(statut)).toBe(false);
+    }
+  });
+});
+
+describe("@security recours", () => {
+  it("n'offre au demandeur que les motifs qui le concernent", () => {
+    // « Personne n'a ouvert » est le grief du prestataire : le proposer au
+    // demandeur ferait cliquer pour recevoir un refus, et rendrait tout
+    // comptage par motif ininterprétable.
+    const codes = MOTIFS_LITIGE.map((m) => m.code);
+    expect(codes).toEqual(["QUALITY", "NOT_DONE", "AMOUNT_DISPUTED", "OTHER"]);
+    expect(codes).not.toContain("USER_NO_SHOW");
+    expect(codes).not.toContain("IMPOSSIBLE_CONDITIONS");
   });
 });

@@ -12,6 +12,8 @@ use klaar_application::ports::trace_repository::TraceRepository;
 use klaar_application::usecases::accepter::{accepter, ErreurAcceptation};
 use klaar_application::usecases::notifier::notifier_match_pris;
 
+use klaar_application::usecases::langue::langue_de;
+
 use crate::auth::Authentifie;
 use crate::limitation::{Quota, Verdict};
 use crate::routes::auth::ErreurValidationDto;
@@ -170,7 +172,7 @@ async fn prevenir_les_autres(
         sender.as_ref(),
         &demande,
         &comptes,
-        klaar_shared_kernel::Locale::Fr,
+        langue_de(etat.utilisateurs.as_ref(), demande.demandeur_id).await,
     )
     .await
     .map(|bilan| bilan.notifies)

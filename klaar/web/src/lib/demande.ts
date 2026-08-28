@@ -127,6 +127,28 @@ export function peutNoter(suivi: SuiviDemande): boolean {
   return suivi.mission_statut === "VALIDATED";
 }
 
+/** Motifs de litige ouverts au demandeur, vocabulaire fermé (FR-034). */
+export const MOTIFS_LITIGE = [
+  { code: "QUALITY", libelle: "Le travail est mal fait" },
+  { code: "NOT_DONE", libelle: "Rien n'a été fait" },
+  { code: "AMOUNT_DISPUTED", libelle: "Le montant ne correspond pas à ce qui était convenu" },
+  { code: "OTHER", libelle: "Autre" },
+] as const;
+
+/** Caractères minimaux du récit : « pas content » ne permet pas de trancher. */
+export const RECIT_MIN_CARACTERES = 20;
+
+/**
+ * Vrai si l'intervention peut encore être contestée (FR-034).
+ *
+ * Une intervention faite ne s'annule pas — elle a eu lieu — mais elle peut être
+ * contestée. Sans ce recours, le seul geste possible après un travail mal fait
+ * serait une mauvaise note, ce qui ne rend l'argent à personne.
+ */
+export function peutContester(suivi: SuiviDemande): boolean {
+  return suivi.mission_statut === "COMPLETED" || suivi.mission_statut === "VALIDATED";
+}
+
 /** Motifs d'annulation d'une intervention en cours, vocabulaire fermé (FR-022). */
 export const MOTIFS_ANNULATION_MISSION = [
   { code: "NO_LONGER_NEEDED", libelle: "Je n'en ai plus besoin" },
@@ -503,6 +525,19 @@ export async function noterIntervention(
   return request(`/missions/${missionId}/rating`, {
     method: "POST",
     body: commentaire ? { note, commentaire } : { note },
+    headers: autorisationSuivi(),
+  });
+}
+
+/** Ouvre un litige sur une intervention terminée (FR-034). */
+export async function ouvrirLitige(
+  missionId: string,
+  motif: string,
+  description: string,
+): Promise<{ id: string; statut: string }> {
+  return request(`/missions/${missionId}/dispute`, {
+    method: "POST",
+    body: { motif, description },
     headers: autorisationSuivi(),
   });
 }

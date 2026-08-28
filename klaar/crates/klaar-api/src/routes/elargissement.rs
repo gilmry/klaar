@@ -100,9 +100,9 @@ pub async fn elargir_rayon(
                         Some(sender) => notifier(
                             etat.abonnements.as_ref(),
                             sender.as_ref(),
+                            etat.utilisateurs.as_ref(),
                             &demande,
                             &retenus,
-                            klaar_shared_kernel::Locale::Fr,
                         )
                         .await
                         .map(|bilan| bilan.notifies)

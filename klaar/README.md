@@ -613,6 +613,83 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Le suivi sonde et s'arrête quand la Demande est close. Depuis la Story 4.9, une
   socket double ce sondage et le ralentit à trente secondes tant qu'elle vit.
 
+- **9.1** (partie service) — **La langue de chacun** (FR-043) :
+  `PATCH /api/v1/me/locale`.
+
+  **Un défaut réel corrigé.** La locale vivait sur le compte depuis la Story
+  1.1, mais chaque avis partait en français : les appelants passaient
+  `Locale::Fr` en dur, avec un commentaire disant que lire la vraie langue
+  « demanderait un dépôt de plus ». Un prestataire néerlandophone recevait ses
+  notifications en français.
+
+  **Un port étroit plutôt qu'un dépôt entier.** Composer un avis a besoin de
+  savoir dans quelle langue l'écrire, et de rien d'autre. Faire dépendre le
+  notifieur du dépôt d'utilisateurs l'aurait couplé à l'inscription, à la
+  vérification d'email et au verrouillage.
+
+  **Le message est composé par destinataire** : un tour de matching réveille
+  jusqu'à dix prestataires, et rien ne dit qu'ils parlent la même langue.
+
+  Une langue non parlée ne fait pas échouer la requête : le repli est appliqué
+  **et annoncé**, pour que le client le dise plutôt que de laisser croire que le
+  changement a eu lieu.
+
+  Reste à faire : la traduction du texte statique des écrans. Les tables de
+  messages d'erreur sont trilingues, la mise en page ne l'est pas encore.
+
+- **7.2 / 7.3** — **Litige et seuils de sanction** (FR-034, FR-035) :
+  `POST /api/v1/missions/{id}/dispute`, `GET` du même chemin.
+
+  **C'est l'issue que l'annulation refuse.** Une intervention faite ne s'annule
+  pas — elle a eu lieu — mais elle peut être contestée. Sans ce recours, le seul
+  geste possible après un travail mal fait serait une mauvaise note, ce qui ne
+  rend l'argent à personne.
+
+  **Le vocabulaire des motifs est fermé et asymétrique** : le demandeur conteste
+  un travail, le prestataire constate une porte close. Un prestataire ouvrant un
+  litige « qualité » contre lui-même rendrait tout comptage ininterprétable.
+
+  **La sanction ne compte que les litiges perdus.** Un prestataire attaqué trois
+  fois et blanchi trois fois n'a rien fait de mal ; le suspendre reviendrait à
+  punir le fait d'avoir été accusé. Le seuil du demandeur — deux litiges en sept
+  jours — n'est pas une sanction mais un signal.
+
+  **Le récit ne se réécrit pas** : pouvoir adapter son histoire à la décision
+  qui se dessine viderait l'examen de son objet.
+
+  Non livré : le gel du séquestre (Stripe), les preuves photographiques
+  chiffrées, et la résolution elle-même, qui demande un humain et une console.
+
+- **6.1 / 6.3** — **Messagerie et anti-contournement** (FR-030, FR-032) :
+  `POST /api/v1/missions/{id}/messages`, `GET` du même chemin.
+
+  **Il n'y a pas d'agrégat « Conversation ».** Une Mission en tient lieu : elle
+  désigne exactement deux personnes, elle a une naissance et une fin, et c'est
+  d'elle que dépendent l'ouverture et la fermeture des échanges.
+
+  **La détection de coordonnées est un frein, pas un mur.** Quelqu'un de
+  déterminé écrira « mon numéro finit par les deux chiffres de l'année » et
+  passera. Le but est de rendre le contournement délibéré : personne ne peut
+  plus prétendre avoir échangé un numéro par mégarde. La limite est écrite dans
+  le module plutôt que découverte par quelqu'un qui croirait la barrière
+  étanche.
+
+  **Les faux positifs coûtent plus cher que les faux négatifs.** Un message
+  légitime bloqué est une conversation cassée entre deux personnes qui ont un
+  problème à régler. Le seuil est à neuf chiffres : une date écrite
+  `24/12/2026` en fait huit une fois les séparateurs retirés, et la bloquer
+  casserait la moitié des prises de rendez-vous. Un faux positif trouvé en
+  chemin : recoller aveuglément les espaces autour des points transformait
+  « @Camille. Je suis là » en adresse électronique.
+
+  **Le message refusé n'est pas conservé** — seulement la tentative, son genre
+  et sa date. Garder le texte reviendrait à constituer un fichier de ce que les
+  gens ont essayé de s'écrire, pour une finalité qui n'en a pas besoin.
+
+  Non livré : les pièces jointes et leur scan antivirus (FR-031), et le
+  signalement effectif à l'exploitation — le compteur existe et est rendu à
+  l'appelant.
+
 - **7.1 / 7.5** — **Notation double sens et réputation Wilson** (FR-033, FR-037) :
   `POST /api/v1/missions/{id}/rating`, `GET .../ratings`.
 

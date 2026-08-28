@@ -442,6 +442,47 @@ where
     .await
 }
 
+/// Compose l'avis « nouveau message », pour l'autre partie (FR-030).
+///
+/// **Sans le contenu du message.** Il s'affiche sur un écran verrouillé : ce
+/// que deux personnes se disent sur une intervention chez elles n'a pas à se
+/// lire par-dessus une épaule. Le fil est dans l'application.
+pub fn composer_message(locale: Locale) -> PushMessage {
+    let corps = match locale {
+        Locale::Fr => "Nouveau message sur votre intervention.",
+        Locale::Nl => "Nieuw bericht over uw interventie.",
+        Locale::En => "New message about your job.",
+    };
+    PushMessage {
+        titre: "Klaar".to_string(),
+        corps: corps.to_string(),
+        // Une étiquette unique pour la conversation : dix messages ne doivent
+        // pas empiler dix notifications.
+        tag: Some("conversation".to_string()),
+        url: "/".to_string(),
+    }
+}
+
+/// Prévient l'autre partie qu'un message l'attend (FR-030 `@happy`).
+pub async fn notifier_message<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    destinataire: Uuid,
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    envoyer_a(
+        abonnements,
+        notifieur,
+        &[destinataire],
+        &composer_message(locale),
+    )
+    .await
+}
+
 /// Prévient le demandeur que sa Mission a avancé (FR-018 `@happy`).
 pub async fn notifier_avancement<A, N>(
     abonnements: &A,
@@ -533,16 +574,24 @@ where
     Ok(bilan)
 }
 
-pub async fn notifier<A, N>(
+/// Prévient les candidats retenus, **chacun dans sa langue** (FR-012, FR-043).
+///
+/// **Le message est composé par destinataire et non une fois pour tous.** Un
+/// tour de matching réveille jusqu'à dix prestataires, et rien ne dit qu'ils
+/// parlent la même langue : à Bruxelles, c'est même le contraire qu'il faut
+/// supposer. Composer une fois coûtait une allocation de moins et envoyait du
+/// français à un néerlandophone.
+pub async fn notifier<A, N, L>(
     abonnements: &A,
     notifieur: &N,
+    langues: &L,
     demande: &Demande,
     candidats: &[Candidat],
-    locale: Locale,
 ) -> Result<BilanNotification, RepositoryError>
 where
     A: PushSubscriptionRepository,
     N: PushNotifier,
+    L: crate::ports::langue::LecteurLangue,
 {
     let mut bilan = BilanNotification::default();
 
@@ -555,6 +604,9 @@ where
             continue;
         }
 
+        // La langue est lue **après** avoir constaté qu'il y a un appareil à
+        // joindre : sans abonnement, la lecture serait une requête pour rien.
+        let locale = crate::usecases::langue::langue_de(langues, candidat.utilisateur_id).await;
         let message = composer(demande, candidat.distance_metres, locale);
         for appareil in appareils {
             match notifieur.envoyer(&appareil.abonnement, &message).await {
@@ -699,6 +751,98 @@ mod tests {
                 .borrow_mut()
                 .push((abonnement.endpoint.clone(), message.clone()));
             Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn happy_chaque_candidat_est_prevenu_dans_sa_langue() {
+        // **Le défaut que la Story 9.1 corrige.** Un tour de matching réveille
+        // jusqu'à dix prestataires, et rien ne dit qu'ils parlent la même
+        // langue : à Bruxelles, c'est le contraire qu'il faut supposer.
+        let francophone = Uuid::new_v4();
+        let neerlandophone = Uuid::new_v4();
+        let abonnements = AbonnementsMemoire::default();
+        for sujet in [francophone, neerlandophone] {
+            abonnements.par_sujet.borrow_mut().push((
+                sujet,
+                abonnement(&format!("https://push.example.net/{sujet}")),
+            ));
+        }
+        let notifieur = NotifieurFactice::default();
+        let langues = LanguesMemoire {
+            par_compte: [(francophone, Locale::Fr), (neerlandophone, Locale::Nl)]
+                .into_iter()
+                .collect(),
+        };
+
+        notifier(
+            &abonnements,
+            &notifieur,
+            &langues,
+            &demande(Urgence::Haute),
+            &[
+                candidat(francophone, 1_200.0),
+                candidat(neerlandophone, 800.0),
+            ],
+        )
+        .await
+        .unwrap();
+
+        let envoyes = notifieur.envoyes.borrow();
+        assert_eq!(envoyes.len(), 2);
+        let titres: Vec<&str> = envoyes.iter().map(|(_, m)| m.titre.as_str()).collect();
+        assert!(
+            titres.iter().any(|t| t.starts_with("Demande")),
+            "un avis en français était attendu : {titres:?}"
+        );
+        assert!(
+            titres.iter().any(|t| t.starts_with("Aanvraag")),
+            "un avis en néerlandais était attendu : {titres:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn edge_un_compte_sans_langue_connue_replie_sur_le_francais() {
+        // Une langue illisible ne doit pas empêcher un avis de partir : mieux
+        // vaut une notification dans la mauvaise langue que pas de
+        // notification du tout.
+        let sujet = Uuid::new_v4();
+        let abonnements = AbonnementsMemoire::default();
+        abonnements
+            .par_sujet
+            .borrow_mut()
+            .push((sujet, abonnement("https://push.example.net/inconnu")));
+        let notifieur = NotifieurFactice::default();
+
+        notifier(
+            &abonnements,
+            &notifieur,
+            &LanguesMemoire::default(),
+            &demande(Urgence::Haute),
+            &[candidat(sujet, 1_200.0)],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(notifieur.envoyes.borrow().len(), 1);
+        assert!(notifieur.envoyes.borrow()[0].1.titre.starts_with("Demande"));
+    }
+
+    /// Langues en mémoire, pour éprouver l'avis par destinataire.
+    ///
+    /// Vide par défaut : un compte absent replie sur le français, ce qui est
+    /// exactement le comportement voulu.
+    #[derive(Default)]
+    struct LanguesMemoire {
+        par_compte: std::collections::HashMap<Uuid, Locale>,
+    }
+
+    impl crate::ports::langue::LecteurLangue for LanguesMemoire {
+        async fn langue_de(&self, compte_id: Uuid) -> Locale {
+            self.par_compte
+                .get(&compte_id)
+                .copied()
+                .unwrap_or(crate::ports::langue::LANGUE_PAR_DEFAUT)
         }
     }
 
@@ -923,9 +1067,9 @@ mod tests {
         let bilan = notifier(
             &abonnements,
             &notifieur,
+            &LanguesMemoire::default(),
             &demande(Urgence::Haute),
             &[candidat(sujet, 1_200.0)],
-            Locale::Fr,
         )
         .await
         .unwrap();
@@ -949,9 +1093,9 @@ mod tests {
         let bilan = notifier(
             &abonnements,
             &notifieur,
+            &LanguesMemoire::default(),
             &demande(Urgence::Normale),
             &[candidat(sujet, 500.0)],
-            Locale::Fr,
         )
         .await
         .unwrap();
@@ -966,9 +1110,9 @@ mod tests {
         let bilan = notifier(
             &abonnements,
             &notifieur,
+            &LanguesMemoire::default(),
             &demande(Urgence::Haute),
             &[candidat(Uuid::new_v4(), 100.0)],
-            Locale::Fr,
         )
         .await
         .unwrap();
@@ -993,9 +1137,9 @@ mod tests {
         let bilan = notifier(
             &abonnements,
             &notifieur,
+            &LanguesMemoire::default(),
             &demande(Urgence::Haute),
             &[candidat(sujet, 100.0)],
-            Locale::Fr,
         )
         .await
         .unwrap();
@@ -1028,9 +1172,9 @@ mod tests {
         let bilan = notifier(
             &abonnements,
             &notifieur,
+            &LanguesMemoire::default(),
             &demande(Urgence::Haute),
             &[candidat(a, 100.0), candidat(b, 200.0)],
-            Locale::Fr,
         )
         .await
         .unwrap();
@@ -1118,9 +1262,9 @@ mod tests {
         let bilan = notifier(
             &abonnements,
             &notifieur,
+            &LanguesMemoire::default(),
             &demande(Urgence::Haute),
             &[candidat(a, 100.0)],
-            Locale::Fr,
         )
         .await
         .unwrap();

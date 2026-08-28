@@ -20,6 +20,7 @@
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
   import { restaurerSession } from "../lib/connexion";
   import { ouvrirFlux } from "../lib/tempsReel";
+  import Conversation from "./Conversation.svelte";
   import {
     accepterDevis,
     annulerDemande,
@@ -35,6 +36,7 @@
     montantLisible,
     MOTIFS_ANNULATION,
     MOTIFS_ANNULATION_MISSION,
+    MOTIFS_LITIGE,
     MOTIFS_REFUS,
     peutAnnuler,
     peutAnnulerMission,
@@ -42,6 +44,9 @@
     peutNoter,
     peutValider,
     noterIntervention,
+    ouvrirLitige,
+    peutContester,
+    RECIT_MIN_CARACTERES,
     refuserDevis,
     suivreDemande,
     validerMission,
@@ -65,6 +70,9 @@
   let noteChoisie = $state(0);
   let commentaireNote = $state("");
   let noteEnvoyee = $state(false);
+  let motifLitige = $state("");
+  let recitLitige = $state("");
+  let litigeOuvert = $state(false);
   let locale = $state<LocaleKlaar>("fr");
   let minuterie: ReturnType<typeof setInterval> | null = null;
 
@@ -255,6 +263,27 @@
     }
   }
 
+  /**
+   * Ouvre un litige (FR-034).
+   *
+   * Le formulaire exige un récit : « pas content » ne permet à personne de
+   * trancher, et le dire avant l'envoi vaut mieux qu'un refus après.
+   */
+  async function contester() {
+    if (occupe || !suivi?.mission_id || motifLitige === "") return;
+    occupe = true;
+    erreur = null;
+    try {
+      await ouvrirLitige(suivi.mission_id, motifLitige, recitLitige);
+      litigeOuvert = true;
+      recitLitige = "";
+    } catch (e) {
+      erreur = messageErreur(locale, codeDepuisErreur(e));
+    } finally {
+      occupe = false;
+    }
+  }
+
   async function annuler() {
     if (occupe) return;
     occupe = true;
@@ -381,6 +410,46 @@
       </p>
     {/if}
 
+    {#if suivi.mission_id}
+      <Conversation missionId={suivi.mission_id} />
+    {/if}
+
+    {#if peutContester(suivi) && !litigeOuvert}
+      <details data-bloc="litige">
+        <summary>L'intervention s'est mal passée ?</summary>
+        <p class="klaar-tempere">
+          Vous pouvez ouvrir un litige pendant quatorze jours. Il sera examiné,
+          et le prestataire pourra donner sa version.
+        </p>
+        <label for="motif-litige">Que s'est-il passé</label>
+        <select id="motif-litige" bind:value={motifLitige} data-champ="motif-litige">
+          <option value="" disabled>Choisissez…</option>
+          {#each MOTIFS_LITIGE as m}
+            <option value={m.code}>{m.libelle}</option>
+          {/each}
+        </select>
+        <label for="recit-litige">Racontez, en quelques phrases</label>
+        <textarea
+          id="recit-litige"
+          bind:value={recitLitige}
+          rows="3"
+          data-champ="recit-litige"
+        ></textarea>
+        <button
+          type="button"
+          onclick={contester}
+          disabled={occupe || motifLitige === "" || recitLitige.trim().length < RECIT_MIN_CARACTERES}
+          data-action="ouvrir-litige"
+        >
+          {occupe ? "Un instant…" : "Ouvrir un litige"}
+        </button>
+      </details>
+    {:else if litigeOuvert}
+      <p role="status" data-litige="ouvert">
+        Votre litige est ouvert. Il sera examiné, et vous serez tenu au courant.
+      </p>
+    {/if}
+
     {#if peutAnnulerMission(suivi)}
       <div data-bloc="arret-intervention">
         <label for="motif-arret">Annuler l'intervention (facultatif : pourquoi)</label>
@@ -467,6 +536,17 @@
   p[data-devis-total] { font-size: 1.15rem; margin: 0.2rem 0; }
   label { display: block; font-weight: 600; margin-top: 0.6rem; }
   select { font: inherit; padding: 0.45rem; border-radius: 8px; border: 1px solid var(--klaar-bord); }
+  textarea {
+    font: inherit;
+    display: block;
+    width: 100%;
+    max-width: 30rem;
+    padding: 0.45rem;
+    border-radius: 8px;
+    border: 1px solid var(--klaar-bord);
+  }
+  details { margin-top: 0.8rem; }
+  summary { cursor: pointer; }
   button {
     font: inherit;
     margin: 0.6rem 0.4rem 0 0;
