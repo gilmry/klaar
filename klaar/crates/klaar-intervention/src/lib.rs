@@ -8,6 +8,7 @@
 
 mod annulation;
 mod mission;
+mod preuve;
 mod reprogrammation;
 mod suivi;
 
@@ -19,6 +20,10 @@ pub use annulation::{
 };
 pub use mission::{
     Mission, MissionError, StatutMission, TransitionMission, DERIVE_HORODATAGE_MAX_MINUTES,
+};
+pub use preuve::{
+    paire_complete, valider as valider_preuve, FormatImage, MetadonneesExif, PhasePreuve, Preuve,
+    PreuveError, PREUVES_MAX_PAR_PHASE, TAILLE_MAX_OCTETS,
 };
 pub use reprogrammation::{
     echeance_reprogrammation, Reprogrammation, ReprogrammationError, StatutReprogrammation,

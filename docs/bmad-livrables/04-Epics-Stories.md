@@ -1253,11 +1253,59 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > est un acte à poser avant le premier traitement de position **réel**. Elle
 > n'est pas faite.
 
-### Story 4.5 — Preuves photos BEFORE/AFTER (FR-020)
+### Story 4.5 — Preuves photos BEFORE/AFTER (FR-020) — *validation faite ; le stockage attend un seau*
 - **En tant que** Provider · **je veux** prendre photos avant/après · **afin de** documenter
 - **4×N** : PRD FR-020 (EXIF, hash, scan antivirus, chiffrement KMS)
 - **Couche(s)** : Infra (S3 + ClamAV + KMS) + Frontend (`<input capture>` / MediaDevices)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Le stockage attend un seau ; la validation, non.** Chiffrer et déposer un
+> fichier demande OVH S3 et son KMS, absents. Décider si un fichier est
+> recevable ne demande rien d'autre que le domaine — et c'est cette partie-là
+> qu'un dépôt d'objet ne fera jamais à notre place.
+>
+> **Le type est décidé sur le contenu, jamais sur le nom ni sur
+> `Content-Type`.** Les deux sont donnés par celui qui téléverse. Un fichier
+> HTML nommé `photo.jpg` et annoncé `image/jpeg` finirait servi par le domaine
+> du service, où un navigateur l'exécuterait : c'est la faille classique du
+> téléversement d'images, et elle ne se ferme qu'en lisant les premiers octets.
+> Un test essaie du HTML, du PDF, du GIF, du SVG et un JPEG à deux octets sur
+> trois.
+>
+> **SVG est exclu explicitement.** C'est un document XML qui peut porter du
+> script ; « image » y est un abus de langage. Trois formats acceptés, et chaque
+> format de plus serait un décodeur de plus exposé à des fichiers hostiles.
+>
+> **« RIFF » seul ne fait pas un WebP** : c'est un conteneur générique qui porte
+> aussi bien du son. Les quatre octets « WEBP » sont vérifiés, et un préfixe
+> tronqué ne fait pas déborder l'index.
+>
+> **L'empreinte SHA-256 est calculée avant chiffrement et conservée.** C'est
+> elle qui dira, des mois plus tard devant un litige, que le fichier rendu est
+> bien celui qui a été déposé. Un test la compare au vecteur public du SHA-256
+> de la chaîne vide, un autre vérifie qu'elle change au moindre octet.
+>
+> **Une preuve ne vient pas du futur.** Un horodatage postérieur à la réception
+> est refusé, sans tolérance : c'est le cas d'une preuve fabriquée après coup
+> pour couvrir un délai.
+>
+> **Une paire incomplète ne prouve pas un changement.** Une seule photo
+> « après » montre un état ; c'est la paire qui a une valeur devant un litige.
+>
+> **Tension relevée entre FR-019 et FR-020, et laissée à la décision produit.**
+> Le suivi de position dégrade la géolocalisation à cinquante mètres pour ne pas
+> dire où quelqu'un habite. FR-020 demande l'inverse : une photo *avec* sa
+> géolocalisation EXIF, visible du demandeur, du prestataire et de
+> l'exploitation. Une photo de la chaudière d'un foyer, prise sur place,
+> porterait donc l'adresse au mètre — exactement ce que FR-019 protège. Le
+> domaine exige l'**horodatage** comme preuve et rend la position
+> **facultative**, en signalant sa présence sans la lire, pour que l'écran
+> puisse en avertir. Trancher pour de bon est un arbitrage produit, pas un choix
+> d'implémentation.
+>
+> **Ce qui attend le seau** : le dépôt lui-même, le chiffrement AES-256-GCM avec
+> clé KMS, le scan ClamAV, la journalisation des accès, et l'écran de prise de
+> vue.
 
 ### Story 4.6 — Validation fin Mission + libération Escrow (FR-021)
 - **En tant que** User · **je veux** valider la fin · **afin de** libérer l'Escrow

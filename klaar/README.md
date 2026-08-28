@@ -961,6 +961,38 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   mais une relecture reste à faire — le néerlandais approximatif dans un service
   bruxellois se remarque.
 
+- **4.5** (validation) — **Preuves photographiques** (FR-020) : recevabilité
+  d'un fichier, empreinte, quota, paire avant/après.
+
+  **Le stockage attend un seau ; la validation, non.** Chiffrer et déposer
+  demande OVH S3 et son KMS. Décider si un fichier est recevable ne demande que
+  le domaine — et c'est ce qu'un dépôt d'objet ne fera jamais à notre place.
+
+  **Le type est décidé sur le contenu, jamais sur le nom ni sur
+  `Content-Type`** : les deux viennent de celui qui téléverse. Un fichier HTML
+  nommé `photo.jpg` finirait servi par le domaine du service, où un navigateur
+  l'exécuterait. SVG est exclu explicitement — c'est un document XML qui peut
+  porter du script, et « image » y est un abus de langage. « RIFF » seul ne fait
+  pas un WebP non plus : c'est un conteneur générique qui porte aussi bien du
+  son.
+
+  **L'empreinte SHA-256 est calculée avant chiffrement et conservée** : c'est
+  elle qui dira, des mois plus tard devant un litige, que le fichier rendu est
+  celui qui a été déposé. Un test la compare au vecteur public du SHA-256 de la
+  chaîne vide.
+
+  **Une preuve ne vient pas du futur** — horodatage postérieur à la réception
+  refusé, sans tolérance — et **une paire incomplète ne prouve pas un
+  changement** : une seule photo « après » montre un état.
+
+  **Une tension relevée, laissée à la décision produit.** FR-019 dégrade la
+  géolocalisation à cinquante mètres pour ne pas dire où quelqu'un habite ;
+  FR-020 demande une photo *avec* sa géolocalisation EXIF, visible de trois
+  parties. Une photo prise chez quelqu'un porterait donc son adresse au mètre,
+  exactement ce que le suivi s'interdit. Le domaine exige l'horodatage et rend
+  la position facultative, en signalant sa présence sans la lire. Trancher est
+  un arbitrage produit, pas un choix d'implémentation.
+
 - **5.5** — **Webhooks Stripe** (FR-028) : `POST /api/v1/webhooks/stripe`,
   vérification de signature, journal d'idempotence, réordonnancement.
 

@@ -10,4 +10,5 @@ license.workspace = true
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
 uuid.workspace = true
 chrono.workspace = true
+sha2 = "0.10"
 serde.workspace = true

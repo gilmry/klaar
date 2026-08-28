@@ -181,6 +181,38 @@ sonner à sa porte est le minimum. Rien d'autre du prestataire ne lui est expos�
 que la Demande est close. Le temps réel appartient au WebSocket de FR-018, non
 livré.
 
+## Preuves photographiques : une tension à trancher (Story 4.5, FR-019 vs FR-020)
+
+**Deux exigences du PRD se contredisent sur la précision de localisation, et
+c'est une décision produit, pas un détail d'implémentation.**
+
+FR-019 dégrade la position du prestataire à cinquante mètres, à l'écriture, pour
+que la base ne dise jamais où quelqu'un habite. FR-020 demande une photo de
+preuve **avec sa géolocalisation EXIF**, visible du demandeur, du prestataire et
+de l'exploitation. Une photo de chaudière prise dans un logement porte donc
+l'adresse de ce logement au mètre — exactement ce que le suivi de position
+s'interdit, et par le même canal de lecture.
+
+**Ce qui est fait en attendant l'arbitrage** : le domaine exige l'**horodatage**
+comme preuve — sans lui, la photo ne dit pas *quand* — et rend la
+**géolocalisation facultative**. Il signale sa présence sans jamais la lire, de
+sorte qu'un écran puisse en avertir celui qui téléverse. Aucune coordonnée n'est
+extraite ni conservée par ce chemin.
+
+**Le type de fichier est décidé sur son contenu.** Ni le nom ni le
+`Content-Type` n'entrent dans la validation : ils viennent de celui qui
+téléverse. Un fichier HTML nommé `photo.jpg` finirait servi par le domaine du
+service, où un navigateur l'exécuterait. SVG est refusé explicitement — un
+document XML qui peut porter du script n'est pas une image.
+
+**L'empreinte SHA-256 est calculée avant tout chiffrement et conservée.** C'est
+la seule façon d'affirmer, longtemps après, que le fichier rendu est celui qui a
+été déposé.
+
+**Une preuve ne vient pas du futur** : un horodatage postérieur à la réception
+est refusé sans tolérance, parce que c'est la signature d'une preuve fabriquée
+après coup.
+
 ## Webhooks de paiement : l'endpoint public qui écrit (Story 5.5, FR-028)
 
 **C'est le seul endpoint sans authentification qui produit une écriture**, et
