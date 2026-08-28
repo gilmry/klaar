@@ -4,6 +4,9 @@ node_modules/
 packages/klaar-client/openapi.json
 packages/klaar-client/src/schema.d.ts
 *.cdx.json
+# Rapports d'audit de la trace (Story 3.8) : ils portent des agrégats
+# géographiques et n'ont pas à voyager dans le dépôt.
+audit-biais-*.json
 *.sig
 *.pem
 

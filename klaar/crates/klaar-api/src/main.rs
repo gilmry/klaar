@@ -14,6 +14,7 @@ use klaar_api::limitation::LimiteurMemoire;
 use klaar_api::telemetry::SpanSansDonneesPersonnelles;
 use klaar_api::{configurer, ApiDoc, EtatApplication};
 use klaar_application::ports::horloge::HorlogeSysteme;
+use klaar_audit_adapter::SignataireTrace;
 use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
@@ -87,6 +88,31 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // La clé de scellement de la trace, elle, **est** optionnelle, à l'inverse
+    // du secret de signature des jetons. Sans elle, la trace est écrite mais
+    // non signée : elle explique toujours une décision, ce qui est ce que l'AI
+    // Act exige. Refuser de démarrer priverait le service de sa trace entière
+    // pour protéger cette trace, ce qui est le contraire du but. Le rapport
+    // d'audit compte les lignes non signées et le dit.
+    let signataire_trace = match std::env::var("KLAAR_TRACE_HMAC_KEY") {
+        Ok(cle) if !cle.is_empty() => match SignataireTrace::new(cle.as_bytes()) {
+            Ok(s) => Some(Arc::new(s)),
+            Err(e) => {
+                eprintln!("KLAAR_TRACE_HMAC_KEY invalide : {e}");
+                eprintln!("en générer une : openssl rand -base64 48");
+                std::process::exit(1);
+            }
+        },
+        _ => {
+            tracing::warn!(
+                "KLAAR_TRACE_HMAC_KEY absente : la trace de matching est écrite sans \
+                 signature. Elle explique toujours les décisions, mais une altération \
+                 faite depuis la base ne se détecterait plus."
+            );
+            None
+        }
+    };
+
     // Vrai par défaut : un cookie de session sans `Secure` voyage en clair. Le
     // désactiver n'a de sens qu'en développement local sur HTTP, où le
     // navigateur refuserait sinon le cookie sans rien signaler.
@@ -154,7 +180,10 @@ async fn main() -> std::io::Result<()> {
             demandes: Arc::new(PgDemandeRepository::new(pool.clone())),
             paiements: Arc::new(PgPaiementRepository::new(pool.clone())),
             prestataires: Arc::new(PgProviderRepository::new(pool.clone())),
-            traces: Arc::new(PgTraceRepository::new(pool.clone())),
+            traces: Arc::new(match signataire_trace.clone() {
+                Some(s) => PgTraceRepository::avec_signature(pool.clone(), s),
+                None => PgTraceRepository::new(pool.clone()),
+            }),
             missions: Arc::new(PgMissionRepository::new(pool.clone())),
             jetons: jetons.clone(),
             courriel: courriel.clone(),

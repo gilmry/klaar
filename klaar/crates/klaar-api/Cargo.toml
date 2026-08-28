@@ -64,6 +64,11 @@ path = "src/bin/effacer.rs"
 # Story 3.6 — fin des tours de diffusion (FR-015). À lancer toutes les dix
 # secondes : un tour dure trente secondes, et un balayage trop espacé laisserait
 # des demandeurs attendre une nouvelle qui tient en une phrase.
+# Story 3.8 — audit semestriel de la trace de matching (AI Act art. 12).
+[[bin]]
+name = "klaar-audit-biais"
+path = "src/bin/audit_biais.rs"
+
 [[bin]]
 name = "klaar-expirer"
 path = "src/bin/expirer.rs"

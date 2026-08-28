@@ -1496,7 +1496,11 @@ dependencies = [
 name = "klaar-audit-adapter"
 version = "0.0.0"
 dependencies = [
+ "hex",
+ "hmac 0.12.1",
  "klaar-shared-kernel",
+ "sha2 0.10.9",
+ "uuid",
 ]
 
 [[package]]
@@ -1620,11 +1624,13 @@ version = "0.0.0"
 dependencies = [
  "chrono",
  "klaar-application",
+ "klaar-audit-adapter",
  "klaar-catalog",
  "klaar-identity",
  "klaar-intervention",
  "klaar-matching",
  "klaar-shared-kernel",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

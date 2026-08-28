@@ -8,3 +8,10 @@ license.workspace = true
 
 [dependencies]
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
+# HMAC-SHA256 pour le chaînage de la trace de matching (AI Act art. 12).
+# `hmac` implémente RFC 2104 ; la comparaison en temps constant vient de
+# `subtle`, via le trait `MacMarker` de la caisse.
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+uuid.workspace = true

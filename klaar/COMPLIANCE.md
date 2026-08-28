@@ -123,6 +123,62 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Trace de matching : immuable, scellée, auditée (Story 3.8, AI Act art. 12)
+
+**Immuabilité par déclencheur, pas par convention.** `UPDATE` et `DELETE` sur
+`trace_matching` lèvent une exception, y compris ceux venant d'une cascade :
+supprimer une Demande tracée échoue bruyamment plutôt que d'emporter sa trace.
+
+**Signature chaînée.** Chaque ligne porte un HMAC-SHA256 de son contenu **et** de
+la signature précédente. Un HMAC par ligne détecterait une modification mais pas
+une suppression, et supprimer est exactement ce que ferait quelqu'un voulant
+effacer un matching discriminatoire.
+
+**Portée réelle.** La signature détecte une altération faite depuis la base. Elle
+ne couvre **pas** une compromission du serveur, où la clé est lisible et permet
+de resigner. Le stockage WORM tiers que FR-012 décrit lèverait cette limite ; il
+demande un compte d'hébergement, hors du périmètre vitrine.
+
+**Limite opérationnelle.** La chaîne est globale : une rotation de clé casse la
+vérification à partir du premier maillon signé avec la nouvelle. Une rotation
+demandera de conserver l'ancienne clé pour vérifier le segment antérieur.
+
+**Clé optionnelle, et pourquoi.** Sans clé, la trace est écrite non signée : elle
+explique toujours une décision, ce que l'AI Act exige, alors que l'absence de
+trace ne s'explique pas. Les lignes non signées sont comptées à part dans le
+rapport — les ranger avec les vérifiées produirait un rapport rassurant sans
+preuve.
+
+**Tension avec le droit à l'effacement (art. 17).** L'effacement d'un compte est
+une anonymisation, donc aucune cascade ne touche la trace aujourd'hui. Une
+suppression future échouerait sur le déclencheur, et ce serait la bonne réponse :
+l'art. 17 §3 b) réserve le cas des traitements imposés par une obligation légale.
+La trace ne porte ni nom, ni adresse, ni description — deux identifiants, un
+score et une distance.
+
+## Audit anti-biais : ce qui est mesuré, et ce qui ne peut pas l'être (Story 3.8)
+
+FR-012 demande un rapport sur trois axes. Deux ne sont pas auditables, et ce
+n'est pas une lacune :
+
+- **Le genre n'est pas collecté.** L'auditer supposerait de le demander, donc de
+  créer la donnée qui rendrait la discrimination possible.
+- **L'« ethnie estimée » suppose de l'estimer**, typiquement depuis un nom :
+  précisément la pratique que l'AI Act et le RGPD art. 9 proscrivent.
+
+La garantie sur ces deux axes est structurelle, et plus forte qu'un audit
+statistique : la fonction de score reçoit quatre nombres et ne peut discriminer
+sur un attribut qu'on ne lui donne pas. Le rapport le dit explicitement.
+
+**Le quartier est audité**, par maille d'environ un kilomètre : nombre de
+Demandes, taux d'attribution, part sans réponse, et l'écart entre la maille la
+mieux servie et la moins bien servie. La cause d'un écart est la densité de
+prestataires, pas le score.
+
+**k-anonymat, seuil à cinq.** Les mailles sous le seuil sont supprimées du
+rapport et leur nombre est annoncé : les taire ferait passer une couverture
+partielle pour complète. Elles restent comptées dans le total.
+
 ## Disponibilité : trois raisons de ne rien recevoir (Story 3.7)
 
 Un prestataire peut être écarté du matching pour trois raisons distinctes : son

@@ -1,4 +1,4 @@
-.PHONY: bootstrap test test-sobre build db-up db-down migrate hooks codegen frontend frontend-test msrv
+.PHONY: bootstrap test test-sobre build db-up db-down migrate hooks codegen frontend frontend-test msrv audit-biais
 
 # Story 0.1 — DoD : idempotent, tous les crates compilent, cargo test vert.
 bootstrap: build test frontend
@@ -15,6 +15,14 @@ test:
 # coûteuse sur une machine partagée — d'où cette cible pour les longues séances.
 test-sobre:
 	CARGO_INCREMENTAL=0 cargo test --workspace
+
+# Story 3.8 — rapport d'audit de la trace de matching (AI Act art. 12).
+#
+# À lancer tous les six mois, et à archiver : c'est le document à produire si
+# l'APD le demande. Sortie 2 quand la chaîne de signatures est rompue, ce qu'un
+# ordonnanceur remarque là où une ligne de plus dans un rapport passe inaperçue.
+audit-biais:
+	cargo run --bin klaar-audit-biais > audit-biais-$$(date +%Y-%m-%d).json
 
 # Story 0.1 — la MSRV déclarée dans Cargo.toml doit être vraie, pas décorative.
 msrv:

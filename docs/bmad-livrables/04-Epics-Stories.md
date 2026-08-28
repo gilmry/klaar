@@ -792,11 +792,85 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > réglage refusé remet le curseur sur la valeur réellement enregistrée : le
 > laisser sur la valeur refusée ferait croire qu'elle a pris.
 
-### Story 3.8 — Audit AI Act (Trace immuable + job audit biais semestriel)
+### Story 3.8 — Audit AI Act (Trace immuable + job audit biais semestriel) — *faite*
 - **En tant que** ops · **je veux** audit anti-biais · **afin de** respecter AI Act Art. 12
 - **4×N** : trace immuable / queryable / audit OK / biais détecté
 - **Couche(s)** : Application + Infra (audit_logs) + Documentation
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Deux des trois axes de biais demandés ne sont pas auditables, et c'est
+> volontaire.** FR-012 `@security` réclame un rapport « vérifiant l'absence de
+> biais (genre, ethnie estimée, quartier) ».
+>
+> - Le **genre** n'est pas collecté. L'auditer supposerait de le demander,
+>   c'est-à-dire de créer la donnée qui rendrait la discrimination possible.
+> - L'**ethnie estimée** suppose de l'estimer, typiquement depuis un nom. C'est
+>   exactement la pratique que l'AI Act et le RGPD art. 9 proscrivent : la
+>   produire pour vérifier qu'on ne s'en sert pas serait absurde.
+>
+> La garantie sur ces deux axes est **structurelle et plus forte qu'un audit
+> statistique** : `calculer` reçoit quatre nombres et rien d'autre, et ne peut
+> discriminer sur un attribut qu'on ne lui donne pas. Le rapport le dit
+> explicitement plutôt que de laisser une case vide.
+>
+> - Le **quartier**, lui, est auditable et compte vraiment. Le score est dominé
+>   par la proximité, donc la qualité du service suit la densité de
+>   prestataires, donc la géographie. C'est le biais réel, et c'est celui que le
+>   rapport mesure : par maille d'environ un kilomètre, le nombre de Demandes,
+>   le taux d'attribution, la part sans réponse, et surtout **l'écart entre la
+>   maille la mieux servie et la moins bien servie** — le chiffre qui dit s'il y
+>   a un problème, et qui ne se lit pas dans une liste de cent mailles.
+>
+> **k-anonymat, seuil à cinq.** Une maille d'un kilomètre où deux Demandes ont
+> été émises désignerait des foyers. Les mailles sous le seuil sont supprimées
+> et **leur nombre est annoncé** : les taire ferait passer une couverture
+> partielle pour une couverture complète. Elles comptent quand même dans le
+> total, le rapport ne prétendant pas que ces Demandes n'existent pas.
+>
+> **La signature est chaînée, et c'est ce qui la rend utile.** Un HMAC par ligne
+> détecte une modification ; il ne dit rien d'une **suppression**, et supprimer
+> est exactement ce que ferait quelqu'un voulant effacer un matching
+> discriminatoire. Chaque ligne signe donc son contenu **et** la signature de la
+> précédente. Prix payé : la tête de chaîne est verrouillée pendant l'écriture,
+> donc deux tours de matching simultanés s'y sérialisent — quelques
+> millisecondes, écrit plutôt que découvert.
+>
+> **Portée réelle de la signature.** Elle détecte une altération faite depuis la
+> base ; elle ne couvre pas une compromission du serveur, où la clé est lisible
+> et permet de resigner. Le WORM que FR-012 demande — stockage tiers avec verrou
+> de rétention — lèverait cette limite et demande un compte d'hébergement, hors
+> périmètre.
+>
+> **Limite opérationnelle : la chaîne est globale.** Une rotation de clé casse
+> la vérification à partir du premier maillon signé avec la nouvelle. Constaté
+> en vérifiant à la main — une clé étrangère donne « rompue à la ligne 66986 »,
+> la bonne clé donne « 81 vérifiées, chaîne intacte ». Une rotation demandera de
+> conserver l'ancienne clé pour le segment antérieur.
+>
+> **L'immuabilité est un déclencheur, pas une convention.** `UPDATE` et `DELETE`
+> sur `trace_matching` lèvent une exception, y compris ceux venant d'un
+> `ON DELETE CASCADE` : supprimer une Demande tracée échoue bruyamment plutôt
+> que d'emporter sa trace en silence.
+>
+> **Tension assumée avec le droit à l'effacement.** L'effacement d'un compte est
+> ici une anonymisation, donc aucune cascade ne se déclenche aujourd'hui. Le
+> jour où quelqu'un voudra supprimer une ligne de `demande`, le déclencheur
+> l'en empêchera, et ce sera la bonne réponse : l'art. 17 §3 b) réserve le cas
+> des traitements imposés par une obligation légale, ce qu'est cette trace. Elle
+> ne porte du reste ni nom, ni adresse, ni description — deux identifiants, un
+> score et une distance.
+>
+> **La clé est optionnelle, contrairement au secret des jetons.** Sans elle, la
+> trace est écrite **non signée** : elle explique toujours une décision, ce que
+> l'AI Act exige, alors que l'absence de trace ne s'explique pas. Refuser de
+> démarrer priverait le service de sa trace entière pour protéger cette trace.
+> Les lignes non signées sont comptées à part dans le rapport — les ranger avec
+> les vérifiées produirait un rapport rassurant sans preuve, le pire des
+> résultats.
+>
+> **Les lignes antérieures à la migration restent non signées.** Il n'y a aucune
+> façon honnête de leur fabriquer une signature après coup : la produire dirait
+> qu'elles ont été scellées à l'écriture, ce qui serait faux.
 
 **Epic 3 total** : 8 stories · ~6,75 j wall-clock · ~32 tours
 

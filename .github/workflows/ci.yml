@@ -40,6 +40,13 @@ jobs:
       # sans lui (Story 1.3) : en générer un à la volée invaliderait toutes
       # les sessions à chaque redémarrage sans que personne ne comprenne.
       KLAAR_JWT_SECRET: secret-de-ci-jamais-utilise-en-production-48o
+      # Scellement de la trace de matching (Story 3.8, AI Act art. 12). Sans
+      # elle, la trace s'écrit non signée : les tests qui vérifient la chaîne
+      # passeraient sans rien prouver.
+      KLAAR_TRACE_HMAC_KEY: cle-de-ci-pour-la-trace-jamais-en-production-48o
+      # `target/` dépasse trente gigaoctets avec la compilation incrémentale,
+      # pour un gain nul sur un runner qui repart de zéro à chaque job.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -131,6 +138,13 @@ jobs:
       # sans lui (Story 1.3) : en générer un à la volée invaliderait toutes
       # les sessions à chaque redémarrage sans que personne ne comprenne.
       KLAAR_JWT_SECRET: secret-de-ci-jamais-utilise-en-production-48o
+      # Scellement de la trace de matching (Story 3.8, AI Act art. 12). Sans
+      # elle, la trace s'écrit non signée : les tests qui vérifient la chaîne
+      # passeraient sans rien prouver.
+      KLAAR_TRACE_HMAC_KEY: cle-de-ci-pour-la-trace-jamais-en-production-48o
+      # `target/` dépasse trente gigaoctets avec la compilation incrémentale,
+      # pour un gain nul sur un runner qui repart de zéro à chaque job.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -185,6 +199,13 @@ jobs:
       # sans lui (Story 1.3) : en générer un à la volée invaliderait toutes
       # les sessions à chaque redémarrage sans que personne ne comprenne.
       KLAAR_JWT_SECRET: secret-de-ci-jamais-utilise-en-production-48o
+      # Scellement de la trace de matching (Story 3.8, AI Act art. 12). Sans
+      # elle, la trace s'écrit non signée : les tests qui vérifient la chaîne
+      # passeraient sans rien prouver.
+      KLAAR_TRACE_HMAC_KEY: cle-de-ci-pour-la-trace-jamais-en-production-48o
+      # `target/` dépasse trente gigaoctets avec la compilation incrémentale,
+      # pour un gain nul sur un runner qui repart de zéro à chaque job.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

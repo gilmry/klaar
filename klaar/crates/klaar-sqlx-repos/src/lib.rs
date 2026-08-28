@@ -1,5 +1,6 @@
 //! Adapters de persistance PostgreSQL (ADR-002 : `sqlx`, SQL pur, pas d'ORM).
 
+pub mod audit_trace;
 mod catalogue;
 mod demande;
 pub mod demonstration;

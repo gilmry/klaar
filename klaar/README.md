@@ -515,6 +515,47 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   demanderaient un modèle géographique autre qu'un point et un rayon ; dans le
   PRD, « zone » désigne par ailleurs le lancement multi-villes, hors périmètre.
 
+- **3.8** — **Trace immuable et audit anti-biais** : binaire `klaar-audit-biais`
+  (`make audit-biais`), déclencheur d'immuabilité, signature chaînée.
+
+  **Deux des trois axes de biais demandés ne sont pas auditables, et c'est
+  volontaire.** Le **genre** n'est pas collecté : l'auditer supposerait de le
+  demander, donc de créer la donnée qui rendrait la discrimination possible.
+  L'**ethnie estimée** suppose de l'estimer, typiquement depuis un nom, ce qui
+  est exactement la pratique que l'AI Act et le RGPD art. 9 proscrivent. La
+  garantie sur ces deux axes est structurelle et plus forte qu'un audit
+  statistique : `calculer` reçoit quatre nombres et ne peut discriminer sur un
+  attribut qu'on ne lui donne pas. Le rapport le dit plutôt que de laisser une
+  case vide.
+
+  Le **quartier**, lui, est le biais réel : le score est dominé par la
+  proximité, donc la qualité du service suit la densité de prestataires. Le
+  rapport le mesure par maille d'environ un kilomètre, et sort surtout l'**écart
+  entre la maille la mieux servie et la moins bien servie** — le chiffre qui dit
+  s'il y a un problème. Seuil de k-anonymat à cinq Demandes, et le nombre de
+  mailles supprimées est annoncé : les taire ferait passer une couverture
+  partielle pour complète.
+
+  **La signature est chaînée, et c'est ce qui la rend utile.** Un HMAC par ligne
+  détecte une modification mais ne dit rien d'une suppression — or supprimer est
+  exactement ce que ferait quelqu'un voulant effacer un matching
+  discriminatoire. Prix payé : la tête de chaîne est verrouillée pendant
+  l'écriture, donc deux tours de matching simultanés s'y sérialisent.
+
+  **Portée réelle** : la signature détecte une altération faite depuis la base,
+  pas une compromission du serveur où la clé est lisible. Et la chaîne étant
+  globale, une rotation de clé casse la vérification à partir du premier maillon
+  signé avec la nouvelle.
+
+  **La clé est optionnelle**, contrairement au secret des jetons : sans elle la
+  trace est écrite non signée, ce qui explique toujours une décision, alors que
+  l'absence de trace ne s'explique pas. Les lignes non signées sont comptées à
+  part — les ranger avec les vérifiées produirait un rapport rassurant sans
+  preuve.
+
+  L'immuabilité est un **déclencheur**, pas une convention : supprimer une
+  Demande tracée échoue bruyamment plutôt que d'emporter sa trace par cascade.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :
