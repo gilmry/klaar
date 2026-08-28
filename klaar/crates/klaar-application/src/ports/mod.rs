@@ -10,6 +10,7 @@ pub mod demande_repository;
 pub mod devis_repository;
 pub mod erreurs;
 pub mod evenements;
+pub mod export_repository;
 pub mod horloge;
 pub mod jeton_acces;
 pub mod langue;

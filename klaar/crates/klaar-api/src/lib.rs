@@ -18,10 +18,10 @@ use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
     PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository, PgDevisRepository,
-    PgJournalAudit, PgLiberationRepository, PgLitigeRepository, PgMessageRepository,
-    PgMissionRepository, PgNotationRepository, PgOpsRepository, PgPaiementRepository,
-    PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository,
-    PgUtilisateurRepository,
+    PgExportRepository, PgJournalAudit, PgLiberationRepository, PgLitigeRepository,
+    PgMessageRepository, PgMissionRepository, PgNotationRepository, PgOpsRepository,
+    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
+    PgTraceRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -64,6 +64,7 @@ pub struct EtatApplication {
     pub messages: Arc<PgMessageRepository>,
     pub litiges: Arc<PgLitigeRepository>,
     pub ops: Arc<PgOpsRepository>,
+    pub exports: Arc<PgExportRepository>,
     /// Diffusion temps réel des événements de Mission (Story 4.9).
     pub evenements: crate::evenements::BusEvenements,
     /// Billets d'ouverture de socket, à usage unique et de courte vie.
@@ -139,6 +140,8 @@ pub struct EtatApplication {
         routes::ops::connexion_ops,
         routes::ops::creer_compte_ops,
         routes::ops::lire_audit,
+        routes::ops::export_rgpd,
+        routes::ops::export_tva,
         routes::temps_reel::demander_billet,
         routes::temps_reel::suivre_en_direct,
         routes::suivi::suivre_demande,
@@ -200,6 +203,7 @@ pub struct EtatApplication {
         routes::ops::CompteOpsCreeDto,
         routes::ops::GesteOpsDto,
         routes::ops::JournalOpsDto,
+        routes::ops::ExportRgpdDto,
         routes::temps_reel::BilletDto,
         routes::suivi::SuiviDemandeDto,
         routes::suivi::DemandeProposeeDto,
@@ -265,6 +269,8 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::ops::connexion_ops)
         .service(routes::ops::creer_compte_ops)
         .service(routes::ops::lire_audit)
+        .service(routes::ops::export_rgpd)
+        .service(routes::ops::export_tva)
         .service(routes::temps_reel::demander_billet)
         .service(routes::temps_reel::suivre_en_direct)
         .service(routes::suivi::suivre_demande)
@@ -304,7 +310,8 @@ pub fn etat_de_test(
         notations: Arc::new(PgNotationRepository::new(pool.clone())),
         messages: Arc::new(PgMessageRepository::new(pool.clone())),
         litiges: Arc::new(PgLitigeRepository::new(pool.clone())),
-        ops: Arc::new(PgOpsRepository::new(pool)),
+        ops: Arc::new(PgOpsRepository::new(pool.clone())),
+        exports: Arc::new(PgExportRepository::new(pool)),
         evenements: crate::evenements::BusEvenements::new(),
         billets: Arc::new(crate::billet::BilletsMemoire::new()),
         jetons: Arc::new(

@@ -437,3 +437,268 @@ async fn security_une_adresse_inconnue_donne_le_meme_refus() {
     let corps: Value = test::read_body_json(reponse).await;
     assert_eq!(corps["code"], "OPS_CREDENTIALS_INVALID");
 }
+
+// === Exports réglementaires (Story 8.2, FR-039) ===
+
+#[actix_web::test]
+async fn happy_l_export_rgpd_rend_les_donnees_du_compte() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (lecteur, secret) = ops(&pool, "READER", "export-rgpd").await;
+
+    // Un compte utilisateur ordinaire, avec une Demande.
+    let utilisateur = Uuid::new_v4();
+    let empreinte =
+        EmpreinteMotDePasse::calculer(&MotDePasse::parse(MDP).unwrap(), ParametresArgon2::tests())
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO utilisateur (id, email, empreinte_mot_de_passe, statut, locale, cree_le)
+         VALUES ($1, $2, $3, 'ACTIVE', 'fr', now())",
+    )
+    .bind(utilisateur)
+    .bind(format!("exporte-{utilisateur}@example.eu"))
+    .bind(empreinte.as_str())
+    .execute(&pool)
+    .await
+    .expect("compte");
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/exports/gdpr?{}&utilisateur={utilisateur}",
+                parametres(&lecteur, &secret)
+            ))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::OK);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "GDPR_EXPORT");
+    assert_eq!(
+        corps["donnees"]["utilisateur"]["id"],
+        utilisateur.to_string()
+    );
+    // Les sections portent le nom exact des tables, et sont présentes même
+    // vides : leur absence laisserait croire que la question n'a pas été posée.
+    for section in ["session_refresh", "demande", "journal_audit", "message"] {
+        assert!(
+            corps["donnees"][section].is_array(),
+            "section manquante : {section}"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn negative_un_compte_inconnu_n_est_pas_un_export_vide() {
+    // Une autorité qui reçoit un export vide alors que le compte n'existe pas
+    // en tirera la mauvaise conclusion.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (lecteur, secret) = ops(&pool, "READER", "export-absent").await;
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/exports/gdpr?{}&utilisateur={}",
+                parametres(&lecteur, &secret),
+                Uuid::new_v4()
+            ))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::NOT_FOUND);
+}
+
+#[actix_web::test]
+async fn negative_une_periode_a_l_envers_est_refusee() {
+    // FR-039 `@negative` : une période impossible est une erreur de saisie, pas
+    // un export vide dont on conclurait « aucune activité ».
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (lecteur, secret) = ops(&pool, "READER", "periode-envers").await;
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/exports/vat?{}&debut=2026-12-31T00:00:00Z&fin=2026-01-01T00:00:00Z",
+                parametres(&lecteur, &secret)
+            ))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["code"], "PERIOD_INVALID");
+}
+
+#[actix_web::test]
+async fn happy_l_export_tva_rend_un_csv_en_centimes() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (lecteur, secret) = ops(&pool, "READER", "export-tva").await;
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/exports/vat?{}&debut=2026-01-01T00:00:00Z&fin=2027-01-01T00:00:00Z",
+                parametres(&lecteur, &secret)
+            ))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::OK);
+    let entete = reponse
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(entete.starts_with("text/csv"), "type rendu : {entete}");
+
+    let corps = String::from_utf8(test::read_body(reponse).await.to_vec()).expect("utf-8");
+    // Les colonnes disent « cents » : un tableur qui relit « 217,80 » selon sa
+    // locale produit tantôt 217,8 tantôt 21780, et personne ne s'en aperçoit
+    // avant le contrôle.
+    assert!(corps.starts_with("devis_id;decidee_le;taux_tva_bp;montant_htva_cents"));
+}
+
+#[actix_web::test]
+async fn security_l_export_rgpd_couvre_toutes_les_tables_qui_portent_un_compte() {
+    // **C'est le test qui donne sa valeur à l'export.** L'article 15 donne
+    // droit à *toutes* les données à caractère personnel, pas à celles qu'on a
+    // pensé à inclure. La liste vient du schéma — `information_schema` — et non
+    // d'une énumération écrite à la main, qui se désynchroniserait.
+    //
+    // Le jour où quelqu'un ajoute une table référençant un compte sans toucher
+    // à l'export, ce test tombe.
+    use klaar_application::ports::export_repository::ExportRepository;
+    use klaar_sqlx_repos::PgExportRepository;
+
+    let pool = pool().await;
+    let depot = PgExportRepository::new(pool.clone());
+    let tables = depot.tables_personnelles().await.expect("schéma lisible");
+    assert!(!tables.is_empty(), "le schéma doit déclarer des références");
+
+    let utilisateur = Uuid::new_v4();
+    let empreinte =
+        EmpreinteMotDePasse::calculer(&MotDePasse::parse(MDP).unwrap(), ParametresArgon2::tests())
+            .unwrap();
+    sqlx::query(
+        "INSERT INTO utilisateur (id, email, empreinte_mot_de_passe, statut, locale, cree_le)
+         VALUES ($1, $2, $3, 'ACTIVE', 'fr', now())",
+    )
+    .bind(utilisateur)
+    .bind(format!("couverture-{utilisateur}@example.eu"))
+    .bind(empreinte.as_str())
+    .execute(&pool)
+    .await
+    .expect("compte");
+
+    let export = depot
+        .donnees_personnelles(utilisateur)
+        .await
+        .expect("export")
+        .expect("compte présent");
+    let rendu = export.to_string();
+
+    // Chaque table du schéma doit apparaître quelque part dans l'export : soit
+    // par son nom de section, soit parce que ses données y sont incluses par
+    // une autre. `mission` et `devis` passent par `demandes` — un demandeur les
+    // atteint par sa Demande — et sont donc listées ici avec leur raison.
+    let par_ricochet = [
+        // Rattachées à une Demande, donc atteintes par `demandes`.
+        ("mission", "atteinte par la Demande"),
+        ("devis", "rattaché à la Mission du demandeur"),
+        ("liberation", "rattachée à la Mission"),
+        ("annulation_mission", "rattachée à la Mission"),
+        ("trace_matching", "rattachée à la Demande"),
+        // Le prestataire est une fiche, exportée sous `fiche_prestataire`.
+        ("provider", "exporté sous fiche_prestataire"),
+        ("reputation_provider", "agrégat de la fiche prestataire"),
+        // Les comptes d'exploitation ne référencent pas `utilisateur`.
+        ("compte_ops", "espace de noms séparé"),
+        (
+            "journal_ops",
+            "journal d'exploitation, pas de données du compte",
+        ),
+    ];
+
+    let mut oubliees = Vec::new();
+    for t in &tables {
+        let couverte =
+            rendu.contains(&t.table) || par_ricochet.iter().any(|(nom, _)| *nom == t.table);
+        if !couverte {
+            oubliees.push(format!("{}.{}", t.table, t.colonne));
+        }
+    }
+    assert!(
+        oubliees.is_empty(),
+        "tables portant des données d'un compte et absentes de l'export : {oubliees:?}"
+    );
+}
+
+#[actix_web::test]
+async fn security_un_export_est_journalise_avant_d_etre_produit() {
+    // FR-039 `@security` : sortir les données de quelqu'un est le geste le plus
+    // lourd de cette console.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (lecteur, secret) = ops(&pool, "READER", "export-trace").await;
+    let cible = Uuid::new_v4();
+
+    test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/exports/gdpr?{}&utilisateur={cible}",
+                parametres(&lecteur, &secret)
+            ))
+            .to_request(),
+    )
+    .await;
+
+    let traces: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT geste, cible FROM journal_ops WHERE ops_id = $1")
+            .bind(lecteur.id)
+            .fetch_all(&pool)
+            .await
+            .expect("journal");
+    assert!(
+        traces
+            .iter()
+            .any(|(g, c)| g == "AUDIT_EXPORT" && c.as_deref() == Some(cible.to_string().as_str())),
+        "l'export doit être consigné avec sa cible : {traces:?}"
+    );
+}
+
+#[actix_web::test]
+async fn security_un_mediateur_n_exporte_pas() {
+    // Trancher un litige et sortir toutes les données de quelqu'un sont deux
+    // gestes de nature différente ; les confondre donnerait à qui arbitre un
+    // pouvoir d'extraction qu'il n'a pas besoin d'avoir.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (mediateur, secret) = ops(&pool, "MEDIATOR", "mediateur-export").await;
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/exports/gdpr?{}&utilisateur={}",
+                parametres(&mediateur, &secret),
+                Uuid::new_v4()
+            ))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(reponse.status(), StatusCode::FORBIDDEN);
+}

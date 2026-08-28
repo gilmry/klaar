@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use klaar_application::ports::export_repository::ExportRepository;
 use klaar_application::ports::ops_repository::OpsRepository;
 use klaar_application::usecases::ops::{
     autoriser_et_consigner, connecter, lire_journal, secret_totp_neuf, ErreurOps, JOURNAL_PAR_PAGE,
@@ -230,6 +231,204 @@ pub async fn creer_compte_ops(
         }),
         Err(e) => {
             tracing::error!(erreur = %e, "création de compte d'exploitation impossible");
+            HttpResponse::ServiceUnavailable().json(ErreurValidationDto {
+                code: "SERVICE_UNAVAILABLE".to_string(),
+            })
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExportRgpdDto {
+    pub utilisateur_id: String,
+    pub code: &'static str,
+    /// Toutes les données du compte, table par table.
+    ///
+    /// **Rendu en clair sur cette route.** FR-039 `@security` exige un
+    /// chiffrement PGP avant tout envoi à une autorité ; il demande un trousseau
+    /// que ce déploiement n'a pas. La route est donc réservée à un rôle
+    /// d'exploitation, journalisée, et destinée à un usage interne : l'envoi
+    /// chiffré viendra avec le trousseau. La limite est écrite plutôt que
+    /// découverte.
+    pub donnees: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+pub struct PeriodeExport {
+    /// Début inclus, en RFC 3339.
+    debut: String,
+    /// Fin exclue, en RFC 3339.
+    fin: String,
+}
+
+/// Exporte toutes les données d'un compte (RGPD art. 15, FR-039).
+#[utoipa::path(
+    get,
+    path = "/api/v1/ops/exports/gdpr",
+    tag = "exploitation",
+    responses(
+        (status = 200, description = "Les données du compte", body = ExportRgpdDto),
+        (status = 401, description = "Identifiants refusés", body = ErreurValidationDto),
+        (status = 403, description = "Droit manquant", body = ErreurValidationDto),
+        (status = 404, description = "Compte inconnu", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[get("/api/v1/ops/exports/gdpr")]
+pub async fn export_rgpd(
+    etat: web::Data<EtatApplication>,
+    identifiants: web::Query<IdentifiantsOps>,
+    cible: web::Query<CibleExport>,
+) -> HttpResponse {
+    let demandeur = match authentifier(&etat, &identifiants).await {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+                code: e.code().to_string(),
+            })
+        }
+    };
+
+    // **L'export est journalisé avant d'être produit** (FR-039 `@security`) :
+    // sortir les données de quelqu'un est le geste le plus lourd de cette
+    // console, et un export dont la trace n'a pas pu s'écrire ne doit pas
+    // avoir lieu.
+    if let Err(e) = autoriser_et_consigner(
+        etat.ops.as_ref(),
+        etat.horloge.as_ref(),
+        demandeur.id,
+        Permission::ExporterAudit,
+        Some(&cible.utilisateur.to_string()),
+    )
+    .await
+    {
+        return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+            code: e.code().to_string(),
+        });
+    }
+
+    match etat.exports.donnees_personnelles(cible.utilisateur).await {
+        Ok(Some(donnees)) => HttpResponse::Ok().json(ExportRgpdDto {
+            utilisateur_id: cible.utilisateur.to_string(),
+            code: "GDPR_EXPORT",
+            donnees,
+        }),
+        // Un export vide et un export d'inexistant ne veulent pas dire la même
+        // chose : une autorité qui reçoit le premier alors que c'était le
+        // second en tirera la mauvaise conclusion.
+        Ok(None) => HttpResponse::NotFound().json(ErreurValidationDto {
+            code: "USER_NOT_FOUND".to_string(),
+        }),
+        Err(e) => {
+            tracing::error!(erreur = %e, "export RGPD impossible");
+            HttpResponse::ServiceUnavailable().json(ErreurValidationDto {
+                code: "SERVICE_UNAVAILABLE".to_string(),
+            })
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CibleExport {
+    utilisateur: Uuid,
+}
+
+/// Exporte les lignes de TVA d'une période, en CSV (FR-039).
+#[utoipa::path(
+    get,
+    path = "/api/v1/ops/exports/vat",
+    tag = "exploitation",
+    responses(
+        (status = 200, description = "CSV des lignes de TVA", content_type = "text/csv"),
+        (status = 401, description = "Identifiants refusés", body = ErreurValidationDto),
+        (status = 403, description = "Droit manquant", body = ErreurValidationDto),
+        (status = 422, description = "Période incohérente", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[get("/api/v1/ops/exports/vat")]
+pub async fn export_tva(
+    etat: web::Data<EtatApplication>,
+    identifiants: web::Query<IdentifiantsOps>,
+    periode: web::Query<PeriodeExport>,
+) -> HttpResponse {
+    let demandeur = match authentifier(&etat, &identifiants).await {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+                code: e.code().to_string(),
+            })
+        }
+    };
+
+    let (Ok(debut), Ok(fin)) = (
+        chrono::DateTime::parse_from_rfc3339(&periode.debut),
+        chrono::DateTime::parse_from_rfc3339(&periode.fin),
+    ) else {
+        return HttpResponse::UnprocessableEntity().json(ErreurValidationDto {
+            code: "PERIOD_INVALID".to_string(),
+        });
+    };
+    // FR-039 `@negative` : une période à l'envers est une erreur de saisie, pas
+    // un export vide. Le dire évite de conclure « aucune activité » d'un
+    // intervalle impossible.
+    if debut >= fin {
+        return HttpResponse::UnprocessableEntity().json(ErreurValidationDto {
+            code: "PERIOD_INVALID".to_string(),
+        });
+    }
+
+    if let Err(e) = autoriser_et_consigner(
+        etat.ops.as_ref(),
+        etat.horloge.as_ref(),
+        demandeur.id,
+        Permission::ExporterAudit,
+        Some(&format!("{}..{}", periode.debut, periode.fin)),
+    )
+    .await
+    {
+        return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+            code: e.code().to_string(),
+        });
+    }
+
+    match etat
+        .exports
+        .lignes_tva(
+            debut.with_timezone(&chrono::Utc),
+            fin.with_timezone(&chrono::Utc),
+        )
+        .await
+    {
+        Ok(lignes) => {
+            // Tous les montants en centimes, y compris dans le CSV : un tableur
+            // qui relit « 217,80 » selon sa locale produit tantôt 217,8 tantôt
+            // 21780, et personne ne s'en aperçoit avant le contrôle.
+            let mut csv = String::from(
+                "devis_id;decidee_le;taux_tva_bp;montant_htva_cents;tva_cents;                 total_ttc_cents;commission_htva_cents;tva_commission_cents
+",
+            );
+            for l in lignes {
+                csv.push_str(&format!(
+                    "{};{};{};{};{};{};{};{}
+",
+                    l.devis_id,
+                    l.decidee_le.to_rfc3339(),
+                    l.taux_tva_bp,
+                    l.montant_htva_cents,
+                    l.tva_cents,
+                    l.total_ttc_cents,
+                    l.commission_htva_cents,
+                    l.tva_commission_cents
+                ));
+            }
+            HttpResponse::Ok()
+                .content_type("text/csv; charset=utf-8")
+                .body(csv)
+        }
+        Err(e) => {
+            tracing::error!(erreur = %e, "export TVA impossible");
             HttpResponse::ServiceUnavailable().json(ErreurValidationDto {
                 code: "SERVICE_UNAVAILABLE".to_string(),
             })

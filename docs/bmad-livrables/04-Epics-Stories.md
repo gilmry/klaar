@@ -1519,6 +1519,35 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Application + Infra (PGP + eIDAS signature)
 - **Taille** : **L** (1 j) · **Tours** : 5
 
+> **Faite pour l'export RGPD et l'export TVA ; le chiffrement attend un
+> trousseau.**
+>
+> **Un export RGPD ne vaut que s'il est exhaustif.** L'article 15 donne droit à
+> *toutes* les données à caractère personnel, pas à celles qu'on a pensé à
+> inclure. La liste des tables vient donc du schéma — `information_schema` — et
+> un test compare ce que la base déclare à ce que l'export couvre. Il a fait son
+> travail dès sa première exécution : trois tables portant des données
+> personnelles manquaient, et deux noms de table avaient été inventés.
+>
+> **Les clés du JSON portent le nom exact des tables.** C'est ce qui rend ce
+> contrôle possible, et l'export lisible à côté du schéma. `to_jsonb(ligne)`
+> plutôt qu'une structure par table : une colonne ajoutée demain sort toute
+> seule, là où une sérialisation manuelle l'aurait oubliée.
+>
+> **Un compte inconnu n'est pas un export vide.** Une autorité qui reçoit le
+> premier alors que c'était le second en tirera la mauvaise conclusion.
+>
+> **La date qui fait foi pour la TVA est celle de la libération**, pas celle du
+> devis : c'est au moment où l'argent est dû que la taxe devient exigible, et un
+> devis émis en décembre et validé en janvier appartient à l'exercice suivant.
+> Le CSV est en centimes, colonnes nommées `_cents` : un tableur qui relit
+> « 217,80 » selon sa locale produit tantôt 217,8 tantôt 21780, et personne ne
+> s'en aperçoit avant le contrôle.
+>
+> Non livré : le chiffrement PGP et la signature eIDAS, qui demandent un
+> trousseau que ce déploiement n'a pas ; l'export asynchrone au-delà de cent
+> mille lignes ; et l'envoi effectif à l'autorité.
+
 ### Story 8.3 — Dashboard temps réel KPI (FR-040)
 - **En tant que** ops · **je veux** dashboard · **afin de** piloter
 - **4×N** : PRD FR-040 (backend down, empty state, RBAC)

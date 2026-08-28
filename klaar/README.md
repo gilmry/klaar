@@ -613,6 +613,31 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Le suivi sonde et s'arrête quand la Demande est close. Depuis la Story 4.9, une
   socket double ce sondage et le ralentit à trente secondes tant qu'elle vit.
 
+- **8.2** — **Exports réglementaires** (FR-039) :
+  `/api/v1/ops/exports/gdpr`, `/exports/vat`.
+
+  **Un export RGPD ne vaut que s'il est exhaustif.** L'article 15 donne droit à
+  *toutes* les données à caractère personnel, pas à celles qu'on a pensé à
+  inclure. La liste des tables vient du schéma — `information_schema` — et un
+  test compare ce que la base déclare à ce que l'export couvre. Il a fait son
+  travail dès sa première exécution : trois tables manquaient, et deux noms de
+  table avaient été inventés.
+
+  Les clés du JSON portent le nom exact des tables, ce qui rend ce contrôle
+  possible. `to_jsonb(ligne)` plutôt qu'une structure par table : une colonne
+  ajoutée demain sort toute seule.
+
+  **Un compte inconnu n'est pas un export vide** : une autorité qui reçoit le
+  premier alors que c'était le second en tirera la mauvaise conclusion.
+
+  Pour la TVA, la date qui fait foi est celle de la **libération**, pas celle du
+  devis : un devis émis en décembre et validé en janvier appartient à l'exercice
+  suivant. Le CSV est en centimes, colonnes nommées `_cents` — un tableur qui
+  relit « 217,80 » selon sa locale produit tantôt 217,8 tantôt 21780.
+
+  Non livré : le chiffrement PGP et la signature eIDAS, qui demandent un
+  trousseau, et l'envoi effectif à l'autorité.
+
 - **8.4 / 8.5** — **Console d'exploitation : rôles, MFA, journal** (FR-041,
   FR-042) : `/api/v1/ops/login`, `/accounts`, `/audit`.
 
