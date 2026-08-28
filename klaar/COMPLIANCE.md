@@ -123,6 +123,28 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Matching : ce que le score voit, et ce qu'il ne voit pas (Story 3.2, FR-012)
+
+L'AI Act exige qu'une décision automatisée puisse s'expliquer et qu'aucun attribut protégé
+ne la biaise. La garantie n'est pas une promesse : la fonction de score **ne reçoit que trois
+nombres** — une distance, une ancienneté de contrôle, une note éventuelle. Elle ne peut pas
+voir un nom, une adresse, une langue ou une photo, parce qu'on ne les lui donne pas.
+
+La table `trace_matching` conserve, pour chaque Demande, tous les candidats examinés — retenus
+comme écartés — avec leur score, sa ventilation par critère et le motif de l'écart. Elle
+répond à « pourquoi n'ai-je pas été notifié ? », qu'un prestataire est en droit de poser. Elle
+est écrite **avant** que les candidats ne soient rendus : une notification qu'aucune trace
+n'explique est précisément ce que l'AI Act interdit.
+
+**Ce qui manque au score** : le rating, que FR-012 nomme comme critère. Le bounded context
+Trust n'existe pas. Il est traité comme absent et son poids redistribué, faute de quoi tout
+nouveau prestataire serait classé derrière un prestataire mal noté. L'absence figure dans la
+ventilation conservée.
+
+**Non fourni** : l'audit de biais semestriel (Story 3.8), et le second tour à rayon élargi
+(Story 3.6). Le matching est par ailleurs lancé dans la requête et non par une file de
+travaux, faute d'infrastructure de file dans ce périmètre.
+
 ## Prestataires : le KYC n'est pas fait (Story 1.6, FR-003)
 
 FR-003 exige la validation du numéro à la Banque-Carrefour des Entreprises, le contrôle de

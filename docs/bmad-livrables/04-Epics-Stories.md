@@ -495,11 +495,36 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > retrouver la sienne, pas apprendre qu'il a cliqué deux fois. Il est cherché **avant** le
 > quota horaire, sans quoi cinq double-clics se verraient refuser pour excès.
 
-### Story 3.2 — Recherche géoloc multi-Provider (FR-012)
+### Story 3.2 — Recherche géoloc multi-Provider (FR-012) — *faite, sans le rating*
 - **En tant que** système · **je veux** trouver Providers < 5 km + Skill · **afin de** notifier
 - **4×N** : PRD FR-012 (top-10, boundary 5 km, Trace AI Act)
 - **Couche(s)** : Application + Infra (PostGIS KNN query) + Domain (Match entity + criteria JSONB)
 - **Taille** : **L** (1 j) · **Tours** : 6
+
+> **La réponse à l'AI Act est la signature de la fonction, pas une promesse.** `calculer` ne
+> reçoit que trois nombres — distance, ancienneté du contrôle, note éventuelle. Elle ne peut
+> pas voir un nom, une adresse, une langue ou une photo, parce qu'on ne les lui donne pas. Un
+> biais sur un attribut protégé demanderait d'abord de changer cette signature, ce qui se voit
+> à la relecture d'une ligne.
+>
+> **Le rating de FR-012 n'existe pas** : le bounded context Trust arrive plus tard. Il est
+> traité comme **absent** et non comme nul, et son poids est redistribué — sinon un
+> prestataire sans historique serait classé derrière un prestataire mal noté, aucun nouveau
+> venu ne recevrait jamais rien, et le classement se figerait sur les premiers arrivés.
+> L'absence est inscrite dans la ventilation, pour que la trace dise aussi ce qui manquait.
+>
+> **La trace conserve les écartés**, pas seulement les retenus : ne garder que les retenus la
+> rendrait inutile pour la seule personne à qui elle est destinée, le prestataire qui veut
+> savoir pourquoi il n'a pas été notifié. Elle est écrite **avant** que les candidats ne
+> soient rendus — une notification qu'aucune trace n'explique est ce que l'AI Act interdit.
+>
+> **Écart avec FR-011** : le matching est lancé dans la requête, alors que le FR le décrit
+> asynchrone. Il n'y a pas de file de travaux dans ce périmètre, et un binaire cadencé
+> retarderait la diffusion de sa période entière — le contraire de ce qu'on veut sur un
+> dépannage. Un échec de matching ne défait pas la Demande.
+>
+> **Non fourni** : le second tour à rayon élargi (Story 3.6, FR-015), qui donnera son sens au
+> motif d'écart `HORS_RAYON` déjà prévu par la trace.
 
 ### Story 3.3 — Notification push multi-Provider
 - **En tant que** Provider · **je veux** être notifié d'une Demande à proximité · **afin de** proposer un Devis

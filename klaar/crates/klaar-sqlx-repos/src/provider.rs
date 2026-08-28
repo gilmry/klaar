@@ -23,7 +23,7 @@ impl PgProviderRepository {
 }
 
 const COLONNES: &str = "p.id, p.utilisateur_id, p.numero_bce, p.raison_sociale, p.statut, \
-     p.origine_kyc, p.cree_le, ST_Y(p.base::geometry) AS lat, ST_X(p.base::geometry) AS lon, \
+     p.origine_kyc, p.kyc_verifie_le, p.cree_le, ST_Y(p.base::geometry) AS lat, ST_X(p.base::geometry) AS lon, \
      COALESCE(ARRAY_AGG(c.secteur_code ORDER BY c.secteur_code) \
               FILTER (WHERE c.secteur_code IS NOT NULL), '{}') AS competences";
 
@@ -59,6 +59,7 @@ fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Provider, RepositoryErr
                     .ok_or_else(|| RepositoryError::Contrainte(format!("origine inconnue : {o}")))
             })
             .transpose()?,
+        kyc_verifie_le: ligne.get("kyc_verifie_le"),
         competences,
         cree_le: ligne.get("cree_le"),
     })
@@ -73,8 +74,10 @@ impl ProviderRepository for PgProviderRepository {
 
         sqlx::query(
             "INSERT INTO provider
-                 (id, utilisateur_id, numero_bce, raison_sociale, base, statut, origine_kyc, cree_le)
-             VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, $7, $8, $9)",
+                 (id, utilisateur_id, numero_bce, raison_sociale, base, statut, origine_kyc,
+                  kyc_verifie_le, cree_le)
+             VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography, $7, $8,
+                     $9, $10)",
         )
         .bind(provider.id)
         .bind(provider.utilisateur_id)
@@ -85,6 +88,7 @@ impl ProviderRepository for PgProviderRepository {
         .bind(provider.base.lat())
         .bind(provider.statut.as_str())
         .bind(provider.origine_kyc.map(|o| o.as_str()))
+        .bind(provider.kyc_verifie_le)
         .bind(provider.cree_le)
         .execute(&mut *tx)
         .await
@@ -139,13 +143,16 @@ impl ProviderRepository for PgProviderRepository {
     async fn mettre_a_jour_etat(&self, provider: &Provider) -> Result<(), RepositoryError> {
         // Ni la raison sociale ni la base ne sont réécrites : activer un
         // prestataire ne doit pas pouvoir écraser une fiche modifiée entre-temps.
-        sqlx::query("UPDATE provider SET statut = $1, origine_kyc = $2 WHERE id = $3")
-            .bind(provider.statut.as_str())
-            .bind(provider.origine_kyc.map(|o| o.as_str()))
-            .bind(provider.id)
-            .execute(&self.pool)
-            .await
-            .map_err(erreur)?;
+        sqlx::query(
+            "UPDATE provider SET statut = $1, origine_kyc = $2, kyc_verifie_le = $3 WHERE id = $4",
+        )
+        .bind(provider.statut.as_str())
+        .bind(provider.origine_kyc.map(|o| o.as_str()))
+        .bind(provider.kyc_verifie_le)
+        .bind(provider.id)
+        .execute(&self.pool)
+        .await
+        .map_err(erreur)?;
         Ok(())
     }
 

@@ -9,6 +9,7 @@ mod pool;
 mod provider;
 mod push_subscription;
 mod session;
+mod trace;
 mod utilisateur;
 
 pub use catalogue::PgCatalogueRepository;
@@ -18,6 +19,7 @@ pub use pool::{creer_pool, PoolPg};
 pub use provider::PgProviderRepository;
 pub use push_subscription::PgPushSubscriptionRepository;
 pub use session::PgSessionRepository;
+pub use trace::PgTraceRepository;
 pub use utilisateur::PgUtilisateurRepository;
 
 use klaar_application::ports::erreurs::RepositoryError;

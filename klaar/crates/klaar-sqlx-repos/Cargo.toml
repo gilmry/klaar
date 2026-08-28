@@ -26,6 +26,9 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 uuid.workspace = true
 chrono.workspace = true
+# La ventilation du score est conservée en JSON : les critères changeront, et
+# une migration par changement de pondération rendrait l'historique illisible.
+serde_json = "1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

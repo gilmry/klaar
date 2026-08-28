@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use klaar_catalog::CodeCatalogue;
-use klaar_matching::Demande;
+use klaar_matching::{Demande, StatutDemande};
 use klaar_shared_kernel::Geo;
 use uuid::Uuid;
 
@@ -24,6 +24,17 @@ pub trait DemandeRepository {
         position: Geo,
         maintenant: DateTime<Utc>,
     ) -> Result<Option<Demande>, RepositoryError>;
+
+    /// Fait passer une Demande d'un statut à un autre.
+    ///
+    /// Le statut est décidé par le domaine et écrit ici : ce port ne connaît
+    /// pas les transitions permises, il les applique.
+    async fn changer_statut(
+        &self,
+        id: Uuid,
+        statut: StatutDemande,
+        maintenant: DateTime<Utc>,
+    ) -> Result<(), RepositoryError>;
 
     /// Demandes du compte sur la dernière heure (FR-011 `@edge`).
     async fn compter_depuis_une_heure(

@@ -146,25 +146,39 @@ async fn happy_la_recherche_rend_les_prestataires_du_secteur_tries_par_distance(
             &secteur("auto"),
             Geo::new(CENTRE.0, CENTRE.1).unwrap(),
             5_000.0,
-            20,
+            500,
         )
         .await
         .unwrap();
 
-    let ids: Vec<Uuid> = trouves.iter().map(|p| p.provider.id).collect();
-    let position = |cible: Uuid| ids.iter().position(|i| *i == cible);
-    assert!(
-        position(proche.id) < position(moyen.id),
-        "le plus proche d'abord"
+    // Le classement est vérifié **entre les trois prestataires de ce cas**, et
+    // non sur la liste entière : la base conserve ceux des exécutions
+    // précédentes, et présumer un jeu de données restreint rend le test faux
+    // au bout de quelques lancements. La limite est relevée pour la même
+    // raison — sinon les trois pourraient être tronqués hors du résultat.
+    let miens: Vec<&klaar_application::ports::provider_repository::ProviderProche> = trouves
+        .iter()
+        .filter(|t| [proche.id, moyen.id, loin.id].contains(&t.provider.id))
+        .collect();
+    assert_eq!(miens.len(), 3, "les trois doivent être trouvés");
+
+    let ids: Vec<Uuid> = miens.iter().map(|p| p.provider.id).collect();
+    assert_eq!(
+        ids,
+        vec![proche.id, moyen.id, loin.id],
+        "du plus proche au plus loin"
     );
-    assert!(position(moyen.id) < position(loin.id));
 
     // Les distances sont croissantes et en mètres.
-    let distances: Vec<f64> = trouves.iter().map(|p| p.distance_metres).collect();
+    let distances: Vec<f64> = miens.iter().map(|p| p.distance_metres).collect();
     assert!(distances.windows(2).all(|f| f[0] <= f[1]), "{distances:?}");
     assert!(
         distances[0] < 10.0,
         "le premier est sur place : {distances:?}"
+    );
+    assert!(
+        distances[2] > 2_000.0,
+        "le troisième est à environ 3 km : {distances:?}"
     );
 }
 

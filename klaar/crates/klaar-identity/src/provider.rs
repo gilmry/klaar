@@ -173,8 +173,11 @@ pub struct Provider {
     /// Point de départ des interventions, d'où se calcule la distance.
     pub base: Geo,
     pub statut: StatutProvider,
-    /// Comment son statut a été obtenu, quand il l'a été.
+    /// Comment son statut a été obtenu.
     pub origine_kyc: Option<OrigineKyc>,
+    /// Quand il l'a été. FR-012 en fait un critère de score : un contrôle
+    /// vieux d'un an ne dit plus grand-chose de l'état de l'entreprise.
+    pub kyc_verifie_le: Option<DateTime<Utc>>,
     /// Secteurs dans lesquels il intervient.
     pub competences: Vec<CodeCatalogue>,
     pub cree_le: DateTime<Utc>,
@@ -221,6 +224,7 @@ impl Provider {
             base,
             statut: StatutProvider::EnAttenteKyc,
             origine_kyc: None,
+            kyc_verifie_le: None,
             competences,
             cree_le: maintenant,
         })
@@ -234,6 +238,7 @@ impl Provider {
     pub fn valider_kyc(&mut self, preuve: PreuveKyc) {
         self.statut = StatutProvider::Actif;
         self.origine_kyc = Some(preuve.origine());
+        self.kyc_verifie_le = Some(preuve.verifie_le());
     }
 
     pub fn suspendre(&mut self) {
@@ -293,6 +298,7 @@ mod tests {
         p.valider_kyc(PreuveKyc::depuis_verification_bce(instant()));
         assert!(p.peut_etre_sollicite());
         assert_eq!(p.origine_kyc, Some(OrigineKyc::Bce));
+        assert_eq!(p.kyc_verifie_le, Some(instant()));
     }
 
     #[test]

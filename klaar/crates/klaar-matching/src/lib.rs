@@ -6,8 +6,10 @@
 
 mod demande;
 mod perimetre;
+mod score;
 
 pub use demande::{
     Demande, DemandeError, StatutDemande, Urgence, DESCRIPTION_MAX, FENETRE_DOUBLON_MINUTES,
 };
 pub use perimetre::{dans_le_perimetre, LAT_MAX, LAT_MIN, LON_MAX, LON_MIN};
+pub use score::{calculer as calculer_score, Contribution, Score, CANDIDATS_MAX, RAYON_METRES};

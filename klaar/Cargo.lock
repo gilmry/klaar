@@ -1620,6 +1620,7 @@ dependencies = [
  "klaar-identity",
  "klaar-matching",
  "klaar-shared-kernel",
+ "serde_json",
  "sqlx",
  "tokio",
  "uuid",

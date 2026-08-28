@@ -17,7 +17,8 @@ use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
     PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgPaiementRepository,
-    PgPushSubscriptionRepository, PgSessionRepository, PgUtilisateurRepository,
+    PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository,
+    PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -48,6 +49,8 @@ pub struct EtatApplication {
     pub catalogue: Arc<PgCatalogueRepository>,
     pub demandes: Arc<PgDemandeRepository>,
     pub paiements: Arc<PgPaiementRepository>,
+    pub prestataires: Arc<PgProviderRepository>,
+    pub traces: Arc<PgTraceRepository>,
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
@@ -167,7 +170,9 @@ pub fn etat_de_test(
         sessions: Arc::new(PgSessionRepository::new(pool.clone())),
         catalogue: Arc::new(PgCatalogueRepository::new(pool.clone())),
         demandes: Arc::new(PgDemandeRepository::new(pool.clone())),
-        paiements: Arc::new(PgPaiementRepository::new(pool)),
+        paiements: Arc::new(PgPaiementRepository::new(pool.clone())),
+        prestataires: Arc::new(PgProviderRepository::new(pool.clone())),
+        traces: Arc::new(PgTraceRepository::new(pool)),
         jetons: Arc::new(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),

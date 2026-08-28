@@ -111,6 +111,24 @@ impl DemandeRepository for PgDemandeRepository {
         ligne.as_ref().map(depuis_ligne).transpose()
     }
 
+    async fn changer_statut(
+        &self,
+        id: Uuid,
+        statut: StatutDemande,
+        _maintenant: DateTime<Utc>,
+    ) -> Result<(), RepositoryError> {
+        // `statut = 'BROADCASTING'` en garde : une Demande annulée par son
+        // auteur pendant qu'un tour de matching tourne ne doit pas revenir en
+        // arrière parce que ce tour s'est terminé sans candidat.
+        sqlx::query("UPDATE demande SET statut = $1 WHERE id = $2 AND statut = 'BROADCASTING'")
+            .bind(statut.as_str())
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(erreur)?;
+        Ok(())
+    }
+
     async fn compter_depuis_une_heure(
         &self,
         demandeur_id: Uuid,

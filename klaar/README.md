@@ -348,6 +348,29 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Demande naît `BROADCASTING` et y reste, ce que la page dit à l'utilisateur plutôt que de
   laisser croire qu'un dépanneur est en route.
 
+- **3.2** — **Matching géolocalisé** (FR-012) : recherche par rayon, score explicable, trace AI Act.
+
+  **La réponse à l'AI Act est la signature de la fonction, pas une promesse dans un
+  commentaire.** `calculer` ne reçoit que trois nombres — distance, ancienneté du contrôle,
+  note éventuelle. Elle ne peut pas voir un nom, une adresse, une langue ou une photo, parce
+  qu'on ne les lui donne pas. Un biais sur un attribut protégé demanderait d'abord de changer
+  cette signature, ce qui se voit à la relecture d'une ligne.
+
+  **Le rating que FR-012 nomme n'existe pas encore.** Il est traité comme absent et non comme
+  nul, et son poids est redistribué : sinon un prestataire sans historique serait classé
+  derrière un prestataire mal noté, aucun nouveau venu ne recevrait rien, et le classement se
+  figerait sur les premiers arrivés. L'absence est inscrite dans la ventilation — la trace dit
+  aussi ce qui manquait.
+
+  **La trace conserve les écartés**, pas seulement les retenus : ne garder que les retenus la
+  rendrait inutile pour la seule personne à qui elle est destinée. Elle est écrite avant que
+  les candidats ne soient rendus, et un échec d'écriture annule le tour.
+
+  **Deux défauts de montage trouvés par les tests** : une propriété que j'avais affirmée sur
+  le score — « cinq étoiles valent l'absence de note » — était fausse, et le calcul avait
+  raison ; et une migration ajoutant une contrainte échouait sur les lignes déjà en base,
+  faute de les reprendre d'abord.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

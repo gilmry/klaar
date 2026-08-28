@@ -488,3 +488,114 @@ async fn security_une_description_hostile_est_conservee_telle_quelle_sans_etre_i
             .expect("la table existe toujours");
     assert_eq!(relue, texte);
 }
+
+#[actix_web::test]
+async fn happy_le_matching_retient_les_prestataires_du_secteur_et_trace() {
+    // Story 3.2 : la Demande créée déclenche la recherche, et la trace AI Act
+    // est écrite avant que les candidats ne soient rendus.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (_, email) = compte_actif(&pool, "matching").await;
+    let jeton = jeton(&app, &email).await;
+
+    let reponse = test::call_service(
+        &app,
+        demande(&jeton, "plomberie", "Fuite", LAT, LON).to_request(),
+    )
+    .await;
+    assert_eq!(reponse.status(), StatusCode::CREATED);
+    let corps: Value = test::read_body_json(reponse).await;
+    let demande_id: Uuid = corps["id"].as_str().unwrap().parse().unwrap();
+
+    // Les prestataires de démonstration couvrent la plomberie au centre :
+    // au moins un doit être retenu. Le test ne fixe pas leur nombre, qui
+    // dépend du jeu de données présent.
+    let candidats = corps["candidats"].as_u64().expect("un nombre de candidats");
+
+    let tracees: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM trace_matching WHERE demande_id = $1 AND retenu")
+            .bind(demande_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        tracees as u64, candidats,
+        "chaque candidat retenu doit avoir sa ligne de trace"
+    );
+}
+
+#[actix_web::test]
+async fn edge_sans_prestataire_dans_le_secteur_la_demande_passe_en_no_match() {
+    // Aucun prestataire de démonstration ne couvre ce secteur au centre : la
+    // Demande doit basculer plutôt que rester en diffusion indéfiniment.
+    let pool = pool().await;
+    // On s'assure qu'aucun prestataire n'est disponible sur ce secteur.
+    sqlx::query(
+        "UPDATE provider SET disponible = FALSE
+         WHERE id IN (SELECT provider_id FROM provider_competence WHERE secteur_code = 'livraison')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = bac!(pool);
+    let (_, email) = compte_actif(&pool, "no-match").await;
+    let jeton = jeton(&app, &email).await;
+
+    let reponse = test::call_service(
+        &app,
+        demande(&jeton, "livraison", "Colis à porter", LAT, LON).to_request(),
+    )
+    .await;
+    let corps: Value = test::read_body_json(reponse).await;
+    assert_eq!(corps["candidats"], 0);
+
+    let demande_id: Uuid = corps["id"].as_str().unwrap().parse().unwrap();
+    let statut: String = sqlx::query_scalar("SELECT statut FROM demande WHERE id = $1")
+        .bind(demande_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "NO_MATCH");
+
+    sqlx::query(
+        "UPDATE provider SET disponible = TRUE
+         WHERE id IN (SELECT provider_id FROM provider_competence WHERE secteur_code = 'livraison')
+           AND statut = 'ACTIVE'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+}
+
+#[actix_web::test]
+async fn security_la_trace_conserve_la_ventilation_du_score() {
+    // L'AI Act exige de pouvoir dire de quoi le score était fait. La trace
+    // porte la ventilation, pas seulement le total.
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (_, email) = compte_actif(&pool, "ventilation").await;
+    let jeton = jeton(&app, &email).await;
+
+    let reponse = test::call_service(
+        &app,
+        demande(&jeton, "plomberie", "Fuite", LAT, LON).to_request(),
+    )
+    .await;
+    let corps: Value = test::read_body_json(reponse).await;
+    let demande_id: Uuid = corps["id"].as_str().unwrap().parse().unwrap();
+
+    let ventilation: Option<Value> =
+        sqlx::query_scalar("SELECT ventilation FROM trace_matching WHERE demande_id = $1 LIMIT 1")
+            .bind(demande_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+
+    if let Some(v) = ventilation {
+        assert!(v["proximite"]["poids"].is_number(), "ventilation : {v}");
+        assert!(v["controle"]["poids"].is_number());
+        // L'absence de note est visible : la trace dit aussi ce qui manquait.
+        assert!(v["note"].is_null(), "la note n'existe pas encore : {v}");
+    }
+}

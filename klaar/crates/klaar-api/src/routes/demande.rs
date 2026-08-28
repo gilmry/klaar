@@ -4,6 +4,7 @@ use actix_web::{post, web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use klaar_application::usecases::matcher::{chercher_candidats, ResultatMatching};
 use klaar_application::usecases::soumettre_demande::{
     soumettre, CommandeSoumission, ErreurSoumission, ResultatSoumission,
 };
@@ -32,6 +33,10 @@ pub struct DemandeCreeeDto {
     /// `REQUEST_CREATED`, ou `REQUEST_DUPLICATE` quand une Demande identique
     /// existait déjà et est rendue à sa place.
     pub code: &'static str,
+    /// Prestataires retenus pour notification (FR-012). Zéro signifie que
+    /// personne n'a été trouvé dans le rayon, et la Demande passe en
+    /// `NO_MATCH` — une réponse utile pour qui attend, plutôt qu'un silence.
+    pub candidats: usize,
 }
 
 fn statut(e: &ErreurSoumission) -> actix_web::http::StatusCode {
@@ -89,18 +94,52 @@ pub async fn soumettre_demande(
     )
     .await
     {
-        Ok(ResultatSoumission::Creee(demande)) => HttpResponse::Created().json(DemandeCreeeDto {
-            id: demande.id.to_string(),
-            statut: demande.statut.as_str().to_string(),
-            code: "REQUEST_CREATED",
-        }),
+        Ok(ResultatSoumission::Creee(demande)) => {
+            // Le matching est lancé **dans la requête**, alors que FR-011 le
+            // décrit asynchrone. Il n'y a pas de file de travaux dans ce
+            // périmètre, et la seule alternative — un binaire cadencé —
+            // retarderait la diffusion de sa période entière, ce qui est le
+            // contraire de ce qu'on veut sur un dépannage. La requête y perd
+            // une requête spatiale indexée, de l'ordre de la milliseconde.
+            let candidats = match chercher_candidats(
+                etat.prestataires.as_ref(),
+                etat.demandes.as_ref(),
+                etat.traces.as_ref(),
+                etat.horloge.as_ref(),
+                &demande,
+            )
+            .await
+            {
+                Ok(ResultatMatching::Candidats(c)) => c.len(),
+                Ok(ResultatMatching::Aucun) => 0,
+                Err(e) => {
+                    // Un matching en échec ne défait pas la Demande : elle
+                    // existe, et un tour ultérieur pourra la reprendre. Faire
+                    // l'inverse ferait perdre à l'utilisateur ce qu'il vient
+                    // d'écrire pour une panne qui ne le concerne pas.
+                    tracing::error!(erreur = %e, "matching impossible");
+                    0
+                }
+            };
+
+            HttpResponse::Created().json(DemandeCreeeDto {
+                id: demande.id.to_string(),
+                statut: demande.statut.as_str().to_string(),
+                code: "REQUEST_CREATED",
+                candidats,
+            })
+        }
         // 200 et non 409 : FR-011 `@edge` demande que la Demande existante soit
         // rendue. Un 409 obligerait le client à la retrouver lui-même, alors
         // que c'est précisément ce qu'il cherchait.
+        // Aucun nouveau tour de matching sur un doublon : la Demande d'origine
+        // a déjà été diffusée, et relancer réveillerait les mêmes prestataires
+        // pour la même chose.
         Ok(ResultatSoumission::Doublon(demande)) => HttpResponse::Ok().json(DemandeCreeeDto {
             id: demande.id.to_string(),
             statut: demande.statut.as_str().to_string(),
             code: "REQUEST_DUPLICATE",
+            candidats: 0,
         }),
         Err(e) => {
             if matches!(e, ErreurSoumission::Indisponible(_)) {

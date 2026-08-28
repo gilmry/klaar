@@ -213,6 +213,15 @@ mod tests {
                 .cloned())
         }
 
+        async fn changer_statut(
+            &self,
+            _: Uuid,
+            _: klaar_matching::StatutDemande,
+            _: DateTime<Utc>,
+        ) -> Result<(), RepositoryError> {
+            unreachable!("hors du périmètre de ce cas d'usage")
+        }
+
         async fn compter_depuis_une_heure(
             &self,
             demandeur_id: Uuid,
