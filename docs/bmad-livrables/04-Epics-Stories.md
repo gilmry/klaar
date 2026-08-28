@@ -1531,6 +1531,41 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain + Application + Frontend
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 
+> **Faite, avec 8.5 (FR-042) dans le même mouvement** : une console qui ne
+> journalise pas ses propres accès ne dit qu'une moitié de l'histoire.
+>
+> **Une table à part, et non un rôle sur `utilisateur`.** Un compte
+> d'exploitation n'a ni Demande, ni Mission, ni notation ; il regarde celles des
+> autres. Les mêler aurait donné à chaque requête de matching une colonne
+> « rôle » à ignorer, et à chaque revue de sécurité une question de plus.
+>
+> **La matrice des droits est un `match` exhaustif dans les deux dimensions.**
+> Ajouter un rôle ou une permission sans dire ce qu'il en est ne compile pas :
+> c'est ce qui évite qu'une permission nouvelle soit accordée à tous par défaut,
+> ou à personne sans que quiconque s'en aperçoive. Un seul rôle peut créer des
+> comptes — qui peut créer un compte peut se créer un super-administrateur.
+>
+> **SHA-1 pour le TOTP, et c'est écrit.** RFC 6238 autorise SHA-256, mais les
+> applications que les gens ont réellement sur leur téléphone ne lisent que
+> SHA-1. Un TOTP plus solide sur le papier et illisible par l'application de
+> l'utilisateur ne protège personne : il fait renoncer à la seconde
+> authentification. Les faiblesses connues de SHA-1 sont des collisions, et HMAC
+> n'en dépend pas.
+>
+> **Le rejeu est fermé par la base.** Un code vaut trente secondes et la fenêtre
+> de tolérance en fait quatre-vingt-dix : sans mémoire du dernier pas accepté,
+> un code lu par-dessus une épaule reste utilisable une minute et demie. C'est
+> un compare-and-swap qui le referme, pas un contrôle en mémoire.
+>
+> **Les vecteurs de la RFC 6238 sont dans les tests.** C'est la seule façon
+> honnête de vérifier une implémentation cryptographique ; les recalculer
+> soi-même reviendrait à tester le code contre lui-même.
+>
+> Non livré : les sessions d'exploitation — chaque requête porte aujourd'hui ses
+> identifiants et son code, ce qui est lourd et délibéré, un jeton volé donnant
+> accès aux données de tout le monde. La console web elle-même n'existe pas :
+> les routes sont là, l'interface reste à faire.
+
 ### Story 8.5 — Audit log consultable + immuable (FR-042)
 - **En tant que** ops · **je veux** consulter audit log · **afin d'** auditer
 - **4×N** : PRD FR-042 (WORM, recherche, > 10M lignes)

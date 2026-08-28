@@ -21,9 +21,9 @@ use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
     creer_pool, PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository,
     PgDevisRepository, PgJournalAudit, PgLiberationRepository, PgLitigeRepository,
-    PgMessageRepository, PgMissionRepository, PgNotationRepository, PgPaiementRepository,
-    PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository,
-    PgUtilisateurRepository,
+    PgMessageRepository, PgMissionRepository, PgNotationRepository, PgOpsRepository,
+    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
+    PgTraceRepository, PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -257,6 +257,7 @@ async fn main() -> std::io::Result<()> {
             notations: Arc::new(PgNotationRepository::new(pool.clone())),
             messages: Arc::new(PgMessageRepository::new(pool.clone())),
             litiges: Arc::new(PgLitigeRepository::new(pool.clone())),
+            ops: Arc::new(PgOpsRepository::new(pool.clone())),
             // Le bus et les billets sont **partagés entre les fabriques
             // d'application** : `HttpServer::new` appelle sa fermeture une fois
             // par fil d'exécution, et un bus par fil ne relierait qu'un

@@ -17,6 +17,8 @@ argon2 = { version = "0.5", features = ["std"] }
 # du système. `rand` seul ne garantit pas cette provenance.
 rand_core = { version = "0.6", features = ["getrandom"] }
 base64 = "0.22"
+hmac = "0.12"
+sha1 = "0.10"
 sha2 = "0.10"
 chrono.workspace = true
 uuid.workspace = true

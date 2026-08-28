@@ -18,6 +18,7 @@ pub mod langue;
 pub mod matcher;
 pub mod noter;
 pub mod notifier;
+pub mod ops;
 pub mod ouvrir_litige;
 pub mod rafraichir;
 pub mod repondre_devis;

@@ -18,6 +18,7 @@ pub mod litige_repository;
 pub mod message_repository;
 pub mod mission_repository;
 pub mod notation_repository;
+pub mod ops_repository;
 pub mod provider_repository;
 pub mod push;
 pub mod push_repository;

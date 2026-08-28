@@ -613,6 +613,32 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Le suivi sonde et s'arrête quand la Demande est close. Depuis la Story 4.9, une
   socket double ce sondage et le ralentit à trente secondes tant qu'elle vit.
 
+- **8.4 / 8.5** — **Console d'exploitation : rôles, MFA, journal** (FR-041,
+  FR-042) : `/api/v1/ops/login`, `/accounts`, `/audit`.
+
+  **La matrice des droits est un `match` exhaustif dans les deux dimensions** :
+  ajouter un rôle ou une permission sans dire ce qu'il en est ne compile pas.
+  Un seul rôle peut créer des comptes — qui peut créer un compte peut se créer
+  un super-administrateur.
+
+  **SHA-1 pour le TOTP, et c'est écrit.** RFC 6238 autorise SHA-256, mais les
+  applications que les gens ont réellement sur leur téléphone ne lisent que
+  SHA-1 : un TOTP plus solide sur le papier et illisible par l'application de
+  l'utilisateur ne protège personne. Les vecteurs de la RFC sont dans les tests,
+  seule façon honnête de vérifier une implémentation cryptographique.
+
+  **Le rejeu est fermé par la base.** Un code vaut trente secondes, la fenêtre
+  de tolérance en fait quatre-vingt-dix : sans mémoire du dernier pas accepté,
+  un code lu par-dessus une épaule reste utilisable une minute et demie.
+
+  **La lecture du journal est elle-même journalisée**, et les refus de droits
+  aussi : qui a consulté quoi est ce qu'un audit vient chercher. Le journal est
+  strictement insert-only, y compris pour un super-administrateur.
+
+  Non livré : les sessions d'exploitation — chaque requête porte ses
+  identifiants et son code, ce qui est lourd et délibéré. La console web
+  elle-même reste à faire.
+
 - **9.1** (partie service) — **La langue de chacun** (FR-043) :
   `PATCH /api/v1/me/locale`.
 
