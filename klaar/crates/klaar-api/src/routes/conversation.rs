@@ -12,7 +12,7 @@ use klaar_application::usecases::notifier::notifier_message;
 
 use klaar_application::usecases::langue::langue_de;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -92,7 +92,7 @@ fn statut(e: &ErreurConversation) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Message envoyé", body = MessageEnvoyeDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Coordonnées interdites", body = RefusCoordonneesDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 410, description = "Conversation fermée", body = ErreurValidationDto),
@@ -185,7 +185,7 @@ pub async fn envoyer_message(
     responses(
         (status = 200, description = "Le fil, du plus ancien au plus récent", body = FilDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),

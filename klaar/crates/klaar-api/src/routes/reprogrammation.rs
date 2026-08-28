@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use klaar_application::usecases::reprogrammer::{proposer, repondre, ErreurReprogrammation};
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -62,7 +62,7 @@ fn statut(e: &ErreurReprogrammation) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Proposition enregistrée", body = ReprogrammationDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 409, description = "Déjà proposée, ou déjà déclinée", body = ErreurValidationDto),
         (status = 410, description = "Fenêtre de reprogrammation fermée", body = ErreurValidationDto),
@@ -117,7 +117,7 @@ pub async fn proposer_reprogrammation(
     responses(
         (status = 200, description = "Réponse enregistrée", body = RepriseDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 409, description = "Déjà répondue, ou prestataire déjà engagé", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),

@@ -8,7 +8,7 @@ use uuid::Uuid;
 use klaar_application::ports::horloge::Horloge;
 use klaar_application::usecases::noter::{noter, notes_visibles, Avis, Depots, ErreurNotation};
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -81,7 +81,7 @@ fn statut(e: &ErreurNotation) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Note enregistrée", body = NoteEcriteDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 409, description = "Intervention non validée, ou déjà notée", body = ErreurValidationDto),
         (status = 410, description = "Fenêtre de notation fermée", body = ErreurValidationDto),
@@ -148,7 +148,7 @@ pub async fn noter_intervention(
     responses(
         (status = 200, description = "Notes visibles, éventuellement aucune", body = NotesDeMissionDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
     security(("bearer" = []))

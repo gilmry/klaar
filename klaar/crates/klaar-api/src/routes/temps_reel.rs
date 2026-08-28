@@ -32,7 +32,7 @@ use klaar_application::ports::horloge::Horloge;
 use klaar_application::ports::mission_repository::MissionRepository;
 use klaar_application::ports::provider_repository::ProviderRepository;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::billet::VALIDITE_SECONDES;
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -67,7 +67,7 @@ pub struct ParametresFlux {
     tag = "temps-réel",
     responses(
         (status = 201, description = "Billet à usage unique", body = BilletDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 503, description = "Trop de billets vivants", body = ErreurValidationDto),
     ),
     security(("bearer" = []))

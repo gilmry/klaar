@@ -8,7 +8,7 @@ use klaar_application::usecases::effacer::{
     annuler, demander, ErreurEffacement, ResultatDemande, CONFIRMATION_ATTENDUE,
 };
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -55,7 +55,7 @@ fn statut(e: &ErreurEffacement) -> actix_web::http::StatusCode {
     responses(
         (status = 202, description = "Effacement programmé", body = EffacementProgrammeDto),
         (status = 400, description = "Confirmation absente ou fautive", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Compte introuvable", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
@@ -111,7 +111,7 @@ pub async fn effacer_mon_compte(
     tag = "compte",
     responses(
         (status = 204, description = "Effacement annulé"),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Compte introuvable", body = ErreurValidationDto),
         (status = 409, description = "Aucun effacement en attente", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),

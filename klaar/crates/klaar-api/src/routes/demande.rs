@@ -10,7 +10,7 @@ use klaar_application::usecases::soumettre_demande::{
     soumettre, CommandeSoumission, ErreurSoumission, ResultatSoumission,
 };
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -69,7 +69,7 @@ fn statut(e: &ErreurSoumission) -> actix_web::http::StatusCode {
         (status = 201, description = "Demande créée en diffusion", body = DemandeCreeeDto),
         (status = 200, description = "Demande identique déjà en cours, rendue telle quelle", body = DemandeCreeeDto),
         (status = 400, description = "Saisie invalide", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 422, description = "Méthode de paiement requise", body = ErreurValidationDto),
         (status = 429, description = "Quota de Demandes atteint", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),

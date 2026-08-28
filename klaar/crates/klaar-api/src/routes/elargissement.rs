@@ -9,7 +9,7 @@ use klaar_application::usecases::elargir::{elargir, ErreurElargissement};
 use klaar_application::usecases::matcher::{chercher_candidats, ResultatMatching};
 use klaar_application::usecases::notifier::notifier;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -51,7 +51,7 @@ fn statut(e: &ErreurElargissement) -> actix_web::http::StatusCode {
     responses(
         (status = 200, description = "Demande relancée sur un rayon plus large", body = ElargissementDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Demande inconnue ou appartenant à quelqu'un d'autre", body = ErreurValidationDto),
         (status = 409, description = "Demande encore diffusée, attribuée ou annulée", body = ErreurValidationDto),
         (status = 422, description = "Rayon maximal atteint ; la Demande est annulée", body = ErreurValidationDto),

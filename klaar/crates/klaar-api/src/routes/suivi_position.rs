@@ -16,7 +16,7 @@ use klaar_application::usecases::suivre_position::{
 use klaar_intervention::PERTE_POSITION_SECONDES;
 use klaar_shared_kernel::Geo;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -105,7 +105,7 @@ fn echec(e: ErreurSuivi, quoi: &str) -> HttpResponse {
     responses(
         (status = 200, description = "Consentement enregistré", body = EtatConsentementDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
@@ -157,7 +157,7 @@ pub async fn consentir_suivi(
     responses(
         (status = 201, description = "Position enregistrée, dégradée à 50 m", body = ReleveDto),
         (status = 400, description = "Identifiant ou coordonnées illisibles", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Partage non consenti ou retiré", body = ErreurValidationDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 422, description = "Intervention hors trajet", body = ErreurValidationDto),
@@ -214,7 +214,7 @@ pub async fn relever_suivi(
     responses(
         (status = 200, description = "État du trajet", body = VueSuiviDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),

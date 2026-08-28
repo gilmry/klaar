@@ -20,7 +20,7 @@ use klaar_payment::Proposition;
 
 use klaar_application::usecases::langue::langue_de;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -94,7 +94,7 @@ fn statut(e: &ErreurEmissionDevis) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Devis envoyé", body = DevisEmisDto),
         (status = 400, description = "Montant, taux ou texte refusé", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Ce compte ne peut pas émettre de devis", body = ErreurValidationDto),
         (status = 404, description = "Mission inconnue ou attribuée à quelqu'un d'autre", body = ErreurValidationDto),
         (status = 409, description = "Mission close, ou devis déjà en attente", body = ErreurValidationDto),
@@ -307,7 +307,7 @@ async fn enregistrer(
     params(("id" = String, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "Devis accepté", body = ReponseDevisDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Aucun devis en attente pour cette Mission", body = ErreurValidationDto),
         (status = 409, description = "Devis déjà répondu", body = ErreurValidationDto),
         (status = 410, description = "Devis expiré", body = ErreurValidationDto),
@@ -345,7 +345,7 @@ pub async fn accepter_devis(
     responses(
         (status = 200, description = "Devis refusé", body = ReponseDevisDto),
         (status = 400, description = "Motif hors vocabulaire", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Aucun devis en attente pour cette Mission", body = ErreurValidationDto),
         (status = 409, description = "Devis déjà répondu", body = ErreurValidationDto),
         (status = 410, description = "Devis expiré", body = ErreurValidationDto),

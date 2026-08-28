@@ -17,7 +17,7 @@ use klaar_application::usecases::notifier::notifier_annulation_mission;
 
 use klaar_application::usecases::langue::langue_de;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -72,7 +72,7 @@ fn statut(e: &ErreurAnnulationMission) -> actix_web::http::StatusCode {
     responses(
         (status = 200, description = "Intervention annulée", body = MissionAnnuleeDto),
         (status = 400, description = "Identifiant illisible ou motif hors vocabulaire", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue, ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 409, description = "Intervention déjà faite ou déjà annulée", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),

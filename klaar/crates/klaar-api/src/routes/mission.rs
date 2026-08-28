@@ -14,7 +14,7 @@ use klaar_shared_kernel::Geo;
 
 use klaar_application::usecases::langue::langue_de;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -89,7 +89,7 @@ fn statut(e: &ErreurTransition) -> actix_web::http::StatusCode {
     responses(
         (status = 200, description = "Mission avancée", body = MissionAvanceeDto),
         (status = 400, description = "Statut inconnu, position ou horodatage invalide", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Ce compte n'est pas un prestataire", body = ErreurValidationDto),
         (status = 404, description = "Mission inconnue ou attribuée à quelqu'un d'autre", body = ErreurValidationDto),
         (status = 409, description = "Transition interdite depuis l'état courant", body = ErreurValidationDto),

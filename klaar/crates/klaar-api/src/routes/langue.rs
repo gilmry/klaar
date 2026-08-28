@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use klaar_application::ports::utilisateur_repository::UtilisateurRepository;
 use klaar_application::usecases::langue::{interpreter, LANGUE_PAR_DEFAUT};
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -43,7 +43,7 @@ pub struct LangueChoisieDto {
     request_body = LangueDto,
     responses(
         (status = 200, description = "Langue retenue, éventuellement par repli", body = LangueChoisieDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Compte introuvable", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),

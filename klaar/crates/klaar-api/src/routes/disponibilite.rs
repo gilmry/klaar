@@ -8,7 +8,7 @@ use klaar_application::usecases::disponibilite::{
     consulter, regler, ErreurDisponibilite, EtatDisponibilite,
 };
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -73,7 +73,7 @@ fn statut(e: &ErreurDisponibilite) -> actix_web::http::StatusCode {
     tag = "prestataires",
     responses(
         (status = 200, description = "État de disponibilité", body = DisponibiliteDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Ce compte n'est pas un prestataire", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
@@ -105,7 +105,7 @@ pub async fn lire_disponibilite(
     responses(
         (status = 200, description = "État après réglage", body = DisponibiliteDto),
         (status = 400, description = "Rayon hors bornes", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Ce compte n'est pas un prestataire", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
@@ -155,7 +155,7 @@ fn repondre(resultat: Result<EtatDisponibilite, ErreurDisponibilite>) -> HttpRes
     tag = "prestataires",
     responses(
         (status = 204, description = "Demande retirée"),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Aucune entreprise pour ce compte", body = ErreurValidationDto),
         (status = 409, description = "La demande n'est plus en attente de contrôle", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),

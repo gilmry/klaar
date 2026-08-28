@@ -1401,6 +1401,23 @@ voir : deux îlots Svelte se déconnectaient mutuellement en rafraîchissant la
 session en parallèle (la rotation du refresh y voyait un rejeu), et l'indicateur
 de connexion affirmait « En ligne » avant d'avoir rien vérifié.
 
+## Contrat OpenAPI : une lacune trouvée au troisième passage
+
+`ErreurAuthDto` était **déclaré dans les schémas et référencé par aucune
+réponse**. C'est pourtant le corps que rendent réellement les 401 de toutes les
+routes authentifiées : le contrat annonçait « 401 Jeton absent ou invalide »
+sans dire de quelle forme, et le client TypeScript généré devait deviner.
+Trente-et-une réponses corrigées dans dix-huit fichiers.
+
+Le contrat compte désormais 52 chemins et 85 schémas, sans référence pendante,
+sans schéma orphelin, et sans 401 non typé.
+
+**Limite de la vérification faite ici** : le harnais `schemathesis` de la CI
+n'est pas installable dans cet environnement. Ce qui a été contrôlé — cohérence
+des `$ref`, présence de chaque route, absence d'orphelins, typage des 401 — a
+été obtenu en interrogeant l'API réelle, et reste un sous-ensemble de ce que le
+*fuzzing* de contrat vérifie.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

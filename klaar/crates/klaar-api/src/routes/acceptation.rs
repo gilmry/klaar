@@ -14,7 +14,7 @@ use klaar_application::usecases::notifier::notifier_match_pris;
 
 use klaar_application::usecases::langue::langue_de;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::limitation::{Quota, Verdict};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
@@ -61,7 +61,7 @@ fn statut(e: &ErreurAcceptation) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Mission attribuée", body = MissionDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Prestataire non éligible", body = ErreurValidationDto),
         (status = 404, description = "Demande introuvable", body = ErreurValidationDto),
         (status = 409, description = "Déjà attribuée, ou prestataire déjà en Mission", body = ErreurValidationDto),

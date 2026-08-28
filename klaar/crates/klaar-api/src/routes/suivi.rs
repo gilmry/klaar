@@ -14,7 +14,7 @@ use klaar_application::usecases::consulter::{
     ErreurConsultation, VueDevis,
 };
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -148,7 +148,7 @@ fn refus(e: ErreurConsultation) -> HttpResponse {
     responses(
         (status = 200, description = "État de la Demande", body = SuiviDemandeDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Demande inconnue ou appartenant à quelqu'un d'autre", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
@@ -202,7 +202,7 @@ pub async fn suivre_demande(
     tag = "prestataires",
     responses(
         (status = 200, description = "Demandes proposées", body = Vec<DemandeProposeeDto>),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Ce compte n'est pas un prestataire", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),
@@ -246,7 +246,7 @@ pub async fn demandes_recues(
     responses(
         (status = 200, description = "État de la Mission", body = SuiviMissionDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 403, description = "Ce compte n'est pas un prestataire", body = ErreurValidationDto),
         (status = 404, description = "Mission inconnue ou attribuée à quelqu'un d'autre", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),

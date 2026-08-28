@@ -9,7 +9,7 @@ use klaar_application::ports::litige_repository::LitigeRepository;
 use klaar_application::ports::provider_repository::ProviderRepository;
 use klaar_application::usecases::ouvrir_litige::{ouvrir, ErreurLitige, Grief};
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -79,7 +79,7 @@ fn statut(e: &ErreurLitige) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Litige ouvert", body = LitigeOuvertDto),
         (status = 400, description = "Identifiant illisible ou motif inconnu", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou qui ne vous concerne pas", body = ErreurValidationDto),
         (status = 409, description = "Intervention non terminée, ou déjà litigée", body = ErreurValidationDto),
         (status = 410, description = "Fenêtre de litige fermée", body = ErreurValidationDto),
@@ -150,7 +150,7 @@ pub async fn ouvrir_litige(
     responses(
         (status = 200, description = "Le litige", body = LitigeLuDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Aucun litige, ou intervention hors de portée", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     ),

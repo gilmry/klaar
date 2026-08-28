@@ -11,7 +11,7 @@ use klaar_application::usecases::valider_mission::{valider, ErreurValidation, Mi
 
 use klaar_application::usecases::langue::langue_de;
 
-use crate::auth::Authentifie;
+use crate::auth::{Authentifie, ErreurAuthDto};
 use crate::routes::auth::ErreurValidationDto;
 use crate::EtatApplication;
 
@@ -56,7 +56,7 @@ fn statut(e: &ErreurValidation) -> actix_web::http::StatusCode {
     responses(
         (status = 201, description = "Validation enregistrée", body = LiberationDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
-        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
         (status = 404, description = "Mission inconnue ou appartenant à quelqu'un d'autre", body = ErreurValidationDto),
         (status = 409, description = "Intervention pas terminée, ou déjà validée", body = ErreurValidationDto),
         (status = 422, description = "Aucun devis accepté à honorer", body = ErreurValidationDto),
