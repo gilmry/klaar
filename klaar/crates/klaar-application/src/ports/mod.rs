@@ -9,6 +9,7 @@ pub mod courriel;
 pub mod demande_repository;
 pub mod devis_repository;
 pub mod erreurs;
+pub mod evenement_stripe_repository;
 pub mod evenements;
 pub mod export_repository;
 pub mod horloge;

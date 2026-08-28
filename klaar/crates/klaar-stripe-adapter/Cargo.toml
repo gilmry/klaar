@@ -8,3 +8,6 @@ license.workspace = true
 
 [dependencies]
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
+chrono.workspace = true
+hmac = "0.12"
+sha2 = "0.10"

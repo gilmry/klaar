@@ -1415,17 +1415,64 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 5 — Payment (PAY) · Priorité **Must**
 
+> **« Bloqué par Stripe » recouvrait deux choses très différentes**, et les
+> confondre a fait traiter tout l'Epic comme intouchable. Le **mouvement**
+> d'argent passe par une passerelle qui n'est pas provisionnée : là, rien n'est
+> possible. Mais les **règles** qui l'encadrent — ce qu'on a le droit de
+> capturer, ce qu'on a le droit de rembourser, l'égalité comptable à chaque
+> instant, l'authenticité d'un webhook — ne sont tenues par aucune passerelle.
+> Elles sont écrites et vérifiées ; ce qui manquera le jour où les clés
+> arriveront est du câblage réseau, pas ces décisions-là.
+>
+> **Et c'est justement ce qu'on ne voudrait pas improviser ce jour-là.** Le
+> module de signature est le seul rempart entre un inconnu et une écriture sur
+> l'argent de quelqu'un ; l'écrire sous la pression d'une intégration attendue
+> est la manière habituelle de rater une comparaison en temps constant ou une
+> fenêtre anti-rejeu.
+
+
 ### Story 5.1 — Stripe Connect Onboarding Provider (FR-024)
 - **En tant que** Provider · **je veux** configurer Stripe Connect · **afin de** recevoir mes Payouts
 - **4×N** : PRD FR-024 (KYC Stripe, IBAN, account déjà lié)
 - **Couche(s)** : Infra (Stripe adapter + abstraction PaymentGateway) + Frontend
 - **Taille** : **L** (1 j) · **Tours** : 5
 
-### Story 5.2 — Calcul Take-rate + Payout J+2 (FR-025)
+### Story 5.2 — Calcul Take-rate + Payout J+2 (FR-025) — *domaine fait ; le transfert attend Stripe*
 - **En tant que** système · **je veux** calculer Take + verser Payout · **afin de** rémunérer
 - **4×N** : PRD FR-025 (retry, IBAN clos, remboursement partiel)
 - **Couche(s)** : Domain + Application + Infra (Stripe transfer)
 - **Taille** : **L** (1 j) · **Tours** : 5
+
+> **Le calcul était déjà fait** (Story 4.6) : 18 000 HTVA → 3 240 de commission →
+> 680 de TVA → 3 920 TTC → 17 860 de reversement, l'exemple du PRD reproduit à
+> l'unité. Ce que le **séquestre** ajoute est le cycle de vie de l'argent autour
+> de ce calcul : autoriser, capturer, rembourser, verser.
+>
+> **Trois interdits, et ils sont la raison d'être du module.** Capturer plus
+> qu'autorisé et rembourser plus que capturé créeraient de l'argent ; rembourser
+> après versement le prendrait à quelqu'un qui l'a déjà reçu. Un test parcourt
+> toute l'échelle des remboursements et vérifie que ce qui est capturé se
+> retrouve toujours dans ce qui est rendu plus ce qui est versé.
+>
+> **Le solde est calculé, jamais conservé.** Un champ « reste dû » dérive de ses
+> composantes à la première écriture oubliée, et c'est ainsi qu'un solde devient
+> faux sans que rien ne le signale.
+>
+> **L'ordre des contrôles porte du sens.** Un remboursement excessif *après*
+> versement répond « le prestataire a été payé » et non « montant trop élevé » :
+> l'un se corrige en baissant le montant, l'autre se règle avec le prestataire.
+>
+> **Une capture partielle est légitime** — un déplacement seul, sans réparation.
+> Ce qui n'est pas capturé retourne au demandeur sans passer par un
+> remboursement.
+>
+> **L'autorisation expire à sept jours**, la limite des réseaux de cartes : au
+> delà, la banque libère l'empreinte et la capture échoue. La connaître ici
+> évite de promettre une capture que le réseau refusera.
+>
+> **Ce qui attend Stripe** : le transfert lui-même, le différé J+2 ouvré, les
+> trois tentatives avec attente exponentielle, et le courriel récapitulatif au
+> prestataire.
 
 ### Story 5.3 — Factures TVA BE signées eIDAS (FR-026)
 - **En tant que** Provider · **je veux** facture auto · **afin de** tenir ma compta TVA
@@ -1439,11 +1486,70 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Application + Infra
 - **Taille** : **M** (0,75 j) · **Tours** : 4
 
-### Story 5.5 — Webhooks Stripe (signature + idempotence) (FR-028)
+### Story 5.5 — Webhooks Stripe (signature + idempotence) (FR-028) — *faite*
 - **En tant que** système · **je veux** traiter webhooks Stripe idempotent · **afin de** garantir cohérence
 - **4×N** : PRD FR-028 (signature, ordre inversé, retry)
 - **Couche(s)** : Infra (endpoint public + signature verifier + stripe_events table)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Faite en entier, sans compte Stripe.** Les signatures des tests sont
+> fabriquées avec le même calcul que celui de Stripe — HMAC-SHA256 sur
+> `horodatage.corps` — donc c'est bien notre vérification qui est éprouvée, et
+> non un bouchon.
+>
+> **La signature est vérifiée avant que la charge ne soit analysée.** Décoder le
+> JSON d'un inconnu avant de l'avoir authentifié lui offrirait une surface
+> d'attaque gratuite. Et la fenêtre de tolérance est contrôlée avant le calcul
+> HMAC : inutile de faire le travail cryptographique pour un événement qu'on
+> refusera, et cela borne ce qu'un envoi massif coûte au service.
+>
+> **Le corps est lu brut.** Le désérialiser puis le re-sérialiser pour vérifier
+> changerait un espace ou l'ordre d'une clé, et la vérification échouerait sur
+> des appels parfaitement valides. C'est l'erreur classique de cette
+> intégration ; `web::Bytes` l'évite par construction.
+>
+> **Un seul code de refus pour quatre causes** (FR-028 `@negative`). En-tête
+> illisible, schéma absent, horodatage hors fenêtre, signature fausse : tous
+> rendent `INVALID_SIGNATURE`. Distinguer « périmé » de « faux » dirait à qui
+> essaie qu'il a trouvé le secret mais raté la fenêtre.
+>
+> **La rotation de secret est possible sans perdre d'événement** : plusieurs
+> `v1` peuvent coexister dans l'en-tête, et toutes sont comparées. N'en accepter
+> qu'une rendrait toute rotation destructrice. L'ancien schéma `v0`, lui, est
+> refusé : tolérer un schéma déprécié laisse ouvert le chemin qu'un attaquant
+> choisira.
+>
+> **L'idempotence est dans la base, pas dans une lecture préalable.** Un
+> `INSERT … ON CONFLICT DO NOTHING` sur l'identifiant Stripe tranche la course
+> entre deux réceptions simultanées ; « lire puis décider » les laisserait
+> toutes deux passer, et la capture serait prélevée deux fois. Le journal est en
+> **insertion seule** par déclencheur : remettre `applique` à faux permettrait de
+> rejouer une capture en effaçant sa trace, c'est-à-dire de contourner
+> exactement ce que la table protège. Un test l'écrit en SQL direct.
+>
+> **L'ordre se calcule sur l'horodatage de Stripe, par objet.** Un remboursement
+> suivi d'une capture retardée ne doit pas rouvrir la capture : l'ancien est
+> consigné pour la trace et marqué non appliqué (FR-028 `@edge`). Deux
+> événements de la même seconde s'appliquent tous deux — Stripe ne date pas plus
+> finement, et les écarter perdrait le second sans que rien ne le dise.
+>
+> **Un retard n'est pas un rejeu.** Un webhook vieux de deux heures est traité
+> normalement : la fenêtre de cinq minutes porte sur l'anti-rejeu du transport,
+> pas sur l'âge métier. Les confondre ferait perdre des événements réels après
+> un incident réseau.
+>
+> **Un secret absent ferme l'endpoint, il ne l'ouvre pas.** Sans
+> `KLAAR_STRIPE_WEBHOOK_SECRET`, tout appel est refusé — y compris ce qui serait
+> authentique. En conclure qu'on peut tout accepter « puisqu'il n'y a rien à
+> vérifier » ferait d'une variable oubliée une porte ouverte.
+>
+> **Ce qui n'est pas fait, et pourquoi.** L'**effet** des événements — marquer un
+> séquestre capturé, enregistrer un remboursement — n'est pas appliqué : aucun
+> séquestre n'existe en base, puisque rien ne peut en ouvrir sans passerelle.
+> L'API rend `effet_applique: false` plutôt que de laisser un 200 se lire comme
+> « l'argent a bougé ». La limitation de débit de l'endpoint (FR-028
+> `@security`, 100 req/min) n'est pas posée non plus : elle relève du proxy
+> inverse, absent tant que l'hébergement l'est.
 
 ### Story 5.6 — Réconciliation quotidienne (FR-029)
 - **En tant que** ops · **je veux** rapport réconciliation Klaar ↔ Stripe · **afin de** détecter écarts

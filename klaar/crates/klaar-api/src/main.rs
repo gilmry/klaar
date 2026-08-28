@@ -20,11 +20,12 @@ use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
     creer_pool, PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository,
-    PgDevisRepository, PgExportRepository, PgJournalAudit, PgLiberationRepository,
-    PgLitigeRepository, PgMessageRepository, PgMissionRepository, PgNotationRepository,
-    PgOpsRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
-    PgReprogrammationRepository, PgRevueKycRepository, PgSessionRepository, PgSuiviRepository,
-    PgTableauBordRepository, PgTraceRepository, PgUtilisateurRepository,
+    PgDevisRepository, PgEvenementStripeRepository, PgExportRepository, PgJournalAudit,
+    PgLiberationRepository, PgLitigeRepository, PgMessageRepository, PgMissionRepository,
+    PgNotationRepository, PgOpsRepository, PgPaiementRepository, PgProviderRepository,
+    PgPushSubscriptionRepository, PgReprogrammationRepository, PgRevueKycRepository,
+    PgSessionRepository, PgSuiviRepository, PgTableauBordRepository, PgTraceRepository,
+    PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -122,6 +123,24 @@ async fn main() -> std::io::Result<()> {
     // Un chiffre paramétré plutôt qu'un interrupteur : un quota qu'on peut
     // éteindre finit éteint en production, un chiffre annoncé au démarrage se
     // remarque.
+    // Secret de signature du webhook Stripe (FR-028).
+    //
+    // **Son absence ferme l'endpoint, elle ne l'ouvre pas.** Sans secret il n'y
+    // a rien à vérifier, et en conclure qu'on peut tout accepter ferait d'une
+    // variable oubliée une porte ouverte sur des écritures d'argent. Le service
+    // démarre quand même : Stripe n'est pas provisionné, et refuser de démarrer
+    // rendrait tout le reste de l'application indisponible pour une intégration
+    // qui n'existe pas encore.
+    let secret_webhook_stripe = match std::env::var("KLAAR_STRIPE_WEBHOOK_SECRET") {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => {
+            tracing::warn!(
+                "KLAAR_STRIPE_WEBHOOK_SECRET absente : /api/v1/webhooks/stripe refuse tout appel"
+            );
+            None
+        }
+    };
+
     let quota_ecriture_sensible = match std::env::var("KLAAR_QUOTA_ECRITURE_SENSIBLE") {
         Ok(v) if !v.is_empty() => match v.parse::<usize>() {
             Ok(max) if max > 0 => {
@@ -264,6 +283,8 @@ async fn main() -> std::io::Result<()> {
             suivis: Arc::new(PgSuiviRepository::new(pool.clone())),
             tableau_bord: Arc::new(PgTableauBordRepository::new(pool.clone())),
             revues_kyc: Arc::new(PgRevueKycRepository::new(pool.clone())),
+            evenements_stripe: Arc::new(PgEvenementStripeRepository::new(pool.clone())),
+            secret_webhook_stripe: secret_webhook_stripe.clone(),
             // Le bus et les billets sont **partagés entre les fabriques
             // d'application** : `HttpServer::new` appelle sa fermeture une fois
             // par fil d'exécution, et un bus par fil ne relierait qu'un

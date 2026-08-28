@@ -961,6 +961,73 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   mais une relecture reste à faire — le néerlandais approximatif dans un service
   bruxellois se remarque.
 
+- **5.5** — **Webhooks Stripe** (FR-028) : `POST /api/v1/webhooks/stripe`,
+  vérification de signature, journal d'idempotence, réordonnancement.
+
+  **« Bloqué par Stripe » recouvrait deux choses.** Le *mouvement* d'argent
+  passe par une passerelle non provisionnée : là, rien n'est possible. Mais
+  l'authenticité d'un webhook, l'idempotence et l'ordre ne sont tenus par
+  aucune passerelle. Les tests fabriquent leurs signatures avec le même calcul
+  que Stripe — HMAC-SHA256 sur `horodatage.corps` — donc c'est bien notre
+  vérification qui est éprouvée, pas un bouchon.
+
+  **La signature est vérifiée avant que la charge ne soit analysée**, et la
+  fenêtre anti-rejeu avant le calcul HMAC : décoder le JSON d'un inconnu lui
+  offrirait une surface gratuite, et faire le travail cryptographique pour un
+  événement qu'on refusera borne mal ce qu'un envoi massif coûte.
+
+  **Le corps est lu brut.** Le désérialiser puis le re-sérialiser changerait un
+  espace ou l'ordre d'une clé, et la vérification échouerait sur des appels
+  valides — l'erreur classique de cette intégration.
+
+  **Un seul code pour quatre causes de refus.** En-tête illisible, schéma
+  absent, horodatage hors fenêtre, signature fausse : tous rendent
+  `INVALID_SIGNATURE`. Distinguer « périmé » de « faux » dirait à qui essaie
+  qu'il a trouvé le secret mais raté la fenêtre.
+
+  **L'idempotence est dans la base.** `ON CONFLICT DO NOTHING` sur
+  l'identifiant Stripe tranche la course entre deux réceptions simultanées ;
+  lire puis décider les laisserait toutes deux passer et prélèverait deux fois.
+  Le journal est en insertion seule par déclencheur — remettre `applique` à faux
+  permettrait de rejouer une capture en effaçant sa trace.
+
+  **Un retard n'est pas un rejeu** : un webhook vieux de deux heures est traité
+  normalement, la fenêtre de cinq minutes portant sur le transport et non sur
+  l'âge métier.
+
+  **Un secret absent ferme l'endpoint, il ne l'ouvre pas.** Tout appel est
+  refusé, y compris authentique : en conclure qu'on peut tout accepter ferait
+  d'une variable oubliée une porte ouverte sur des écritures d'argent.
+
+  Non livré : l'**effet** des événements, faute de séquestre en base — l'API
+  rend `effet_applique: false` plutôt que de laisser un 200 se lire comme
+  « l'argent a bougé » — et la limitation de débit, qui relève du proxy inverse.
+
+- **5.2** (domaine) — **Cycle de vie du séquestre** (FR-024 à FR-027) :
+  autoriser, capturer, rembourser, verser.
+
+  **Trois interdits, et ils sont la raison d'être du module.** Capturer plus
+  qu'autorisé et rembourser plus que capturé créeraient de l'argent ; rembourser
+  après versement le prendrait à quelqu'un qui l'a déjà reçu. Un test parcourt
+  toute l'échelle des remboursements et vérifie que ce qui est capturé se
+  retrouve toujours dans ce qui est rendu plus ce qui est versé.
+
+  **Le solde est calculé, jamais conservé** : un champ « reste dû » dérive de
+  ses composantes à la première écriture oubliée, et c'est ainsi qu'un solde
+  devient faux sans que rien ne le signale.
+
+  **L'ordre des contrôles porte du sens** : un remboursement excessif après
+  versement répond « le prestataire a été payé », pas « montant trop élevé » —
+  l'un se corrige en baissant le montant, l'autre se règle avec le prestataire.
+
+  **Une capture partielle est légitime** (un déplacement seul), et
+  **l'autorisation expire à sept jours**, la limite des réseaux de cartes :
+  au-delà la banque libère l'empreinte, et promettre la capture ferait échouer
+  le réseau sans que le demandeur comprenne.
+
+  Non livré : le transfert lui-même, le différé J+2, les tentatives avec attente
+  exponentielle. C'est là que Stripe est réellement indispensable.
+
 - **7.4** — **Médiation d'un litige** (FR-036) : `GET /api/v1/ops/disputes`,
   `/disputes/{id}`, `POST /disputes/{id}/resolve`, et l'écran de médiation dans
   la console.
@@ -1209,12 +1276,15 @@ Le premier run CI a échoué deux fois avant de passer, corrections gardées ici
 Les Epics 0 à 9 marqués **Must** au PRD sont livrés, à trois exceptions près,
 toutes tenant à un tiers absent et non à un manque de travail :
 
-- **Epic 5 en entier** (FR-024 à FR-028) : séquestre, capture, remboursement,
-  facturation, webhooks. Il faut un compte Stripe. Tout ce qui précède le
-  mouvement d'argent existe et calcule juste — la répartition de commission, le
-  forfait de déplacement, le partage d'un litige tranché — et chaque route qui
+- **Epic 5, le mouvement d'argent seul** (FR-024, FR-026, et le transfert de
+  FR-025) : il faut un compte Stripe. **Pas l'Epic entier** — la distinction a
+  d'abord été manquée ici, et elle compte. Ce qui ne dépend d'aucune passerelle
+  est fait : la répartition de commission, le cycle de vie du séquestre avec ses
+  trois interdits, et la réception des webhooks en entier — signature,
+  idempotence, ordre. Ce qui reste est du câblage réseau. Chaque route qui
   aurait dû déclencher un paiement rend explicitement qu'elle ne l'a pas fait
-  (`execute: false`), plutôt que de laisser croire à un virement.
+  (`execute: false`, `effet_applique: false`), plutôt que de laisser croire à un
+  virement.
 - **1.5 (itsme), 1.6 et 8.1 côté BCE réelle** : il faut les accès aux registres.
   Le contrôle d'entreprise fonctionne, mené par un humain, et l'origine
   `OPS_REVIEW` dit exactement cela plutôt que de se faire passer pour une

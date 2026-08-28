@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
+klaar-stripe-adapter = { path = "../klaar-stripe-adapter", version = "0.0.0" }
 rand = "0.9"
 serde.workspace = true
 serde_json.workspace = true

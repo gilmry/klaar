@@ -31,3 +31,4 @@ pub mod tableau_bord;
 pub mod transiter_mission;
 pub mod valider_mission;
 pub mod verifier_email;
+pub mod webhook_stripe;

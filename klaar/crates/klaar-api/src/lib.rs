@@ -18,9 +18,9 @@ use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
     PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository, PgDevisRepository,
-    PgExportRepository, PgJournalAudit, PgLiberationRepository, PgLitigeRepository,
-    PgMessageRepository, PgMissionRepository, PgNotationRepository, PgOpsRepository,
-    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
+    PgEvenementStripeRepository, PgExportRepository, PgJournalAudit, PgLiberationRepository,
+    PgLitigeRepository, PgMessageRepository, PgMissionRepository, PgNotationRepository,
+    PgOpsRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
     PgReprogrammationRepository, PgRevueKycRepository, PgSessionRepository, PgSuiviRepository,
     PgTableauBordRepository, PgTraceRepository, PgUtilisateurRepository,
 };
@@ -73,6 +73,14 @@ pub struct EtatApplication {
     pub tableau_bord: Arc<PgTableauBordRepository>,
     /// Revue du contrôle d'entreprise (Story 8.1, FR-038).
     pub revues_kyc: Arc<PgRevueKycRepository>,
+    /// Journal des webhooks Stripe (Story 5.5, FR-028).
+    pub evenements_stripe: Arc<PgEvenementStripeRepository>,
+    /// Secret de signature du webhook Stripe.
+    ///
+    /// **`None` ferme l'endpoint plutôt que de l'ouvrir.** Sans secret il n'y a
+    /// rien à vérifier ; en déduire qu'on peut tout accepter ferait d'une
+    /// configuration oubliée une porte ouverte sur des écritures d'argent.
+    pub secret_webhook_stripe: Option<String>,
     /// Diffusion temps réel des événements de Mission (Story 4.9).
     pub evenements: crate::evenements::BusEvenements,
     /// Billets d'ouverture de socket, à usage unique et de courte vie.
@@ -160,6 +168,7 @@ pub struct EtatApplication {
         routes::ops::file_kyc,
         routes::ops::reviser_kyc,
         routes::disponibilite::retirer_inscription,
+        routes::webhook_stripe::recevoir_webhook,
         routes::suivi_position::consentir_suivi,
         routes::suivi_position::relever_suivi,
         routes::suivi_position::consulter_suivi,
@@ -238,6 +247,7 @@ pub struct EtatApplication {
         routes::ops::FileKycDto,
         routes::ops::DecisionKycDto,
         routes::ops::IssueRevueDto,
+        routes::webhook_stripe::AccuseWebhookDto,
         routes::suivi_position::ConsentementSuiviDto,
         routes::suivi_position::EtatConsentementDto,
         routes::suivi_position::PositionDto,
@@ -320,6 +330,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::ops::file_kyc)
         .service(routes::ops::reviser_kyc)
         .service(routes::disponibilite::retirer_inscription)
+        .service(routes::webhook_stripe::recevoir_webhook)
         .service(routes::suivi_position::consentir_suivi)
         .service(routes::suivi_position::relever_suivi)
         .service(routes::suivi_position::consulter_suivi)
@@ -340,6 +351,13 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
 /// paramètres argon2 de production coûteraient ici une centaine de
 /// millisecondes par inscription, soit une suite qu'on finit par ne plus
 /// lancer.
+/// Secret de signature employé par les tests d'intégration du webhook.
+///
+/// Public exprès : un test doit pouvoir fabriquer une signature authentique,
+/// et cacher la valeur l'obligerait à la recopier — donc à diverger le jour où
+/// elle change.
+pub const SECRET_WEBHOOK_DE_TEST: &str = "whsec_de_test_jamais_en_production";
+
 pub fn etat_de_test(
     pool: klaar_sqlx_repos::PoolPg,
     push: Option<Arc<WebPushSender>>,
@@ -367,7 +385,13 @@ pub fn etat_de_test(
         reprogrammations: Arc::new(PgReprogrammationRepository::new(pool.clone())),
         suivis: Arc::new(PgSuiviRepository::new(pool.clone())),
         tableau_bord: Arc::new(PgTableauBordRepository::new(pool.clone())),
-        revues_kyc: Arc::new(PgRevueKycRepository::new(pool)),
+        revues_kyc: Arc::new(PgRevueKycRepository::new(pool.clone())),
+        evenements_stripe: Arc::new(PgEvenementStripeRepository::new(pool)),
+        // Un secret fixe pour les tests, et **connu d'eux** : sans lui,
+        // l'endpoint de webhook refuse tout et il n'y aurait rien à vérifier.
+        // Il n'ouvre rien en production, où la valeur vient de
+        // `KLAAR_STRIPE_WEBHOOK_SECRET` ou reste absente.
+        secret_webhook_stripe: Some(SECRET_WEBHOOK_DE_TEST.to_string()),
         evenements: crate::evenements::BusEvenements::new(),
         billets: Arc::new(crate::billet::BilletsMemoire::new()),
         jetons: Arc::new(

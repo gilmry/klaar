@@ -181,6 +181,67 @@ sonner à sa porte est le minimum. Rien d'autre du prestataire ne lui est expos�
 que la Demande est close. Le temps réel appartient au WebSocket de FR-018, non
 livré.
 
+## Webhooks de paiement : l'endpoint public qui écrit (Story 5.5, FR-028)
+
+**C'est le seul endpoint sans authentification qui produit une écriture**, et
+c'est délibéré : Stripe appelle depuis des adresses qui changent, sans jeton à
+présenter. La signature HMAC-SHA256 tient lieu d'authentification, et elle est
+donc le seul rempart entre un inconnu et une écriture sur l'argent de quelqu'un.
+
+**Elle est vérifiée avant que la charge ne soit analysée.** Décoder le JSON d'un
+appelant non authentifié lui offrirait une surface d'attaque gratuite. Et la
+fenêtre de tolérance est contrôlée avant le calcul HMAC : faire le travail
+cryptographique pour un événement qu'on refusera de toute façon laisserait un
+envoi massif coûter plus qu'il ne devrait.
+
+**La charge signée inclut l'horodatage**, ce qui ferme le rejeu : une requête
+interceptée et renvoyée plus tard est refusée même si sa signature est
+authentique. La fenêtre est de cinq minutes — plus large, le rejeu s'ouvre ;
+plus étroite, un décalage d'horloge ferait perdre des événements réels.
+
+**La comparaison est en temps constant, et porte sur toutes les signatures
+présentées.** Sortir à la première différence d'octet révélerait le préfixe
+commun par le temps de réponse.
+
+**Un seul code de refus pour quatre causes.** En-tête illisible, schéma absent,
+horodatage périmé, signature fausse : la réponse est identique. Distinguer
+« périmé » de « faux » apprendrait à qui essaie qu'il a trouvé le secret.
+
+**L'ancien schéma `v0` est refusé.** Tolérer un schéma déprécié laisse ouvert le
+chemin qu'un attaquant choisira. Plusieurs `v1`, en revanche, sont acceptées :
+c'est ce qui permet de faire tourner le secret sans perdre d'événement.
+
+**Un secret absent ferme l'endpoint.** Sans lui, tout appel est refusé — y
+compris ce qui serait authentique. En conclure qu'on peut tout accepter
+« puisqu'il n'y a rien à vérifier » ferait d'une variable d'environnement
+oubliée une porte ouverte.
+
+**Le journal des événements est en insertion seule.** Remettre un événement à
+« non appliqué » permettrait de rejouer une capture en effaçant sa trace,
+c'est-à-dire de contourner exactement ce que la table protège. L'idempotence
+elle-même est tenue par la clé primaire et non par une lecture préalable : deux
+réceptions simultanées du même événement s'écraseraient sur un « lire puis
+décider », et le prélèvement aurait lieu deux fois.
+
+**Rien n'est journalisé d'une charge non authentifiée** : ni le corps, ni
+l'en-tête, qui porte une signature. Seul le code de refus l'est.
+
+## Ce que le séquestre garantit sans passerelle (Story 5.2, FR-024 à FR-027)
+
+**L'argent n'est pas là, mais ses règles le sont.** Trois interdits que nulle
+passerelle ne tient à notre place : capturer plus qu'autorisé et rembourser plus
+que capturé créeraient de l'argent ; rembourser après versement le prendrait à
+quelqu'un qui l'a déjà reçu. Un test parcourt toute l'échelle des
+remboursements et vérifie l'égalité comptable à chaque pas.
+
+**Le solde est calculé et jamais conservé** : un champ dérivé de ses composantes
+devient faux à la première écriture oubliée, et c'est la façon habituelle dont
+un compte se met à mentir.
+
+**L'ordre des contrôles est lui-même une garantie** : un remboursement excessif
+après versement doit dire « le prestataire a été payé », parce que la suite à
+donner n'est pas celle d'un montant trop élevé.
+
 ## Médiation et contrôle d'entreprise (Stories 7.4 et 8.1, FR-036, FR-038)
 
 **Une décision de médiation est définitive, et la base le grave.** Le

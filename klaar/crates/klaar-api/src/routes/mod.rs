@@ -26,3 +26,4 @@ pub mod suivi_position;
 pub mod temps_reel;
 pub mod validation;
 pub mod verification;
+pub mod webhook_stripe;

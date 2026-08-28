@@ -98,6 +98,10 @@ path = "src/bin/prestataires_demo.rs"
 
 [dev-dependencies]
 actix-rt = "2"
+# Pour fabriquer, dans les tests, une signature de webhook Stripe authentique :
+# c'est le même calcul que celui de Stripe, donc c'est bien le nôtre qu'on
+# vérifie. Le sous-produit est que l'intégration se teste sans compte.
+hmac = "0.12"
 # Pour lancer deux requêtes réellement concurrentes sur le même jeton et
 # vérifier que le verrou tient.
 futures-util = "0.3"
