@@ -512,11 +512,61 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > prestataire » accompagne obligatoirement toute fourchette : sans elle, une fourchette se
 > lit comme un devis, et l'écart devient un litige.
 
-### Story 2.4 — Admin catalogue (FR-010, post-MVP ready)
+### Story 2.4 — Admin catalogue (FR-010) — *faite*
 - **En tant que** ops · **je veux** gérer le catalogue · **afin de** l'étendre
 - **4×N** : PRD FR-010 (4-eyes principle)
 - **Couche(s)** : Application + Frontend (admin web)
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **Elle n'attendait aucun tiers, et c'est une omission de découpage qu'un
+> passage systématique sur les stories a révélée.** Le catalogue est une des
+> rares parties du produit dont personne d'autre ne détient la clé : ni Stripe,
+> ni itsme, ni la BCE, ni un seau d'objets. Ce qui la retenait était la console
+> d'exploitation, qui existe depuis la Story 8.3.
+>
+> **Un secteur naît en brouillon, et un autre compte le publie.** Publier rend
+> le secteur proposable à toute la Région : les Demandes s'y rangent, les
+> prestataires s'y déclarent compétents, et le retirer ensuite laisse des
+> Missions orphelines. Le geste ne se défait pas en pratique, d'où la seconde
+> paire d'yeux — la même règle que pour un refus de contrôle d'entreprise, et
+> pour la même raison. La garde est **dans le `WHERE`** autant que dans le
+> code : le contrôle applicatif explique le refus, la contrainte le rend
+> impossible. Un test l'écrit en SQL direct.
+>
+> **Créer directement publié contournerait les quatre yeux**, donc la création
+> ne produit qu'un brouillon — il n'y a pas de chemin qui saute l'étape.
+>
+> **Les trois libellés sont exigés dès la création.** Un secteur publié sans
+> néerlandais s'afficherait en français à un néerlandophone, dans une région où
+> c'est précisément ce qu'il ne faut pas faire, et le corriger après publication
+> ne rattraperait pas ceux qui l'ont déjà lu.
+>
+> **Un secteur porteur d'interventions en cours ne se retire pas** (FR-010
+> `@edge`, 409). Le refus porte sur les **Missions**, pas sur les Demandes : une
+> Demande en diffusion se rediffusera ou expirera, tandis qu'une Mission engage
+> deux personnes et un montant, et retirer son secteur pendant qu'elle se
+> déroule casserait un écran au milieu d'une intervention. Le comptage est dans
+> la **même requête** que le retrait : lu séparément, il serait déjà faux au
+> moment du clic — une Mission peut démarrer entre les deux.
+>
+> **Retiré n'est pas effacé.** Les Demandes et les Missions passées renvoient au
+> secteur ; supprimer la ligne les rendrait illisibles.
+>
+> **Un défaut réel trouvé par le test.** Le catalogue **public** ne filtrait pas
+> les statuts : un brouillon y apparaissait aussitôt créé, ce qui aurait laissé
+> soumettre des Demandes dans un secteur où aucun prestataire ne s'est encore
+> déclaré. Le filtre est désormais dans la requête de lecture publique, pas dans
+> l'appelant — il n'y a pas de cas où cette lecture voudrait autre chose.
+>
+> **Écart au FR, assumé** : FR-010 `@security` parle d'un rôle
+> « catalog_manager ». La permission existe (`CATALOG_MANAGE`) mais n'est donnée
+> qu'au super-administrateur : créer un rôle pour une seule permission
+> multiplierait les rôles sans réduire les droits de quiconque. Le jour où
+> l'exploitation comptera assez de monde pour qu'un tel rôle serve, il se créera
+> avec ses propres raisons.
+>
+> **Non livré** : l'écran. Les routes existent et sont vérifiées ; la console
+> les câblera comme elle a câblé la médiation et la revue KYC.
 
 **Epic 2 total** : 4 stories · ~2,5 j wall-clock · ~10 tours
 

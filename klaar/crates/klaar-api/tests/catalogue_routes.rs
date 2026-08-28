@@ -45,7 +45,7 @@ fn depuis(locale: Option<&str>, source: u8) -> test::TestRequest {
 }
 
 #[actix_web::test]
-async fn happy_sert_les_cinq_secteurs_avec_leurs_skills_en_francais() {
+async fn happy_sert_les_secteurs_du_mvp_avec_leurs_skills_en_francais() {
     let app = test::init_service(app_de_test(etat_de_test(pool().await, None))).await;
     let reponse = test::call_service(&app, depuis(Some("fr"), 1).to_request()).await;
     assert_eq!(reponse.status(), StatusCode::OK);
@@ -53,10 +53,31 @@ async fn happy_sert_les_cinq_secteurs_avec_leurs_skills_en_francais() {
     let corps: Value = test::read_body_json(reponse).await;
     assert_eq!(corps["locale"], "fr");
     let secteurs = corps["secteurs"].as_array().expect("une liste");
-    assert_eq!(secteurs.len(), 5);
-    assert_eq!(secteurs[0]["code"], "plomberie");
-    assert_eq!(secteurs[0]["libelle"], "Plomberie");
-    assert!(!secteurs[0]["skills"].as_array().unwrap().is_empty());
+
+    // **Présence, et non comptage exact.** La Story 2.4 rend le catalogue
+    // extensible : l'exploitation peut publier de nouveaux secteurs, et un test
+    // qui exige exactement cinq devient faux le jour où elle le fait. Ce que ce
+    // cas vérifie est que le peuplement du MVP est servi avec ses libellés et
+    // ses compétences — pas que personne n'a rien ajouté depuis.
+    for attendu in [
+        "plomberie",
+        "serrurerie",
+        "electricite",
+        "auto",
+        "livraison",
+    ] {
+        let trouve = secteurs
+            .iter()
+            .find(|s| s["code"] == attendu)
+            .unwrap_or_else(|| panic!("secteur {attendu} absent du catalogue"));
+        assert!(
+            !trouve["libelle"].as_str().unwrap_or_default().is_empty(),
+            "{attendu} sans libellé"
+        );
+    }
+    let plomberie = secteurs.iter().find(|s| s["code"] == "plomberie").unwrap();
+    assert_eq!(plomberie["libelle"], "Plomberie");
+    assert!(!plomberie["skills"].as_array().unwrap().is_empty());
 }
 
 #[actix_web::test]
@@ -196,7 +217,10 @@ async fn edge_un_etag_perime_redonne_le_contenu() {
     .await;
     assert_eq!(reponse.status(), StatusCode::OK);
     let corps: Value = test::read_body_json(reponse).await;
-    assert_eq!(corps["secteurs"].as_array().unwrap().len(), 5);
+    // Le contenu est bien redonné : ce que ce cas vérifie est qu'une empreinte
+    // périmée ne produit pas un 304 vide, pas le nombre de secteurs — lequel
+    // bouge depuis que le catalogue est extensible (Story 2.4).
+    assert!(!corps["secteurs"].as_array().unwrap().is_empty());
 }
 
 #[actix_web::test]

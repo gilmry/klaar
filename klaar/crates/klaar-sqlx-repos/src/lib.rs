@@ -3,6 +3,7 @@
 pub mod annulation;
 pub mod audit_trace;
 mod catalogue;
+mod catalogue_admin;
 mod demande;
 pub mod demonstration;
 mod devis;
@@ -29,6 +30,7 @@ mod utilisateur;
 
 pub use annulation::PgAnnulationRepository;
 pub use catalogue::PgCatalogueRepository;
+pub use catalogue_admin::PgCatalogueAdminRepository;
 pub use demande::{PgDemandeRepository, PgPaiementRepository};
 pub use devis::PgDevisRepository;
 pub use evenement_stripe::PgEvenementStripeRepository;

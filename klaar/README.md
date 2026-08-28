@@ -961,6 +961,37 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   mais une relecture reste à faire — le néerlandais approximatif dans un service
   bruxellois se remarque.
 
+- **2.4** — **Administration du catalogue** (FR-010) :
+  `GET`/`POST /api/v1/ops/catalog/sectors`, `/publish`, `/disable`.
+
+  **Elle n'attendait aucun tiers**, et c'est une omission de découpage qu'un
+  passage systématique sur les stories a révélée. Le catalogue est une des rares
+  parties du produit dont personne d'autre ne détient la clé. Ce qui la retenait
+  était la console d'exploitation, qui existe depuis la 8.3.
+
+  **Un secteur naît en brouillon, et un autre compte le publie.** Publier le
+  rend proposable à toute la Région, et le retirer ensuite laisserait des
+  Missions orphelines : le geste ne se défait pas, d'où la seconde paire d'yeux.
+  La garde est dans le `WHERE` autant que dans le code — le contrôle applicatif
+  explique le refus, la contrainte le rend impossible, et un test l'écrit en SQL
+  direct.
+
+  **Les trois libellés sont exigés dès la création** : un secteur publié sans
+  néerlandais s'afficherait en français à un néerlandophone, et le corriger
+  après coup ne rattraperait pas ceux qui l'ont lu.
+
+  **Un secteur porteur d'interventions en cours ne se retire pas.** Le refus
+  porte sur les Missions et non sur les Demandes — une Demande se rediffuse, une
+  Mission engage deux personnes. Le comptage est dans la **même requête** que le
+  retrait : lu séparément, il serait déjà faux au moment du clic.
+
+  **Un défaut réel trouvé par le test** : le catalogue public ne filtrait pas
+  les statuts, et un brouillon y apparaissait aussitôt créé — ce qui aurait
+  laissé soumettre des Demandes dans un secteur où aucun prestataire ne s'est
+  déclaré.
+
+  Non livré : l'écran. Les routes existent et sont vérifiées.
+
 - **1.5** (garanties) — **Échange OIDC itsme** (FR-002) : `state`, `nonce`,
   PKCE, et le contrôle des revendications du jeton d'identité.
 

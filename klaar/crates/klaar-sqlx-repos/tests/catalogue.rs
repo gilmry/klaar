@@ -25,19 +25,37 @@ async fn depot() -> PgCatalogueRepository {
 
 #[tokio::test]
 async fn happy_le_catalogue_contient_les_cinq_secteurs_du_mvp() {
+    // **Présence et ordre relatif, non égalité de liste.** Depuis la Story 2.4
+    // l'exploitation publie de nouveaux secteurs : exiger que les cinq du MVP
+    // soient les *seuls* rendrait ce test faux le jour où elle s'en sert, ce
+    // qui est le but de la fonction. Ce qui doit tenir est que le peuplement
+    // initial est servi, et dans son ordre.
     let secteurs = depot().await.secteurs().await.unwrap();
     let codes: Vec<&str> = secteurs.iter().map(|s| s.code.as_str()).collect();
-    assert_eq!(codes, SECTEURS_MVP);
+    let du_mvp: Vec<&str> = codes
+        .iter()
+        .copied()
+        .filter(|c| SECTEURS_MVP.contains(c))
+        .collect();
+    assert_eq!(du_mvp, SECTEURS_MVP, "les cinq du MVP, dans leur ordre");
 }
 
 #[tokio::test]
-async fn happy_chaque_secteur_liste_ses_skills() {
+async fn happy_chaque_secteur_du_mvp_liste_ses_skills() {
+    // **Restreint aux cinq du MVP.** Un secteur publié par l'exploitation n'a
+    // légitimement aucun Skill au départ : la Demande porte une description, et
+    // les compétences sont un raffinement qui vient après. Étendre l'exigence à
+    // tout le catalogue ferait échouer ce cas sur un secteur parfaitement
+    // valide.
     let secteurs = depot().await.secteurs().await.unwrap();
-    for secteur in &secteurs {
+    for code in SECTEURS_MVP {
+        let secteur = secteurs
+            .iter()
+            .find(|s| s.code.as_str() == code)
+            .unwrap_or_else(|| panic!("secteur {code} absent"));
         assert!(
             !secteur.skills.is_empty(),
-            "le secteur {} n'a aucun Skill",
-            secteur.code
+            "le secteur {code} n'a aucun Skill"
         );
     }
 }

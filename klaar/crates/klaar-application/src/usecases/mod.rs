@@ -2,6 +2,7 @@
 //! propre. Chacun est tracé sur un FR du PRD.
 
 pub mod accepter;
+pub mod administrer_catalogue;
 pub mod annuler;
 pub mod annuler_mission;
 pub mod connecter;

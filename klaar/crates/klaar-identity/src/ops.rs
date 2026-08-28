@@ -49,6 +49,8 @@ pub enum Permission {
     GererOps,
     /// Consulter les indicateurs agrégés (FR-040).
     LireTableauBord,
+    /// Créer, publier et retirer des secteurs du catalogue (FR-010).
+    GererCatalogue,
 }
 
 impl Permission {
@@ -61,6 +63,7 @@ impl Permission {
             Self::LeverLiberation => "RELEASE_APPROVE",
             Self::GererOps => "OPS_MANAGE",
             Self::LireTableauBord => "DASHBOARD_READ",
+            Self::GererCatalogue => "CATALOG_MANAGE",
         }
     }
 }
@@ -128,6 +131,7 @@ impl RoleOps {
             (Self::ReviseurKyc, Permission::ReviserKyc) => true,
             (Self::ReviseurKyc, Permission::LireAudit) => true,
             (Self::ReviseurKyc, Permission::LireTableauBord) => true,
+            (Self::ReviseurKyc, Permission::GererCatalogue) => false,
             (
                 Self::ReviseurKyc,
                 Permission::ExporterAudit
@@ -139,6 +143,7 @@ impl RoleOps {
             (Self::Mediateur, Permission::TrancherLitige | Permission::LeverLiberation) => true,
             (Self::Mediateur, Permission::LireAudit) => true,
             (Self::Mediateur, Permission::LireTableauBord) => true,
+            (Self::Mediateur, Permission::GererCatalogue) => false,
             (
                 Self::Mediateur,
                 Permission::ExporterAudit | Permission::ReviserKyc | Permission::GererOps,
@@ -153,6 +158,12 @@ impl RoleOps {
             // chiffre à quelqu'un qui a plus de droits que lui. Restreindre ici
             // déplacerait le privilège au lieu de le réduire.
             (Self::Lecteur, Permission::LireTableauBord) => true,
+            // **Le catalogue est réservé au super-administrateur.** FR-010
+            // parle d'un rôle « catalog_manager » ; l'inventer pour une seule
+            // permission multiplierait les rôles sans réduire les droits de
+            // quiconque — le jour où l'exploitation comptera assez de monde
+            // pour qu'un tel rôle serve, il se créera avec ses propres raisons.
+            (Self::Lecteur, Permission::GererCatalogue) => false,
             (
                 Self::Lecteur,
                 Permission::ReviserKyc

@@ -4,6 +4,7 @@
 
 pub mod annulation_repository;
 pub mod audit;
+pub mod catalogue_admin_repository;
 pub mod catalogue_repository;
 pub mod courriel;
 pub mod demande_repository;

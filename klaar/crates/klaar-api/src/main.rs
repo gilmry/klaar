@@ -19,13 +19,13 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
-    creer_pool, PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository,
-    PgDevisRepository, PgEvenementStripeRepository, PgExportRepository, PgJournalAudit,
-    PgLiberationRepository, PgLitigeRepository, PgMessageRepository, PgMissionRepository,
-    PgNotationRepository, PgOpsRepository, PgPaiementRepository, PgProviderRepository,
-    PgPushSubscriptionRepository, PgReprogrammationRepository, PgRevueKycRepository,
-    PgSessionRepository, PgSuiviRepository, PgTableauBordRepository, PgTraceRepository,
-    PgUtilisateurRepository,
+    creer_pool, PgAnnulationRepository, PgCatalogueAdminRepository, PgCatalogueRepository,
+    PgDemandeRepository, PgDevisRepository, PgEvenementStripeRepository, PgExportRepository,
+    PgJournalAudit, PgLiberationRepository, PgLitigeRepository, PgMessageRepository,
+    PgMissionRepository, PgNotationRepository, PgOpsRepository, PgPaiementRepository,
+    PgProviderRepository, PgPushSubscriptionRepository, PgReprogrammationRepository,
+    PgRevueKycRepository, PgSessionRepository, PgSuiviRepository, PgTableauBordRepository,
+    PgTraceRepository, PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -284,6 +284,7 @@ async fn main() -> std::io::Result<()> {
             tableau_bord: Arc::new(PgTableauBordRepository::new(pool.clone())),
             revues_kyc: Arc::new(PgRevueKycRepository::new(pool.clone())),
             evenements_stripe: Arc::new(PgEvenementStripeRepository::new(pool.clone())),
+            catalogue_admin: Arc::new(PgCatalogueAdminRepository::new(pool.clone())),
             secret_webhook_stripe: secret_webhook_stripe.clone(),
             // Le bus et les billets sont **partagés entre les fabriques
             // d'application** : `HttpServer::new` appelle sa fermeture une fois

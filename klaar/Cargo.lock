@@ -1542,6 +1542,7 @@ version = "0.0.0"
 dependencies = [
  "klaar-shared-kernel",
  "serde",
+ "uuid",
 ]
 
 [[package]]

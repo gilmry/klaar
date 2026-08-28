@@ -50,6 +50,13 @@ impl CatalogueRepository for PgCatalogueRepository {
              FROM secteur s
              LEFT JOIN skill k ON k.secteur_code = s.code
              LEFT JOIN fourchette_prix f ON f.secteur_code = s.code
+             -- **Les publiés seulement** (Story 2.4). Un brouillon proposé au
+             -- public laisserait soumettre des Demandes dans un secteur où
+             -- aucun prestataire ne s'est déclaré ; un secteur retiré
+             -- continuerait d'être offert alors qu'on vient de le retirer. Le
+             -- filtre est ici plutôt que dans l'appelant : c'est la lecture
+             -- publique, et il n'y a pas de cas où elle voudrait autre chose.
+             WHERE s.statut = 'PUBLISHED'
              ORDER BY s.ordre, k.ordre",
         )
         .fetch_all(&self.pool)

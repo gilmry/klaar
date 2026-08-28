@@ -17,12 +17,13 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
-    PgAnnulationRepository, PgCatalogueRepository, PgDemandeRepository, PgDevisRepository,
-    PgEvenementStripeRepository, PgExportRepository, PgJournalAudit, PgLiberationRepository,
-    PgLitigeRepository, PgMessageRepository, PgMissionRepository, PgNotationRepository,
-    PgOpsRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
-    PgReprogrammationRepository, PgRevueKycRepository, PgSessionRepository, PgSuiviRepository,
-    PgTableauBordRepository, PgTraceRepository, PgUtilisateurRepository,
+    PgAnnulationRepository, PgCatalogueAdminRepository, PgCatalogueRepository, PgDemandeRepository,
+    PgDevisRepository, PgEvenementStripeRepository, PgExportRepository, PgJournalAudit,
+    PgLiberationRepository, PgLitigeRepository, PgMessageRepository, PgMissionRepository,
+    PgNotationRepository, PgOpsRepository, PgPaiementRepository, PgProviderRepository,
+    PgPushSubscriptionRepository, PgReprogrammationRepository, PgRevueKycRepository,
+    PgSessionRepository, PgSuiviRepository, PgTableauBordRepository, PgTraceRepository,
+    PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -75,6 +76,8 @@ pub struct EtatApplication {
     pub revues_kyc: Arc<PgRevueKycRepository>,
     /// Journal des webhooks Stripe (Story 5.5, FR-028).
     pub evenements_stripe: Arc<PgEvenementStripeRepository>,
+    /// Administration du catalogue (Story 2.4, FR-010).
+    pub catalogue_admin: Arc<PgCatalogueAdminRepository>,
     /// Secret de signature du webhook Stripe.
     ///
     /// **`None` ferme l'endpoint plutôt que de l'ouvrir.** Sans secret il n'y a
@@ -167,6 +170,10 @@ pub struct EtatApplication {
         routes::ops::trancher_route,
         routes::ops::file_kyc,
         routes::ops::reviser_kyc,
+        routes::ops::lister_secteurs,
+        routes::ops::creer_secteur,
+        routes::ops::publier_secteur,
+        routes::ops::desactiver_secteur,
         routes::disponibilite::retirer_inscription,
         routes::webhook_stripe::recevoir_webhook,
         routes::suivi_position::consentir_suivi,
@@ -247,6 +254,9 @@ pub struct EtatApplication {
         routes::ops::FileKycDto,
         routes::ops::DecisionKycDto,
         routes::ops::IssueRevueDto,
+        routes::ops::SecteurAdminDto,
+        routes::ops::CatalogueAdminDto,
+        routes::ops::CreationSecteurDto,
         routes::webhook_stripe::AccuseWebhookDto,
         routes::suivi_position::ConsentementSuiviDto,
         routes::suivi_position::EtatConsentementDto,
@@ -329,6 +339,10 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::ops::trancher_route)
         .service(routes::ops::file_kyc)
         .service(routes::ops::reviser_kyc)
+        .service(routes::ops::lister_secteurs)
+        .service(routes::ops::creer_secteur)
+        .service(routes::ops::publier_secteur)
+        .service(routes::ops::desactiver_secteur)
         .service(routes::disponibilite::retirer_inscription)
         .service(routes::webhook_stripe::recevoir_webhook)
         .service(routes::suivi_position::consentir_suivi)
@@ -386,7 +400,8 @@ pub fn etat_de_test(
         suivis: Arc::new(PgSuiviRepository::new(pool.clone())),
         tableau_bord: Arc::new(PgTableauBordRepository::new(pool.clone())),
         revues_kyc: Arc::new(PgRevueKycRepository::new(pool.clone())),
-        evenements_stripe: Arc::new(PgEvenementStripeRepository::new(pool)),
+        evenements_stripe: Arc::new(PgEvenementStripeRepository::new(pool.clone())),
+        catalogue_admin: Arc::new(PgCatalogueAdminRepository::new(pool)),
         // Un secret fixe pour les tests, et **connu d'eux** : sans lui,
         // l'endpoint de webhook refuse tout et il n'y aurait rien à vérifier.
         // Il n'ouvre rien en production, où la valeur vient de

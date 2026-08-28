@@ -25,6 +25,10 @@ use uuid::Uuid;
 
 use klaar_application::ports::export_repository::ExportRepository;
 use klaar_application::ports::ops_repository::OpsRepository;
+use klaar_application::usecases::administrer_catalogue::{
+    creer as creer_catalogue, desactiver as desactiver_catalogue, lister as lister_catalogue,
+    publier as publier_catalogue, ErreurCatalogue,
+};
 use klaar_application::usecases::mediation::{
     dossier as lire_dossier, file as file_mediation, trancher as trancher_litige, ErreurMediation,
     VueDossier,
@@ -35,6 +39,7 @@ use klaar_application::usecases::ops::{
 };
 use klaar_application::usecases::revue_kyc::{decider, file as file_revue, ErreurRevue};
 use klaar_application::usecases::tableau_bord::{tableau_de_bord, FENETRE_JOURS};
+use klaar_catalog::{CodeCatalogue, Libelles, SecteurACreer};
 use klaar_identity::{CompteOps, DecisionKyc, MotDePasse, Permission};
 use klaar_shared_kernel::Email;
 use klaar_trust::Decision;
@@ -1116,6 +1121,271 @@ pub async fn reviser_kyc(
             notifie: issue.notifie,
         }),
         Err(e) => echec_revue(e),
+    }
+}
+
+/// Un secteur, vu par l'exploitation (FR-010).
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SecteurAdminDto {
+    pub code: String,
+    pub libelle_fr: String,
+    pub libelle_nl: String,
+    pub libelle_en: String,
+    pub ordre: i32,
+    /// `DRAFT`, `PUBLISHED` ou `DISABLED`.
+    pub statut: String,
+    /// Vrai si c'est **vous** qui l'avez créé : un brouillon se publie par un
+    /// autre compte, et l'écran doit pouvoir le dire avant le clic.
+    pub cree_par_moi: bool,
+    /// Interventions en cours dans ce secteur. Non nul, il empêche le retrait.
+    pub missions_en_cours: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogueAdminDto {
+    pub secteurs: Vec<SecteurAdminDto>,
+}
+
+/// Un secteur à créer.
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreationSecteurDto {
+    pub code: String,
+    /// Les **trois** libellés, exigés dès la création : un secteur publié sans
+    /// néerlandais s'afficherait en français à un néerlandophone.
+    pub libelle_fr: String,
+    pub libelle_nl: String,
+    pub libelle_en: String,
+    pub ordre: i32,
+}
+
+fn statut_catalogue(e: &ErreurCatalogue) -> actix_web::http::StatusCode {
+    use actix_web::http::StatusCode;
+    match e {
+        ErreurCatalogue::Introuvable => StatusCode::NOT_FOUND,
+        // 409 sur les deux : FR-010 `@negative` pour le doublon, `@edge` pour
+        // les interventions en cours. Ce ne sont pas des saisies invalides,
+        // c'est un état du monde.
+        ErreurCatalogue::DejaFait => StatusCode::CONFLICT,
+        ErreurCatalogue::Domaine(d) => match d.code() {
+            "SECTOR_CODE_TAKEN" | "SECTOR_HAS_ACTIVE_MISSIONS" => StatusCode::CONFLICT,
+            "FOUR_EYES_REQUIRED" => StatusCode::FORBIDDEN,
+            _ => StatusCode::UNPROCESSABLE_ENTITY,
+        },
+        ErreurCatalogue::Ops(o) => statut(o),
+        ErreurCatalogue::Indisponible(_) => StatusCode::SERVICE_UNAVAILABLE,
+    }
+}
+
+fn echec_catalogue(e: ErreurCatalogue) -> HttpResponse {
+    if matches!(e, ErreurCatalogue::Indisponible(_)) {
+        tracing::error!(erreur = %e, "administration du catalogue impossible");
+    }
+    HttpResponse::build(statut_catalogue(&e)).json(ErreurValidationDto {
+        code: e.code().to_string(),
+    })
+}
+
+/// Le catalogue entier, brouillons compris.
+#[utoipa::path(
+    get,
+    path = "/api/v1/ops/catalog/sectors",
+    tag = "exploitation",
+    responses(
+        (status = 200, description = "Tous les secteurs", body = CatalogueAdminDto),
+        (status = 401, description = "Jeton absent ou expiré", body = ErreurValidationDto),
+        (status = 403, description = "Droit manquant", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[get("/api/v1/ops/catalog/sectors")]
+pub async fn lister_secteurs(
+    etat: web::Data<EtatApplication>,
+    requete: actix_web::HttpRequest,
+) -> HttpResponse {
+    let demandeur = match porteur(&etat, &requete).await {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+                code: e.code().to_string(),
+            })
+        }
+    };
+
+    match lister_catalogue(
+        etat.catalogue_admin.as_ref(),
+        etat.ops.as_ref(),
+        etat.horloge.as_ref(),
+        demandeur.id,
+    )
+    .await
+    {
+        Ok(secteurs) => HttpResponse::Ok().json(CatalogueAdminDto {
+            secteurs: secteurs
+                .into_iter()
+                .map(|s| SecteurAdminDto {
+                    code: s.code,
+                    libelle_fr: s.libelle_fr,
+                    libelle_nl: s.libelle_nl,
+                    libelle_en: s.libelle_en,
+                    ordre: s.ordre,
+                    statut: s.statut.as_str().to_string(),
+                    cree_par_moi: s.cree_par == Some(demandeur.id),
+                    missions_en_cours: s.missions_en_cours,
+                })
+                .collect(),
+        }),
+        Err(e) => echec_catalogue(e),
+    }
+}
+
+/// Crée un secteur, en brouillon.
+#[utoipa::path(
+    post,
+    path = "/api/v1/ops/catalog/sectors",
+    tag = "exploitation",
+    request_body = CreationSecteurDto,
+    responses(
+        (status = 201, description = "Secteur créé en brouillon"),
+        (status = 401, description = "Jeton absent ou expiré", body = ErreurValidationDto),
+        (status = 403, description = "Droit manquant", body = ErreurValidationDto),
+        (status = 409, description = "Code déjà pris", body = ErreurValidationDto),
+        (status = 422, description = "Code invalide ou libellé manquant", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[post("/api/v1/ops/catalog/sectors")]
+pub async fn creer_secteur(
+    etat: web::Data<EtatApplication>,
+    requete: actix_web::HttpRequest,
+    corps: web::Json<CreationSecteurDto>,
+) -> HttpResponse {
+    let demandeur = match porteur(&etat, &requete).await {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+                code: e.code().to_string(),
+            })
+        }
+    };
+
+    let Ok(code) = CodeCatalogue::parse(&corps.code) else {
+        return HttpResponse::UnprocessableEntity().json(ErreurValidationDto {
+            code: "SECTOR_CODE_INVALID".to_string(),
+        });
+    };
+
+    let secteur = SecteurACreer {
+        code,
+        libelles: Libelles {
+            fr: corps.libelle_fr.clone(),
+            nl: corps.libelle_nl.clone(),
+            en: corps.libelle_en.clone(),
+        },
+        ordre: corps.ordre,
+    };
+
+    match creer_catalogue(
+        etat.catalogue_admin.as_ref(),
+        etat.ops.as_ref(),
+        etat.horloge.as_ref(),
+        demandeur.id,
+        secteur,
+    )
+    .await
+    {
+        Ok(()) => HttpResponse::Created().finish(),
+        Err(e) => echec_catalogue(e),
+    }
+}
+
+/// Publie un brouillon — par un autre compte que son créateur.
+#[utoipa::path(
+    post,
+    path = "/api/v1/ops/catalog/sectors/{code}/publish",
+    tag = "exploitation",
+    params(("code" = String, Path, description = "Code du secteur")),
+    responses(
+        (status = 204, description = "Secteur publié"),
+        (status = 401, description = "Jeton absent ou expiré", body = ErreurValidationDto),
+        (status = 403, description = "Droit manquant, ou publication de son propre brouillon", body = ErreurValidationDto),
+        (status = 404, description = "Secteur inconnu", body = ErreurValidationDto),
+        (status = 409, description = "Déjà publié, ou publié entre-temps", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[post("/api/v1/ops/catalog/sectors/{code}/publish")]
+pub async fn publier_secteur(
+    etat: web::Data<EtatApplication>,
+    requete: actix_web::HttpRequest,
+    chemin: web::Path<String>,
+) -> HttpResponse {
+    let demandeur = match porteur(&etat, &requete).await {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+                code: e.code().to_string(),
+            })
+        }
+    };
+
+    match publier_catalogue(
+        etat.catalogue_admin.as_ref(),
+        etat.ops.as_ref(),
+        etat.horloge.as_ref(),
+        demandeur.id,
+        &chemin,
+    )
+    .await
+    {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(e) => echec_catalogue(e),
+    }
+}
+
+/// Retire un secteur du public.
+#[utoipa::path(
+    post,
+    path = "/api/v1/ops/catalog/sectors/{code}/disable",
+    tag = "exploitation",
+    params(("code" = String, Path, description = "Code du secteur")),
+    responses(
+        (status = 204, description = "Secteur retiré"),
+        (status = 401, description = "Jeton absent ou expiré", body = ErreurValidationDto),
+        (status = 403, description = "Droit manquant", body = ErreurValidationDto),
+        (status = 404, description = "Secteur inconnu", body = ErreurValidationDto),
+        (status = 409, description = "Interventions en cours dans ce secteur", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    )
+)]
+#[post("/api/v1/ops/catalog/sectors/{code}/disable")]
+pub async fn desactiver_secteur(
+    etat: web::Data<EtatApplication>,
+    requete: actix_web::HttpRequest,
+    chemin: web::Path<String>,
+) -> HttpResponse {
+    let demandeur = match porteur(&etat, &requete).await {
+        Ok(c) => c,
+        Err(e) => {
+            return HttpResponse::build(statut(&e)).json(ErreurValidationDto {
+                code: e.code().to_string(),
+            })
+        }
+    };
+
+    match desactiver_catalogue(
+        etat.catalogue_admin.as_ref(),
+        etat.ops.as_ref(),
+        etat.horloge.as_ref(),
+        demandeur.id,
+        &chemin,
+    )
+    .await
+    {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(e) => echec_catalogue(e),
     }
 }
 
