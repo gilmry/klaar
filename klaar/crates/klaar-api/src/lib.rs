@@ -16,9 +16,9 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
-    PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgPaiementRepository,
-    PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository,
-    PgUtilisateurRepository,
+    PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgMissionRepository,
+    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
+    PgTraceRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -51,6 +51,7 @@ pub struct EtatApplication {
     pub paiements: Arc<PgPaiementRepository>,
     pub prestataires: Arc<PgProviderRepository>,
     pub traces: Arc<PgTraceRepository>,
+    pub missions: Arc<PgMissionRepository>,
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
@@ -93,6 +94,7 @@ pub struct EtatApplication {
         routes::compte::annuler_mon_effacement,
         routes::catalogue::secteurs,
         routes::demande::soumettre_demande,
+        routes::acceptation::accepter_demande,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -115,6 +117,7 @@ pub struct EtatApplication {
         routes::catalogue::FourchetteDto,
         routes::demande::DemandeDto,
         routes::demande::DemandeCreeeDto,
+        routes::acceptation::MissionDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -146,6 +149,7 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::compte::annuler_mon_effacement)
         .service(routes::catalogue::secteurs)
         .service(routes::demande::soumettre_demande)
+        .service(routes::acceptation::accepter_demande)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);
@@ -172,7 +176,8 @@ pub fn etat_de_test(
         demandes: Arc::new(PgDemandeRepository::new(pool.clone())),
         paiements: Arc::new(PgPaiementRepository::new(pool.clone())),
         prestataires: Arc::new(PgProviderRepository::new(pool.clone())),
-        traces: Arc::new(PgTraceRepository::new(pool)),
+        traces: Arc::new(PgTraceRepository::new(pool.clone())),
+        missions: Arc::new(PgMissionRepository::new(pool)),
         jetons: Arc::new(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),

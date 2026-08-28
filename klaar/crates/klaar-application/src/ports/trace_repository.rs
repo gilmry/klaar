@@ -1,9 +1,14 @@
 //! Port de la trace de matching (FR-012, AI Act art. 12).
 //!
-//! **Écriture seule.** La trace se consigne et se consulte par requête directe
+//! **Pas d'API de lecture générale.** La trace se consulte par requête directe
 //! quand quelqu'un demande des comptes ; lui donner une API de lecture avant
 //! qu'un besoin réel n'existe reviendrait à exposer, sans protection définie,
 //! qui a été notifié et pourquoi.
+//!
+//! La seule lecture ouverte ici sert à prévenir les candidats qu'une Demande
+//! vient d'être prise (FR-013 `@happy`). Elle ne rend que des identifiants de
+//! comptes déjà notifiés, jamais les scores ni les motifs d'écart, et elle sert
+//! précisément les personnes concernées : celles qui attendent une réponse.
 
 use chrono::{DateTime, Utc};
 use klaar_matching::Score;
@@ -49,4 +54,18 @@ pub trait TraceRepository {
     /// Une trace partielle est pire qu'absente : elle laisse croire que les
     /// candidats manquants n'ont jamais été examinés.
     async fn consigner(&self, lignes: &[LigneTrace]) -> Result<(), RepositoryError>;
+
+    /// Comptes des prestataires retenus pour cette Demande, sauf un.
+    ///
+    /// Ce sont les gens à prévenir quand la Demande est prise par un autre. Le
+    /// prestataire exclu est celui qui vient de l'accepter : lui envoyer
+    /// « déjà prise » serait absurde.
+    ///
+    /// Rend des identifiants de **comptes** et non de prestataires : ce sont
+    /// les comptes qui portent les abonnements push.
+    async fn comptes_retenus_sauf(
+        &self,
+        demande_id: Uuid,
+        sauf_provider_id: Uuid,
+    ) -> Result<Vec<Uuid>, RepositoryError>;
 }

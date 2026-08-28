@@ -389,6 +389,38 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   d'implémenteur, et l'adaptateur réel ne pouvait pas le satisfaire — un envoi push est un
   appel réseau.
 
+- **3.4** — **Acceptation par le premier répondant** : `POST /api/v1/requests/{id}/accept`.
+
+  **Toute la story tient dans une clause `WHERE`.** Cinq prestataires notifiés
+  peuvent toucher « accepter » dans la même seconde. Lire le statut puis
+  l'écrire en laisserait passer deux, et deux camionnettes partiraient pour une
+  seule fuite. C'est
+  `UPDATE demande SET statut='MATCHED' WHERE id=$1 AND statut='BROADCASTING' RETURNING id`
+  qui tranche : PostgreSQL sérialise les écritures sur une même ligne. Vérifié
+  par de vraies acceptations concurrentes, à deux puis à dix.
+
+  La bascule de la Demande et la création de la Mission sont **une seule
+  transaction** : une Demande `MATCHED` sans Mission promettrait une
+  intervention dont personne ne porte la trace.
+
+  « Une Mission à la fois » est tenu par un **index unique partiel**, pas par un
+  contrôle applicatif — vérifier puis insérer laisserait passer deux
+  acceptations simultanées. Le refus défait toute la transaction, donc une
+  Demande convoitée par un prestataire déjà occupé reste diffusée.
+
+  L'éligibilité **et le secteur** sont revérifiés à l'acceptation. Le secteur ne
+  figurait pas dans le FR : la route est ouverte à tout prestataire actif, et un
+  serrurier qui connaît l'identifiant d'une Demande de plomberie pouvait la
+  rafler.
+
+  **L'expiration ne se lit pas dans le statut.** Aucune tâche de fond ne fait
+  basculer une Demande passé cinq minutes : elle reste `BROADCASTING` en base, et
+  l'expiration se constate quand quelqu'un tente d'agir dessus. Dette assumée,
+  écrite dans le domaine.
+
+  La `Mission` n'a qu'un statut, `ASSIGNED` : sa machine à états appartient à
+  FR-018. Il n'existe pas encore d'interface prestataire.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

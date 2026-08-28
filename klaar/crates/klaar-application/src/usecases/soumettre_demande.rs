@@ -198,6 +198,10 @@ mod tests {
             Ok(())
         }
 
+        async fn par_id(&self, id: Uuid) -> Result<Option<Demande>, RepositoryError> {
+            Ok(self.creees.borrow().iter().find(|d| d.id == id).cloned())
+        }
+
         async fn doublon_recent(
             &self,
             demandeur_id: Uuid,

@@ -1,5 +1,11 @@
-//! Bounded context Intervention : Mission, machine à états (FR-018 à FR-023).
+//! Bounded context Intervention : Mission, machine à états (FR-013, FR-018 à
+//! FR-023).
 //!
-//! Scaffolding Sprint 0 (Story 0.1) : le bounded context existe et compile,
-//! son contenu métier sera implémenté epic par epic (voir
-//! docs/bmad-livrables/04-Epics-Stories.md).
+//! La Mission naît de l'acceptation d'une Demande (FR-013, Story 3.4). Sa
+//! machine à états — en route, sur place, terminée, validée, annulée — relève
+//! de FR-018 et suivants, et n'est pas encore écrite : voir
+//! docs/bmad-livrables/04-Epics-Stories.md.
+
+mod mission;
+
+pub use mission::{Mission, StatutMission};

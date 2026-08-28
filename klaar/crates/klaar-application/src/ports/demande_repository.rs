@@ -12,6 +12,8 @@ use super::erreurs::RepositoryError;
 pub trait DemandeRepository {
     async fn creer(&self, demande: &Demande) -> Result<(), RepositoryError>;
 
+    async fn par_id(&self, id: Uuid) -> Result<Option<Demande>, RepositoryError>;
+
     /// Demande identique encore en diffusion, s'il en existe une.
     ///
     /// La recherche vit ici et non dans le domaine parce qu'elle porte sur

@@ -556,11 +556,70 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > **Non vérifiable ici** : la réception effective sur un appareil, qui demande un service de
 > push distant. Le protocole reste vérifié contre les vecteurs du RFC 8291 (Story 0.12).
 
-### Story 3.4 — Acceptation Provider atomic CAS (FR-013)
+### Story 3.4 — Acceptation Provider atomic CAS (FR-013) — *faite*
 - **En tant que** Provider · **je veux** accepter une Demande · **afin de** devenir attribué
 - **4×N** : PRD FR-013 (race, déjà pris, provider busy)
 - **Couche(s)** : Application + Infra (Postgres atomic UPDATE...RETURNING)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Toute la story tient dans une clause `WHERE`.** Cinq prestataires notifiés
+> peuvent toucher « accepter » dans la même seconde. Lire le statut puis
+> l'écrire en laisserait passer deux, et deux camionnettes partiraient pour une
+> seule fuite. C'est
+> `UPDATE demande SET statut='MATCHED' WHERE id=$1 AND statut='BROADCASTING' RETURNING id`
+> qui tranche : PostgreSQL sérialise les écritures sur une même ligne, le second
+> arrivant ré-évalue la condition après le premier, et ne voit plus rien.
+> Vérifié par de vraies acceptations concurrentes, à deux puis à dix, dans
+> `crates/klaar-sqlx-repos/tests/mission.rs`.
+>
+> **La bascule de la Demande et la création de la Mission sont une seule
+> transaction.** Une Demande `MATCHED` sans Mission laisserait le demandeur
+> devant un statut qui promet une intervention dont personne ne porte la trace.
+>
+> **« Une Mission à la fois » est tenu par un index unique partiel**, pas par un
+> contrôle applicatif : vérifier puis insérer laisserait passer deux
+> acceptations simultanées, c'est-à-dire exactement la course que cette story
+> ferme. Le refus d'insertion défait toute la transaction, donc une Demande
+> convoitée par un prestataire déjà occupé **reste diffusée** — sans quoi il
+> l'éteindrait en essayant de la prendre.
+>
+> **L'éligibilité se vérifie à l'acceptation, pas au matching** (FR-013
+> `@security`). La notification reçue il y a trois minutes ne dit rien de l'état
+> présent. Le contrôle de statut vient **avant** toute lecture de la Demande :
+> sinon les codes rendus à un prestataire suspendu lui diraient quelles Demandes
+> existent et lesquelles sont prises.
+>
+> **Ajout au FR : le secteur est revérifié.** FR-013 ne le demande pas, mais la
+> route est ouverte à tout prestataire actif, et un serrurier qui connaît
+> l'identifiant d'une Demande de plomberie pouvait la rafler — le demandeur
+> aurait vu arriver quelqu'un qui ne sait pas réparer sa fuite. Ce contrôle-là
+> arrive après la lecture de la Demande, puisqu'il a besoin du secteur : un
+> prestataire actif apprend donc qu'une Demande existe, ce qui ne dit rien de
+> son état et ne s'exploite pas — les identifiants sont des UUID v4.
+>
+> **L'expiration ne se lit pas dans le statut.** Aucune tâche de fond ne fait
+> basculer une Demande passé cinq minutes : elle reste `BROADCASTING` en base et
+> l'expiration se constate au moment où quelqu'un tente d'agir dessus
+> (`Demande::est_acceptable`). C'est une dette assumée, pas un oubli, et elle
+> est écrite dans le domaine plutôt que découverte plus tard.
+>
+> **Le quota est compté par compte et non par adresse** (5/s, FR-013). Une
+> flotte derrière une seule sortie NAT ne doit pas s'épuiser mutuellement, et
+> changer d'adresse ne doit pas remettre le compteur à zéro. La fenêtre est
+> courte parce que le geste l'est : un quota horaire punirait celui qui perd la
+> course plusieurs fois de suite alors qu'il n'a rien fait de mal.
+>
+> **`MATCH_TAKEN` remplace la notification d'origine** au lieu de s'ajouter à
+> elle (même `tag`), et ne nomme pas le gagnant : cela le désignerait à quatre
+> autres entreprises. `autres_prevenus` est compté à part dans la réponse, pour
+> ne pas faire croire que quatre personnes ont été informées quand aucune ne
+> l'a été.
+>
+> **Hors périmètre, et à dire.** La `Mission` n'a qu'un statut, `ASSIGNED` : sa
+> machine à états appartient à FR-018 et suivants. Il n'existe aucune interface
+> prestataire — l'URL des notifications pointe vers une page qui reste à écrire.
+> Aucun paiement n'est engagé à l'acceptation (FR-024 et suivants, bloqués par
+> Stripe).
 
 ### Story 3.5 — Annulation User avant matching (FR-014)
 - **En tant que** User · **je veux** annuler ma Demande · **afin de** ne pas être facturé

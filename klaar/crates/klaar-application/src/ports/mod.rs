@@ -9,6 +9,7 @@ pub mod demande_repository;
 pub mod erreurs;
 pub mod horloge;
 pub mod jeton_acces;
+pub mod mission_repository;
 pub mod provider_repository;
 pub mod push;
 pub mod push_repository;

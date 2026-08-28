@@ -123,6 +123,34 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Acceptation : ce que la course garantit, et ce qu'elle ne garantit pas (Story 3.4, FR-013)
+
+Cinq prestataires notifiés peuvent accepter la même Demande dans la même
+seconde. Un seul l'obtient, et la garantie n'est pas dans le code applicatif :
+elle est dans un `UPDATE … WHERE statut = 'BROADCASTING' RETURNING …` que
+PostgreSQL sérialise. Le passage de la Demande en `MATCHED` et la création de la
+Mission forment une seule transaction.
+
+La règle « une Mission à la fois » repose sur un index unique partiel et non sur
+un contrôle applicatif : vérifier puis insérer laisserait passer deux
+acceptations simultanées.
+
+**L'éligibilité est revérifiée au moment d'accepter**, pas au matching : un
+prestataire suspendu entre la notification et le geste ne passe pas. Le secteur
+l'est aussi, ce que FR-013 ne demandait pas — sans quoi un prestataire d'un
+autre métier pouvait prendre une Demande dont il connaissait l'identifiant.
+
+**Les refus d'éligibilité ne renseignent pas.** Un compte non prestataire ou
+suspendu reçoit le même `PROVIDER_NOT_ELIGIBLE` que la Demande existe, soit déjà
+prise, ou n'ait jamais existé.
+
+**Limite assumée : aucune tâche de fond n'éteint les Demandes expirées.** Une
+Demande de plus de cinq minutes reste `BROADCASTING` en base ; l'expiration se
+constate à la lecture, au moment où quelqu'un tente de l'accepter. Le statut
+stocké ne suffit donc pas à lui seul à dire si une Demande est vivante, et toute
+requête d'exploitation qui l'ignorerait compterait des Demandes mortes comme
+actives.
+
 ## Notifications : ce qu'un écran verrouillé affiche (Story 3.3)
 
 Une notification push s'affiche sur un écran verrouillé, lisible par quiconque passe à côté

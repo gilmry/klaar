@@ -24,6 +24,19 @@ pub const DESCRIPTION_MAX: usize = 2_000;
 /// même endroit est une intention, pas un accident.
 pub const FENETRE_DOUBLON_MINUTES: i64 = 5;
 
+/// Durée pendant laquelle une Demande reste acceptable (FR-013 `@edge`).
+///
+/// Passé ce délai, l'acceptation est refusée : quelqu'un qui attend un dépanneur
+/// depuis dix minutes a rappelé ailleurs, et lui envoyer un prestataire qui
+/// vient de se réveiller lui vaudrait deux interventions à payer.
+///
+/// **Aucune tâche de fond ne fait basculer le statut.** Une Demande expirée
+/// reste `BROADCASTING` en base : l'expiration se constate à la lecture, au
+/// moment où quelqu'un tente d'agir dessus. Le statut stocké ne suffit donc pas
+/// à lui seul à dire si une Demande est encore vivante, et c'est écrit ici
+/// plutôt que découvert plus tard.
+pub const DUREE_DIFFUSION_MINUTES: i64 = 5;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Urgence {
     /// Peut attendre : un robinet qui goutte.
@@ -56,6 +69,8 @@ impl Urgence {
 pub enum StatutDemande {
     /// Diffusée aux prestataires, en attente d'acceptation.
     Diffusion,
+    /// Un prestataire l'a acceptée ; une Mission existe (FR-013).
+    Attribuee,
     /// Aucun prestataire n'a répondu dans le délai (FR-015).
     SansReponse,
     /// Annulée par le demandeur avant acceptation (FR-014).
@@ -66,6 +81,7 @@ impl StatutDemande {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Diffusion => "BROADCASTING",
+            Self::Attribuee => "MATCHED",
             Self::SansReponse => "NO_MATCH",
             Self::Annulee => "CANCELLED",
         }
@@ -74,6 +90,7 @@ impl StatutDemande {
     pub fn parse(valeur: &str) -> Option<Self> {
         match valeur {
             "BROADCASTING" => Some(Self::Diffusion),
+            "MATCHED" => Some(Self::Attribuee),
             "NO_MATCH" => Some(Self::SansReponse),
             "CANCELLED" => Some(Self::Annulee),
             _ => None,
@@ -171,6 +188,24 @@ impl Demande {
             statut: StatutDemande::Diffusion,
             cree_le: maintenant,
         })
+    }
+
+    /// Vrai si la fenêtre de diffusion est passée (FR-013 `@edge`).
+    ///
+    /// Se calcule à partir de `cree_le`, à la lecture : aucune tâche de fond ne
+    /// bascule le statut en base. Une Demande peut donc être `BROADCASTING` et
+    /// expirée en même temps, et c'est cette méthode qui tranche.
+    pub fn est_expiree(&self, maintenant: DateTime<Utc>) -> bool {
+        maintenant - self.cree_le >= Duration::minutes(DUREE_DIFFUSION_MINUTES)
+    }
+
+    /// Vrai si un prestataire peut encore l'accepter.
+    ///
+    /// Deux conditions, et pas une : le statut **et** la fenêtre. Ne vérifier
+    /// que le statut laisserait accepter une Demande d'hier restée diffusée
+    /// faute de tâche de fond pour l'éteindre.
+    pub fn est_acceptable(&self, maintenant: DateTime<Utc>) -> bool {
+        self.statut == StatutDemande::Diffusion && !self.est_expiree(maintenant)
     }
 
     /// Vrai si `autre` est un doublon de celle-ci au sens de FR-011 `@edge`.
@@ -407,6 +442,69 @@ mod tests {
             .unwrap();
             assert_eq!(d.statut, StatutDemande::Diffusion);
         }
+    }
+
+    #[test]
+    fn happy_une_demande_fraiche_est_acceptable() {
+        let d = demande("Fuite", bruxelles()).unwrap();
+        assert!(d.est_acceptable(instant()));
+        assert!(d.est_acceptable(instant() + Duration::minutes(4)));
+        assert!(!d.est_expiree(instant() + Duration::minutes(4)));
+    }
+
+    #[test]
+    fn happy_les_quatre_statuts_font_l_aller_retour() {
+        for statut in [
+            StatutDemande::Diffusion,
+            StatutDemande::Attribuee,
+            StatutDemande::SansReponse,
+            StatutDemande::Annulee,
+        ] {
+            assert_eq!(StatutDemande::parse(statut.as_str()), Some(statut));
+        }
+    }
+
+    #[test]
+    fn negative_une_demande_de_plus_de_cinq_minutes_n_est_plus_acceptable() {
+        // Quelqu'un qui attend un dépanneur depuis dix minutes a rappelé
+        // ailleurs : lui envoyer un prestataire qui vient de se réveiller lui
+        // vaudrait deux interventions à payer.
+        let d = demande("Fuite", bruxelles()).unwrap();
+        let apres = instant() + Duration::minutes(DUREE_DIFFUSION_MINUTES);
+        assert!(d.est_expiree(apres));
+        assert!(!d.est_acceptable(apres));
+    }
+
+    #[test]
+    fn negative_une_demande_deja_attribuee_n_est_plus_acceptable() {
+        let mut d = demande("Fuite", bruxelles()).unwrap();
+        d.statut = StatutDemande::Attribuee;
+        assert!(!d.est_acceptable(instant()));
+    }
+
+    #[test]
+    fn edge_le_statut_seul_ne_suffit_pas_a_dire_qu_une_demande_est_vivante() {
+        // Aucune tâche de fond ne bascule le statut : une Demande d'hier est
+        // encore `BROADCASTING` en base. Ne vérifier que le statut la
+        // laisserait accepter.
+        let d = demande("Fuite", bruxelles()).unwrap();
+        assert_eq!(d.statut, StatutDemande::Diffusion);
+        assert!(!d.est_acceptable(instant() + Duration::hours(24)));
+    }
+
+    #[test]
+    fn security_une_demande_attribuee_ne_bloque_pas_la_suivante() {
+        // Même raison qu'une annulée : sinon, le demandeur dont l'intervention
+        // vient d'être attribuée ne pourrait rien redemander pendant cinq
+        // minutes, sans comprendre pourquoi.
+        let mut premiere = demande("Fuite", bruxelles()).unwrap();
+        premiere.statut = StatutDemande::Attribuee;
+        assert!(!premiere.est_doublon_de(
+            premiere.demandeur_id,
+            &secteur(),
+            bruxelles(),
+            instant() + Duration::minutes(1)
+        ));
     }
 
     #[test]

@@ -17,6 +17,7 @@
 
 use klaar_matching::{Demande, Urgence};
 use klaar_shared_kernel::Locale;
+use uuid::Uuid;
 
 use crate::ports::erreurs::RepositoryError;
 use crate::ports::push::{PushError, PushMessage, PushNotifier};
@@ -88,6 +89,77 @@ pub fn composer(demande: &Demande, distance_metres: f64, locale: Locale) -> Push
         // remplacent au lieu de s'empiler.
         tag: Some(format!("demande-{}", demande.id)),
     }
+}
+
+/// Compose l'avis « quelqu'un d'autre a pris cette Demande » (FR-013).
+///
+/// Même discrétion que le message d'origine, et pour la même raison : il
+/// s'affiche au même endroit. Il ne dit pas non plus **qui** l'a prise — cela
+/// désignerait un concurrent nommément à quatre autres entreprises, ce que
+/// personne n'a demandé.
+///
+/// Le `tag` est celui de la Demande : cet avis **remplace** la notification
+/// d'origine au lieu de s'ajouter à elle. Laisser les deux côte à côte ferait
+/// partir quelqu'un pour une intervention déjà attribuée.
+pub fn composer_match_pris(demande: &Demande, locale: Locale) -> PushMessage {
+    let (titre, corps) = match locale {
+        Locale::Fr => ("Demande déjà prise", "Un autre prestataire a répondu"),
+        Locale::Nl => (
+            "Aanvraag al toegewezen",
+            "Een andere vakman heeft geantwoord",
+        ),
+        Locale::En => ("Request already taken", "Another provider responded"),
+    };
+    PushMessage {
+        titre: format!("{titre} — {}", demande.secteur),
+        corps: corps.to_string(),
+        url: "/prestataire".to_string(),
+        tag: Some(format!("demande-{}", demande.id)),
+    }
+}
+
+/// Prévient les candidats qu'un autre a pris la Demande (FR-013 `@happy`).
+///
+/// Séparé de l'attribution elle-même : une panne du service de push ne doit pas
+/// défaire une Mission déjà attribuée. Le prestataire retenu, lui, a sa réponse
+/// HTTP et n'a rien à recevoir ici.
+pub async fn notifier_match_pris<A, N>(
+    abonnements: &A,
+    notifieur: &N,
+    demande: &Demande,
+    comptes: &[Uuid],
+    locale: Locale,
+) -> Result<BilanNotification, RepositoryError>
+where
+    A: PushSubscriptionRepository,
+    N: PushNotifier,
+{
+    let message = composer_match_pris(demande, locale);
+    let mut bilan = BilanNotification::default();
+
+    for compte in comptes {
+        let appareils = abonnements.lister_par_sujet(*compte).await?;
+        if appareils.is_empty() {
+            bilan.sans_abonnement += 1;
+            continue;
+        }
+        for appareil in appareils {
+            match notifieur.envoyer(&appareil.abonnement, &message).await {
+                Ok(()) => bilan.notifies += 1,
+                Err(PushError::AbonnementExpire) => {
+                    abonnements
+                        .supprimer_par_endpoint(&appareil.abonnement.endpoint)
+                        .await?;
+                    bilan.purges += 1;
+                }
+                Err(e) => {
+                    tracing::warn!(erreur = %e, "avis de Demande prise non délivré");
+                }
+            }
+        }
+    }
+
+    Ok(bilan)
 }
 
 pub async fn notifier<A, N>(
@@ -252,6 +324,113 @@ mod tests {
                 .push((abonnement.endpoint.clone(), message.clone()));
             Ok(())
         }
+    }
+
+    #[tokio::test]
+    async fn happy_les_autres_candidats_apprennent_que_la_demande_est_prise() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let abonnements = AbonnementsMemoire::default();
+        abonnements
+            .par_sujet
+            .borrow_mut()
+            .push((a, abonnement("https://push.example.net/a")));
+        abonnements
+            .par_sujet
+            .borrow_mut()
+            .push((b, abonnement("https://push.example.net/b")));
+        let notifieur = NotifieurFactice::default();
+
+        let bilan = notifier_match_pris(
+            &abonnements,
+            &notifieur,
+            &demande(Urgence::Haute),
+            &[a, b],
+            Locale::Fr,
+        )
+        .await
+        .unwrap();
+        assert_eq!(bilan.notifies, 2);
+        assert_eq!(notifieur.envoyes.borrow().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn happy_l_avis_de_prise_remplace_la_notification_d_origine() {
+        // Même `tag` : sinon les deux s'empilent, et quelqu'un part pour une
+        // intervention déjà attribuée.
+        let d = demande(Urgence::Haute);
+        let origine = composer(&d, 500.0, Locale::Fr);
+        let avis = composer_match_pris(&d, Locale::Fr);
+        assert_eq!(origine.tag, avis.tag);
+        assert_ne!(origine.titre, avis.titre);
+    }
+
+    #[tokio::test]
+    async fn happy_l_avis_de_prise_est_traduit() {
+        let d = demande(Urgence::Haute);
+        for locale in [Locale::Fr, Locale::Nl, Locale::En] {
+            let m = composer_match_pris(&d, locale);
+            assert!(!m.corps.is_empty(), "locale {locale:?}");
+            assert!(m.titre.contains("plomberie"), "locale {locale:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn edge_un_candidat_sans_abonnement_n_est_pas_un_echec() {
+        let bilan = notifier_match_pris(
+            &AbonnementsMemoire::default(),
+            &NotifieurFactice::default(),
+            &demande(Urgence::Haute),
+            &[Uuid::new_v4()],
+            Locale::Fr,
+        )
+        .await
+        .unwrap();
+        assert_eq!(bilan.notifies, 0);
+        assert_eq!(bilan.sans_abonnement, 1);
+    }
+
+    #[tokio::test]
+    async fn edge_un_abonnement_disparu_est_purge_aussi_sur_l_avis_de_prise() {
+        let sujet = Uuid::new_v4();
+        let abonnements = AbonnementsMemoire::default();
+        abonnements
+            .par_sujet
+            .borrow_mut()
+            .push((sujet, abonnement("https://push.example.net/mort")));
+        let notifieur = NotifieurFactice {
+            disparus: vec!["https://push.example.net/mort".to_string()],
+            ..Default::default()
+        };
+
+        let bilan = notifier_match_pris(
+            &abonnements,
+            &notifieur,
+            &demande(Urgence::Haute),
+            &[sujet],
+            Locale::Fr,
+        )
+        .await
+        .unwrap();
+        assert_eq!(bilan.purges, 1);
+        assert_eq!(abonnements.supprimes.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn security_l_avis_de_prise_ne_dit_ni_qui_a_pris_ni_ou() {
+        // Il s'affiche au même endroit que le message d'origine, sur un écran
+        // verrouillé. Il ne nomme pas non plus le concurrent qui a gagné :
+        // cela le désignerait à quatre autres entreprises.
+        let d = demande(Urgence::Haute);
+        let m = composer_match_pris(&d, Locale::Fr);
+        let tout = format!("{} {} {}", m.titre, m.corps, m.url);
+        assert!(!tout.contains("Fuite"));
+        assert!(!tout.contains("50.8"));
+        assert!(!tout.contains("4.35"));
+        assert!(!tout.contains(&d.demandeur_id.to_string()));
+        // Pas même l'identifiant de la Demande dans l'URL : l'avis renvoie à la
+        // liste, puisqu'il n'y a plus rien à voir sur celle-ci.
+        assert!(!m.url.contains(&d.id.to_string()));
     }
 
     #[tokio::test]

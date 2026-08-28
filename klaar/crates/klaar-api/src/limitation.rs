@@ -36,6 +36,20 @@ impl Quota {
         }
     }
 
+    /// Acceptation d'une Demande par un prestataire (FR-013 `@security`).
+    ///
+    /// Cinq par seconde. La fenêtre est courte parce que le geste l'est : cinq
+    /// prestataires notifiés touchent « accepter » en même temps, et un quota
+    /// horaire punirait celui qui perd la course plusieurs fois de suite alors
+    /// qu'il n'a rien fait de mal. Ce qu'on borne ici, c'est le martèlement
+    /// automatisé, pas l'insistance légitime.
+    pub const fn acceptation() -> Self {
+        Self {
+            max: 5,
+            fenetre_secondes: 1,
+        }
+    }
+
     /// Lecture publique du catalogue (FR-008 `@security`).
     ///
     /// Beaucoup plus large : le catalogue est la première page que consulte un

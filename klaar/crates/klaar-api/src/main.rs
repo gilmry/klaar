@@ -18,9 +18,9 @@ use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
-    creer_pool, PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgPaiementRepository,
-    PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository, PgTraceRepository,
-    PgUtilisateurRepository,
+    creer_pool, PgCatalogueRepository, PgDemandeRepository, PgJournalAudit, PgMissionRepository,
+    PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository, PgSessionRepository,
+    PgTraceRepository, PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -155,6 +155,7 @@ async fn main() -> std::io::Result<()> {
             paiements: Arc::new(PgPaiementRepository::new(pool.clone())),
             prestataires: Arc::new(PgProviderRepository::new(pool.clone())),
             traces: Arc::new(PgTraceRepository::new(pool.clone())),
+            missions: Arc::new(PgMissionRepository::new(pool.clone())),
             jetons: jetons.clone(),
             courriel: courriel.clone(),
             horloge: Arc::new(HorlogeSysteme),

@@ -78,6 +78,15 @@ impl DemandeRepository for PgDemandeRepository {
         Ok(())
     }
 
+    async fn par_id(&self, id: Uuid) -> Result<Option<Demande>, RepositoryError> {
+        let ligne = sqlx::query(&format!("SELECT {COLONNES} FROM demande WHERE id = $1"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(erreur)?;
+        ligne.as_ref().map(depuis_ligne).transpose()
+    }
+
     async fn doublon_recent(
         &self,
         demandeur_id: Uuid,

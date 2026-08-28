@@ -2,6 +2,7 @@
 
 use klaar_application::ports::erreurs::RepositoryError;
 use klaar_application::ports::trace_repository::{LigneTrace, TraceRepository};
+use uuid::Uuid;
 
 use crate::erreur;
 use crate::pool::PoolPg;
@@ -57,5 +58,25 @@ impl TraceRepository for PgTraceRepository {
 
         tx.commit().await.map_err(erreur)?;
         Ok(())
+    }
+
+    async fn comptes_retenus_sauf(
+        &self,
+        demande_id: Uuid,
+        sauf_provider_id: Uuid,
+    ) -> Result<Vec<Uuid>, RepositoryError> {
+        // Jointure sur `provider` : la trace enregistre des prestataires, alors
+        // que les abonnements push sont portés par des comptes. Confondre les
+        // deux enverrait les notifications dans le vide.
+        sqlx::query_scalar(
+            "SELECT p.utilisateur_id FROM trace_matching t
+             JOIN provider p ON p.id = t.provider_id
+             WHERE t.demande_id = $1 AND t.retenu AND t.provider_id <> $2",
+        )
+        .bind(demande_id)
+        .bind(sauf_provider_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(erreur)
     }
 }

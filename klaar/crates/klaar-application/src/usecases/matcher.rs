@@ -242,6 +242,9 @@ mod tests {
         async fn par_numero_bce(&self, _: &NumeroBce) -> Result<Option<Provider>, RepositoryError> {
             unreachable!()
         }
+        async fn par_utilisateur_id(&self, _: Uuid) -> Result<Option<Provider>, RepositoryError> {
+            unreachable!()
+        }
         async fn mettre_a_jour_etat(&self, _: &Provider) -> Result<(), RepositoryError> {
             unreachable!()
         }
@@ -266,6 +269,9 @@ mod tests {
 
     impl DemandeRepository for DemandesMemoire {
         async fn creer(&self, _: &Demande) -> Result<(), RepositoryError> {
+            unreachable!()
+        }
+        async fn par_id(&self, _: Uuid) -> Result<Option<Demande>, RepositoryError> {
             unreachable!()
         }
         async fn doublon_recent(
@@ -308,6 +314,13 @@ mod tests {
             }
             self.lignes.borrow_mut().extend_from_slice(lignes);
             Ok(())
+        }
+        async fn comptes_retenus_sauf(
+            &self,
+            _: Uuid,
+            _: Uuid,
+        ) -> Result<Vec<Uuid>, RepositoryError> {
+            unreachable!()
         }
     }
 

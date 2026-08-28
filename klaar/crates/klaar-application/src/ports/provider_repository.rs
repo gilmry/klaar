@@ -27,6 +27,16 @@ pub trait ProviderRepository {
     async fn par_numero_bce(&self, numero: &NumeroBce)
         -> Result<Option<Provider>, RepositoryError>;
 
+    /// Fiche prestataire attachée à un compte, s'il y en a une.
+    ///
+    /// C'est par là que passe l'acceptation d'une Demande : le jeton porte un
+    /// compte, jamais un identifiant de prestataire. Accepter un `provider_id`
+    /// venu de la requête laisserait accepter au nom d'un autre.
+    async fn par_utilisateur_id(
+        &self,
+        utilisateur_id: Uuid,
+    ) -> Result<Option<Provider>, RepositoryError>;
+
     /// Écrit statut, origine du contrôle et disponibilité.
     ///
     /// Séparé de la création pour la même raison que le verrouillage l'est du

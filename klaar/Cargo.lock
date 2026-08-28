@@ -1550,7 +1550,10 @@ dependencies = [
 name = "klaar-intervention"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "klaar-shared-kernel",
+ "serde",
+ "uuid",
 ]
 
 [[package]]
@@ -1618,6 +1621,7 @@ dependencies = [
  "klaar-application",
  "klaar-catalog",
  "klaar-identity",
+ "klaar-intervention",
  "klaar-matching",
  "klaar-shared-kernel",
  "serde_json",

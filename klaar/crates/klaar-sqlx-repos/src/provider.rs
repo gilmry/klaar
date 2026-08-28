@@ -140,6 +140,24 @@ impl ProviderRepository for PgProviderRepository {
         ligne.as_ref().map(depuis_ligne).transpose()
     }
 
+    async fn par_utilisateur_id(
+        &self,
+        utilisateur_id: Uuid,
+    ) -> Result<Option<Provider>, RepositoryError> {
+        // `utilisateur_id` est `UNIQUE` en base : au plus une fiche par compte.
+        let ligne = sqlx::query(&format!(
+            "SELECT {COLONNES} FROM provider p
+             LEFT JOIN provider_competence c ON c.provider_id = p.id
+             WHERE p.utilisateur_id = $1
+             GROUP BY p.id"
+        ))
+        .bind(utilisateur_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+        ligne.as_ref().map(depuis_ligne).transpose()
+    }
+
     async fn mettre_a_jour_etat(&self, provider: &Provider) -> Result<(), RepositoryError> {
         // Ni la raison sociale ni la base ne sont réécrites : activer un
         // prestataire ne doit pas pouvoir écraser une fiche modifiée entre-temps.

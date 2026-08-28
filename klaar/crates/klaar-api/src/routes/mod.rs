@@ -1,6 +1,7 @@
 //! Endpoints HTTP, un module par famille. Chaque route est tracée sur une
 //! story et un FR du PRD.
 
+pub mod acceptation;
 pub mod auth;
 pub mod catalogue;
 pub mod compte;
