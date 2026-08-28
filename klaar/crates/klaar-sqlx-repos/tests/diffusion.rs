@@ -65,11 +65,19 @@ async fn happy_un_tour_ecoule_passe_en_no_match_et_est_rendu() {
     let depot = PgDemandeRepository::new(pool.clone());
     let d = demande(&depot, &pool, 60).await;
 
-    let eteintes = depot.expirer_echues(echeance(), 500).await.unwrap();
-    assert!(
-        eteintes.iter().any(|e| e.id == d.id),
-        "la Demande échue doit être rendue"
-    );
+    // La file est vidée plutôt que balayée une fois : un passage rend les plus
+    // anciennes d'abord, et une base qui garde les Demandes des exécutions
+    // précédentes évince facilement celle-ci du premier lot. Ce qu'on vérifie
+    // est qu'elle est bien rendue, pas qu'elle l'est en premier.
+    let mut rendue = false;
+    loop {
+        let moisson = depot.expirer_echues(echeance(), 500).await.unwrap();
+        if moisson.is_empty() {
+            break;
+        }
+        rendue |= moisson.iter().any(|e| e.id == d.id);
+    }
+    assert!(rendue, "la Demande échue doit être rendue");
     let relue = depot.par_id(d.id).await.unwrap().expect("la Demande");
     assert_eq!(relue.statut, StatutDemande::SansReponse);
 }

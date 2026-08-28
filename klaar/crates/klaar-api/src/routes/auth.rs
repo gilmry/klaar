@@ -87,7 +87,10 @@ pub async fn signup(
     // Contrôlé avant tout travail : le hachage argon2 coûte de la mémoire et
     // du temps par construction, et les faire dépenser sans limite est
     // précisément ce que la limitation prévient.
-    if let Verdict::Refuse { retry_after } = etat.limiteur.verifier(&source, maintenant) {
+    if let Verdict::Refuse { retry_after } =
+        etat.limiteur
+            .verifier_quota(&source, maintenant, etat.quota_ecriture_sensible)
+    {
         return HttpResponse::TooManyRequests()
             .insert_header(("Retry-After", retry_after.to_string()))
             .json(ErreurValidationDto {

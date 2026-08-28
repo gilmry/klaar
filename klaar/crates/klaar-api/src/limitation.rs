@@ -36,6 +36,20 @@ impl Quota {
         }
     }
 
+    /// Même fenêtre, avec un plafond choisi.
+    ///
+    /// Sert au déploiement de démonstration, où plusieurs parcours filmés se
+    /// connectent depuis la même adresse en quelques minutes et épuiseraient
+    /// le quota réel. Le plafond est un **paramètre explicite** et non une
+    /// désactivation : un quota qu'on peut éteindre finit éteint en production,
+    /// alors qu'un chiffre visible au démarrage se remarque.
+    pub const fn ecriture_sensible_plafond(max: usize) -> Self {
+        Self {
+            max,
+            fenetre_secondes: Quota::ecriture_sensible().fenetre_secondes,
+        }
+    }
+
     /// Acceptation d'une Demande par un prestataire (FR-013 `@security`).
     ///
     /// Cinq par seconde. La fenêtre est courte parce que le geste l'est : cinq

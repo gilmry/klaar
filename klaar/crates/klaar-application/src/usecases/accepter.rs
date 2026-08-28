@@ -325,6 +325,14 @@ mod tests {
         async fn relancer(&self, _: &Demande) -> Result<bool, RepositoryError> {
             unreachable!()
         }
+        async fn proposees_a(
+            &self,
+            _: Uuid,
+            _: DateTime<Utc>,
+        ) -> Result<Vec<crate::ports::demande_repository::DemandeProposee>, RepositoryError>
+        {
+            unreachable!()
+        }
         async fn compter_depuis_une_heure(
             &self,
             _: Uuid,
@@ -369,6 +377,9 @@ mod tests {
                 Some(autre) => autre,
                 None => ResultatAttribution::DemandeNonDiffusee,
             })
+        }
+        async fn par_demande(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
+            unreachable!()
         }
         async fn par_id(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
             unreachable!()

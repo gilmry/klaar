@@ -1,6 +1,7 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
 import Disponibilite from "../components/Disponibilite.svelte";
+import DemandesRecues from "../components/DemandesRecues.svelte";
 ---
 
 <AppLayout
@@ -16,4 +17,13 @@ import Disponibilite from "../components/Disponibilite.svelte";
   </p>
 
   <Disponibilite client:load />
+
+  <h2>Demandes reçues</h2>
+  <p class="klaar-tempere">
+    Le premier qui accepte obtient l'intervention. L'adresse exacte n'est
+    donnée qu'à celui qui la prend : dix entreprises n'ont pas à connaître
+    l'adresse d'un foyer pour un dépannage que neuf ne feront pas.
+  </p>
+
+  <DemandesRecues client:load />
 </AppLayout>

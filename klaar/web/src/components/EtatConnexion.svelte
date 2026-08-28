@@ -24,7 +24,16 @@
   } from "../lib/offlineQueue";
   import { sonderReseau } from "../lib/api";
 
-  let enLigne = $state(true);
+  /**
+   * `null` tant que rien n'a été vérifié.
+   *
+   * Partir de « en ligne » revenait à l'affirmer avant de l'avoir constaté :
+   * sur une page dont les scripts n'ont pas pu être chargés — premier passage
+   * hors ligne, chunk absent du cache — l'îlot ne s'hydrate pas et la pastille
+   * restait bloquée sur « En ligne » alors que le réseau était coupé. Un
+   * indicateur qui ment sur l'état du réseau est pire que pas d'indicateur.
+   */
+  let enLigne = $state<boolean | null>(null);
   let enAttente = $state(0);
   let echecs = $state(0);
 
@@ -62,8 +71,13 @@
 </script>
 
 <p class="klaar-etat">
-  <span class="klaar-pastille" data-etat={enLigne ? "en-ligne" : "hors-ligne"}></span>
-  {#if enLigne}
+  <span
+    class="klaar-pastille"
+    data-etat={enLigne === null ? "inconnu" : enLigne ? "en-ligne" : "hors-ligne"}
+  ></span>
+  {#if enLigne === null}
+    Vérification de la connexion…
+  {:else if enLigne}
     En ligne
   {:else}
     Hors ligne, vos saisies sont conservées

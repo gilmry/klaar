@@ -13,4 +13,5 @@ pub mod health;
 pub mod mission;
 pub mod push;
 pub mod session;
+pub mod suivi;
 pub mod verification;

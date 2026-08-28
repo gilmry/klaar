@@ -92,6 +92,21 @@ async fn demande(pool: &PoolPg, lat: f64, lon: f64) -> Demande {
 /// Un maillon relu : sa signature et celle qu'il déclare pour prédécesseur.
 type Maillon = (Option<Vec<u8>>, Option<Vec<u8>>);
 
+/// Identifiant de la prochaine ligne de trace à écrire.
+///
+/// Les cas vérifient la chaîne **depuis leur propre première ligne** et non
+/// depuis l'origine : la table est partagée, et une seule ligne signée avec une
+/// autre clé — une vérification manuelle, une rotation — casserait
+/// définitivement le rejeu complet pour tous les cas. C'est arrivé, et c'est ce
+/// qui a motivé le rejeu borné.
+async fn prochaine_ligne(pool: &PoolPg) -> i64 {
+    let max: Option<i64> = sqlx::query_scalar("SELECT MAX(id) FROM trace_matching")
+        .fetch_one(pool)
+        .await
+        .expect("dernier identifiant");
+    max.unwrap_or(0) + 1
+}
+
 fn ligne(demande_id: Uuid, provider_id: Uuid, retenu: bool) -> LigneTrace {
     LigneTrace {
         demande_id,
@@ -107,6 +122,7 @@ fn ligne(demande_id: Uuid, provider_id: Uuid, retenu: bool) -> LigneTrace {
 #[tokio::test]
 async fn happy_une_trace_signee_se_verifie() {
     let pool = pool().await;
+    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::avec_signature(pool.clone(), signataire());
     let d = demande(&pool, CENTRE.0, CENTRE.1).await;
     let p = prestataire(&pool).await;
@@ -116,9 +132,13 @@ async fn happy_une_trace_signee_se_verifie() {
         .await
         .expect("trace écrite");
 
-    let integrite = verifier_chaine(&pool, Some(&SignataireTrace::new(CLE).unwrap()))
-        .await
-        .unwrap();
+    let integrite = verifier_chaine(
+        &pool,
+        Some(&SignataireTrace::new(CLE).unwrap()),
+        Some(depart),
+    )
+    .await
+    .unwrap();
     assert_eq!(integrite.rompue_a, None, "la chaîne doit tenir");
     assert!(integrite.verifiees > 0);
     assert!(integrite.cle_disponible);
@@ -129,6 +149,7 @@ async fn happy_la_chaine_relie_des_tours_successifs() {
     // Deux tours de matching distincts : le second maillon doit déclarer le
     // premier comme prédécesseur.
     let pool = pool().await;
+    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::avec_signature(pool.clone(), signataire());
     let p = prestataire(&pool).await;
     let a = demande(&pool, CENTRE.0, CENTRE.1).await;
@@ -156,10 +177,14 @@ async fn happy_la_chaine_relie_des_tours_successifs() {
         assert!(precedente.is_some(), "maillon {i} sans prédécesseur");
     }
     assert_eq!(
-        verifier_chaine(&pool, Some(&SignataireTrace::new(CLE).unwrap()))
-            .await
-            .unwrap()
-            .rompue_a,
+        verifier_chaine(
+            &pool,
+            Some(&SignataireTrace::new(CLE).unwrap()),
+            Some(depart)
+        )
+        .await
+        .unwrap()
+        .rompue_a,
         None
     );
 }
@@ -221,13 +246,16 @@ async fn security_supprimer_une_demande_echoue_bruyamment() {
 #[tokio::test]
 async fn security_une_cle_differente_ne_verifie_rien() {
     let pool = pool().await;
+    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::avec_signature(pool.clone(), signataire());
     let d = demande(&pool, CENTRE.0, CENTRE.1).await;
     let p = prestataire(&pool).await;
     depot.consigner(&[ligne(d.id, p.id, true)]).await.unwrap();
 
     let autre = SignataireTrace::new(b"une-AUTRE-cle-de-trente-deux-oct").unwrap();
-    let integrite = verifier_chaine(&pool, Some(&autre)).await.unwrap();
+    let integrite = verifier_chaine(&pool, Some(&autre), Some(depart))
+        .await
+        .unwrap();
     assert!(
         integrite.rompue_a.is_some(),
         "une clé étrangère ne doit rien pouvoir valider"
@@ -238,12 +266,13 @@ async fn security_une_cle_differente_ne_verifie_rien() {
 async fn security_sans_cle_rien_n_est_declare_verifie() {
     // Un rapport rassurant sans preuve serait le pire des résultats.
     let pool = pool().await;
+    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::avec_signature(pool.clone(), signataire());
     let d = demande(&pool, CENTRE.0, CENTRE.1).await;
     let p = prestataire(&pool).await;
     depot.consigner(&[ligne(d.id, p.id, true)]).await.unwrap();
 
-    let integrite = verifier_chaine(&pool, None).await.unwrap();
+    let integrite = verifier_chaine(&pool, None, Some(depart)).await.unwrap();
     assert_eq!(integrite.verifiees, 0);
     assert!(!integrite.cle_disponible);
     assert!(integrite.non_signees > 0);
@@ -254,6 +283,7 @@ async fn edge_une_trace_non_signee_reste_ecrite_et_comptee_a_part() {
     // Un déploiement sans clé écrit une trace non signée plutôt que pas de
     // trace : celle-ci explique toujours une décision, l'absence non.
     let pool = pool().await;
+    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::new(pool.clone());
     let d = demande(&pool, CENTRE.0, CENTRE.1).await;
     let p = prestataire(&pool).await;
@@ -268,9 +298,13 @@ async fn edge_une_trace_non_signee_reste_ecrite_et_comptee_a_part() {
     .unwrap();
     assert_eq!(ecrite, 1);
 
-    let integrite = verifier_chaine(&pool, Some(&SignataireTrace::new(CLE).unwrap()))
-        .await
-        .unwrap();
+    let integrite = verifier_chaine(
+        &pool,
+        Some(&SignataireTrace::new(CLE).unwrap()),
+        Some(depart),
+    )
+    .await
+    .unwrap();
     assert!(integrite.non_signees > 0);
 }
 
@@ -280,6 +314,7 @@ async fn edge_un_second_tour_sur_la_meme_demande_ne_casse_pas_la_chaine() {
     // chaîne ne doit pas avancer. Sinon la vérification échouerait sur une
     // trace pourtant intacte.
     let pool = pool().await;
+    let depart = prochaine_ligne(&pool).await;
     let depot = PgTraceRepository::avec_signature(pool.clone(), signataire());
     let d = demande(&pool, CENTRE.0, CENTRE.1).await;
     let p = prestataire(&pool).await;
@@ -288,10 +323,14 @@ async fn edge_un_second_tour_sur_la_meme_demande_ne_casse_pas_la_chaine() {
     depot.consigner(&[ligne(d.id, p.id, false)]).await.unwrap();
 
     assert_eq!(
-        verifier_chaine(&pool, Some(&SignataireTrace::new(CLE).unwrap()))
-            .await
-            .unwrap()
-            .rompue_a,
+        verifier_chaine(
+            &pool,
+            Some(&SignataireTrace::new(CLE).unwrap()),
+            Some(depart)
+        )
+        .await
+        .unwrap()
+        .rompue_a,
         None,
         "un doublon écarté ne doit pas rompre la chaîne"
     );

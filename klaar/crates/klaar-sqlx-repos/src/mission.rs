@@ -149,6 +149,18 @@ impl MissionRepository for PgMissionRepository {
         ligne.as_ref().map(depuis_ligne).transpose()
     }
 
+    async fn par_demande(&self, demande_id: Uuid) -> Result<Option<Mission>, RepositoryError> {
+        let ligne = sqlx::query(
+            "SELECT id, demande_id, provider_id, statut, cree_le FROM mission
+             WHERE demande_id = $1",
+        )
+        .bind(demande_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+        ligne.as_ref().map(depuis_ligne).transpose()
+    }
+
     async fn transiter(
         &self,
         mission_id: Uuid,

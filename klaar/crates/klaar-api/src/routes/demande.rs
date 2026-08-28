@@ -88,7 +88,7 @@ pub async fn soumettre_demande(
         etat.paiements.as_ref(),
         etat.journal.as_ref(),
         etat.horloge.as_ref(),
-        etat.exiger_methode_paiement,
+        etat.regles_soumission,
         CommandeSoumission {
             // Tiré du jeton, jamais du corps : accepter un `demandeur_id` en
             // entrée laisserait soumettre une Demande au nom d'autrui.

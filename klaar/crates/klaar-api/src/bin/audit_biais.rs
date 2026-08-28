@@ -97,10 +97,26 @@ async fn main() -> ExitCode {
         }
     };
 
+    // KLAAR_AUDIT_DEPUIS_ID borne le rejeu de la chaîne. Sert après une
+    // rotation de clé : la chaîne étant globale, les lignes signées avec
+    // l'ancienne clé ne se vérifient plus avec la nouvelle, et seule une
+    // fenêtre permet de contrôler le segment courant. La portée réduite est
+    // annoncée dans le rapport.
+    let depuis_id = match std::env::var("KLAAR_AUDIT_DEPUIS_ID") {
+        Ok(v) if !v.is_empty() => match v.parse::<i64>() {
+            Ok(id) => Some(id),
+            Err(_) => {
+                eprintln!("KLAAR_AUDIT_DEPUIS_ID doit être un entier");
+                return ExitCode::FAILURE;
+            }
+        },
+        _ => None,
+    };
+
     let jusqu_a = Utc::now();
     let depuis = jusqu_a - Duration::days(PERIODE_JOURS);
 
-    let integrite = match verifier_chaine(&pool, signataire.as_ref()).await {
+    let integrite = match verifier_chaine(&pool, signataire.as_ref(), depuis_id).await {
         Ok(i) => i,
         Err(e) => {
             eprintln!("vérification de la chaîne impossible : {e}");
@@ -125,6 +141,12 @@ async fn main() -> ExitCode {
             "resultat": integrite,
             "portee": "détecte une altération faite depuis la base ; ne couvre pas une \
                        compromission du serveur, où la clé est lisible",
+            "portee_fenetre": if depuis_id.is_some() {
+                "rejeu borné : prouve la cohérence de la fenêtre, pas qu'aucun maillon \
+                 n'a disparu avant son début"
+            } else {
+                "rejeu depuis l'origine"
+            },
         },
         "disparite_geographique": {
             "resultat": geographie,

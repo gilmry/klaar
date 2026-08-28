@@ -54,6 +54,12 @@ pub trait MissionRepository {
 
     async fn par_id(&self, id: Uuid) -> Result<Option<Mission>, RepositoryError>;
 
+    /// Mission née d'une Demande, s'il y en a une.
+    ///
+    /// Une Demande donne au plus une Mission : c'est ce que garantit
+    /// l'attribution atomique, et une contrainte d'unicité le grave.
+    async fn par_demande(&self, demande_id: Uuid) -> Result<Option<Mission>, RepositoryError>;
+
     /// Écrit le nouveau statut **et** consigne la transition, ensemble.
     ///
     /// Une seule transaction : un statut changé sans entrée d'historique

@@ -16,6 +16,13 @@ web/dist/
 web/.astro/
 web/test-results/
 web/playwright-report/
+# Parcours filmés (Story 4.11) : vidéos et rapports sont des artefacts de CI,
+# publiés sur GitHub Pages. Des mégaoctets de binaire dans l'historique git
+# n'apporteraient rien et ne se relisent pas.
+web/playwright-report-demo/
+web/demo-resultats/
+web/demo-resultats.json
+web/vitrine/
 
 # Secrets locaux (clé privée VAPID, DATABASE_URL) — jamais committés.
 .env

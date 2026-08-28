@@ -274,6 +274,9 @@ mod tests {
         async fn en_cours_pour(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
             unreachable!()
         }
+        async fn par_demande(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
+            unreachable!()
+        }
         async fn par_id(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
             Ok(self.mission.clone())
         }

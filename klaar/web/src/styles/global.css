@@ -47,3 +47,5 @@ a { color: inherit; }
 .klaar-pastille { width: .55rem; height: .55rem; border-radius: 50%; background: var(--klaar-tempere); }
 .klaar-pastille[data-etat="en-ligne"] { background: #2e9e5b; }
 .klaar-pastille[data-etat="hors-ligne"] { background: #c2543a; }
+/* `inconnu` garde la couleur neutre par défaut : tant que rien n'a été
+   vérifié, afficher du vert ou du rouge serait une affirmation. */

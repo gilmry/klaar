@@ -113,6 +113,31 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // Plafond des écritures sensibles. Cinq par heure et par adresse en temps
+    // normal ; le relever sert au déploiement de démonstration, où plusieurs
+    // parcours se connectent depuis la même adresse en quelques minutes.
+    // Un chiffre paramétré plutôt qu'un interrupteur : un quota qu'on peut
+    // éteindre finit éteint en production, un chiffre annoncé au démarrage se
+    // remarque.
+    let quota_ecriture_sensible = match std::env::var("KLAAR_QUOTA_ECRITURE_SENSIBLE") {
+        Ok(v) if !v.is_empty() => match v.parse::<usize>() {
+            Ok(max) if max > 0 => {
+                tracing::warn!(
+                    max,
+                    defaut = klaar_api::limitation::Quota::ecriture_sensible().max,
+                    "KLAAR_QUOTA_ECRITURE_SENSIBLE relève le plafond des inscriptions et \
+                     connexions par adresse. Démonstration uniquement."
+                );
+                klaar_api::limitation::Quota::ecriture_sensible_plafond(max)
+            }
+            _ => {
+                eprintln!("KLAAR_QUOTA_ECRITURE_SENSIBLE doit être un entier strictement positif");
+                std::process::exit(1);
+            }
+        },
+        _ => klaar_api::limitation::Quota::ecriture_sensible(),
+    };
+
     // Vrai par défaut : un cookie de session sans `Secure` voyage en clair. Le
     // désactiver n'a de sens qu'en développement local sur HTTP, où le
     // navigateur refuserait sinon le cookie sans rien signaler.
@@ -148,6 +173,29 @@ async fn main() -> std::io::Result<()> {
     }
 
     // FR-011 fait de la méthode de paiement une précondition à toute Demande.
+    // Quota de Demandes par compte et par heure (FR-011). Relevé pour le seul
+    // déploiement de démonstration, où le même compte en soumet plusieurs en
+    // quelques minutes. Un chiffre, et non un interrupteur : un quota qu'on
+    // peut éteindre finit éteint en production.
+    let max_demandes_par_heure = match std::env::var("KLAAR_MAX_DEMANDES_PAR_HEURE") {
+        Ok(v) if !v.is_empty() => match v.parse::<i64>() {
+            Ok(max) if max > 0 => {
+                tracing::warn!(
+                    max,
+                    defaut = klaar_application::usecases::soumettre_demande::MAX_DEMANDES_PAR_HEURE,
+                    "KLAAR_MAX_DEMANDES_PAR_HEURE relève le quota de Demandes par compte. \
+                     Démonstration uniquement."
+                );
+                max
+            }
+            _ => {
+                eprintln!("KLAAR_MAX_DEMANDES_PAR_HEURE doit être un entier strictement positif");
+                std::process::exit(1);
+            }
+        },
+        _ => klaar_application::usecases::soumettre_demande::MAX_DEMANDES_PAR_HEURE,
+    };
+
     // Le contrôle est actif par défaut : l'oublier allumé ne coûte qu'un refus
     // explicite, l'oublier éteint laisse passer des Demandes qu'aucun paiement
     // ne garantit. Le déploiement vitrine le désactive, faute de compte Stripe
@@ -193,7 +241,11 @@ async fn main() -> std::io::Result<()> {
             derriere_proxy,
             cookie_securise,
             catalogue_en_maintenance,
-            exiger_methode_paiement,
+            quota_ecriture_sensible,
+            regles_soumission: klaar_application::usecases::soumettre_demande::ReglesSoumission {
+                exiger_methode_paiement,
+                max_demandes_par_heure,
+            },
         });
         App::new()
             // Span racine expurgé de l'IP et de l'agent utilisateur, cf.

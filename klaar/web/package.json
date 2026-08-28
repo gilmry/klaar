@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:install": "playwright install --with-deps chromium"
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "demo": "playwright test --config=playwright.demo.config.ts",
+    "vitrine": "node scripts/assembler-vitrine.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
@@ -24,6 +26,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/node": "^26.4.0",
     "fake-indexeddb": "^6.0.1",
     "vitest": "^3.2.4"
   }

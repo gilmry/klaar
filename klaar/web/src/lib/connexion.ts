@@ -197,13 +197,42 @@ export async function seConnecter(demande: DemandeConnexion): Promise<SessionOuv
 }
 
 /**
+ * Rafraîchissement en vol, partagé par tous les appelants.
+ *
+ * **Sans cela, deux composants sur la même page se déconnectent mutuellement.**
+ * Le refresh est à usage unique et sa rotation détecte le rejeu : deux appels
+ * simultanés présentent le même jeton, le second passe pour un vol, et la
+ * famille entière est révoquée — comportement voulu côté serveur (FR-004), et
+ * catastrophique quand c'est notre propre page qui le déclenche.
+ *
+ * Le cas s'est produit sur l'espace prestataire, où deux îlots Svelte appellent
+ * chacun `restaurerSession()` au montage. Il n'a été vu qu'en filmant un
+ * parcours contre le vrai service : les tests de vérification simulent
+ * `/auth/refresh` et ne peuvent pas le reproduire.
+ */
+let enVol: Promise<SessionOuverte> | null = null;
+
+/**
  * Échange le refresh contre un accès neuf.
  *
  * Aucun corps : le refresh voyage dans son cookie `HttpOnly`, que ce code ne
  * peut de toute façon pas lire.
+ *
+ * Les appels concurrents partagent une seule requête. C'est une nécessité, pas
+ * une optimisation : voir `enVol` ci-dessus.
  */
 export async function rafraichir(): Promise<SessionOuverte> {
-  return retenir(await request<SessionOuverte>("/auth/refresh", { method: "POST" }));
+  if (enVol) return enVol;
+  enVol = (async () => {
+    try {
+      return retenir(await request<SessionOuverte>("/auth/refresh", { method: "POST" }));
+    } finally {
+      // Libéré dans tous les cas : garder une promesse rejetée ferait échouer
+      // pour toujours tout rafraîchissement ultérieur.
+      enVol = null;
+    }
+  })();
+  return enVol;
 }
 
 /**

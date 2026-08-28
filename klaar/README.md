@@ -589,6 +589,58 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   d'annulation (FR-022) — le domaine connaît la transition vers `CANCELLED`,
   aucune route ne l'expose faute de la règle qui doit l'accompagner.
 
+- **4.10** — **Interface prestataire et suivi demandeur** (hors plan initial) :
+  `GET /api/v1/requests/{id}`, `GET /api/v1/providers/me/requests`,
+  `GET /api/v1/missions/{id}`, plus les écrans correspondants.
+
+  **Ajoutée parce qu'aucun parcours ne pouvait être mené de bout en bout dans un
+  navigateur** : accepter une Demande et faire avancer une Mission n'existaient
+  qu'en API, et les notifications pointaient déjà vers `/demande?id=…`, une page
+  qui affichait un formulaire vierge.
+
+  **L'asymétrie des deux vues est le cœur de la story.** Le prestataire voit,
+  avant d'accepter : le secteur, la description, l'urgence, une distance. **Pas
+  l'adresse.** Elle ne lui est révélée qu'une fois la Mission à lui. Ce n'est pas
+  une consigne dans un commentaire — le type qui porte cette vue n'a pas de champ
+  de position, et un test vérifie que la réponse HTTP n'en porte aucune trace.
+
+  Le demandeur apprend le **nom de l'entreprise** dès l'attribution : savoir qui
+  va sonner à sa porte est le minimum.
+
+  Les boutons d'étape viennent du serveur (`suites`) : recopier la machine à
+  états dans l'interface la ferait diverger.
+
+  Le suivi sonde toutes les cinq secondes et s'arrête quand la Demande est close.
+  Dette assumée : le temps réel appartient au WebSocket (Story 4.9).
+
+## Parcours filmés — documentation vivante
+
+`scripts/parcours-filmes.sh` monte un service **réel** — PostgreSQL, migrations,
+jeu de démonstration, `klaar-api` — puis déroule chaque parcours dans un
+navigateur et en garde la vidéo. `npm run vitrine` assemble ensuite la page
+publiée, vidéos incluses ; la CI la déploie sur GitHub Pages.
+
+**Une suite à part, et pas un interrupteur sur l'existante.** Les tests de
+`tests/e2e` vérifient : ils vont vite, simulent l'API et n'ont pas à être
+regardés. Ceux de `tests/demo` **montrent** : ils tournent contre le service
+réel, à vitesse humaine, et leur produit est une vidéo. Une seconde au moins
+sépare chaque geste, la saisie se fait caractère par caractère, et un bandeau
+incrusté dit ce qui se passe et qui agit.
+
+**Le parcours à deux acteurs est le seul qui prouve la valeur** : ce qui compte
+n'est pas ce que chacun fait, mais ce que chacun voit *pendant* que l'autre
+agit. Deux contextes de navigateur, deux vidéos, publiées côte à côte.
+
+Site et API sont servis sur la **même origine** par un petit serveur sans
+dépendance, comme derrière le proxy inverse d'un déploiement réel. Pointer le
+front ailleurs aurait demandé du CORS — relâcher une garantie de production pour
+une démonstration.
+
+**Deux défauts réels trouvés en filmant**, qu'aucun test simulé ne pouvait
+voir : deux îlots Svelte se déconnectaient mutuellement en rafraîchissant la
+session en parallèle (la rotation du refresh y voyait un rejeu), et l'indicateur
+de connexion affirmait « En ligne » avant d'avoir rien vérifié.
+
 ## CI, premier run réel
 
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :

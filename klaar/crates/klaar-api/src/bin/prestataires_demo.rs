@@ -24,7 +24,15 @@ use klaar_identity::{
 };
 use klaar_shared_kernel::{Email, Geo};
 use klaar_sqlx_repos::demonstration::compte_actif_de_demonstration;
+use klaar_sqlx_repos::demonstration::remettre_a_zero;
 use klaar_sqlx_repos::{creer_pool, PgProviderRepository, PoolPg};
+
+/// Comptes demandeurs de démonstration.
+///
+/// Deux : les parcours à deux acteurs ont besoin d'un demandeur pendant qu'un
+/// autre scénario en occupe un. Leur adresse est sur `.invalid` comme celle des
+/// prestataires, pour la même raison — rien ne peut y être livré.
+const DEMANDEURS: [&str; 2] = ["camille", "sacha"];
 
 /// Prestataires fictifs, répartis dans la Région.
 ///
@@ -189,5 +197,31 @@ async fn main() -> ExitCode {
         prestataires = crees,
         "prestataires de démonstration actifs — origine DEMONSTRATION, aucun contrôle réel"
     );
+
+    // Comptes demandeurs, pour que les parcours filmés aient les deux côtés.
+    let mut demandeurs = 0;
+    for marqueur in DEMANDEURS {
+        match compte(&pool, marqueur).await {
+            Ok(_) => demandeurs += 1,
+            Err(e) => {
+                tracing::error!(erreur = e, "compte demandeur de démonstration impossible");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    tracing::warn!(demandeurs, "comptes demandeurs de démonstration prêts");
+
+    // Remise à zéro de l'état laissé par une exécution précédente.
+    //
+    // Sans elle, un prestataire resté « occupé » ne recevrait plus rien, et le
+    // parcours filmé s'arrêterait à la première étape sans que la cause soit
+    // visible à l'écran. Ne touche **que** les comptes de démonstration : leur
+    // adresse est sur `.invalid`, réservé par la RFC 2606, et aucun compte réel
+    // ne peut en porter une.
+    if let Err(e) = remettre_a_zero(&pool).await {
+        tracing::error!(erreur = %e, "remise à zéro du jeu de démonstration impossible");
+        return ExitCode::FAILURE;
+    }
+
     ExitCode::SUCCESS
 }

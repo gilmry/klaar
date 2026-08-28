@@ -226,6 +226,14 @@ mod tests {
             *self.stockee.borrow_mut() = Some(demande.clone());
             Ok(true)
         }
+        async fn proposees_a(
+            &self,
+            _: Uuid,
+            _: DateTime<Utc>,
+        ) -> Result<Vec<crate::ports::demande_repository::DemandeProposee>, RepositoryError>
+        {
+            unreachable!()
+        }
         async fn compter_depuis_une_heure(
             &self,
             _: Uuid,

@@ -241,3 +241,36 @@ beforeEach(() => {
   vi.unstubAllGlobals();
   oublierJeton();
 });
+
+describe("@security rotation du refresh", () => {
+  it("ne lance qu'un seul rafraîchissement pour des appels concurrents", async () => {
+    // Le refresh est à usage unique et sa rotation détecte le rejeu : deux
+    // appels simultanés présentent le même jeton, le second passe pour un vol,
+    // et la famille entière est révoquée. Deux îlots Svelte sur une même page
+    // suffisent à le déclencher — c'est arrivé sur l'espace prestataire.
+    let appels = 0;
+    const origine = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      appels += 1;
+      // Une latence, sans quoi le premier appel se résoudrait avant que le
+      // second ne parte, et le cas ne prouverait rien.
+      await new Promise((r) => setTimeout(r, 20));
+      return new Response(JSON.stringify({ jeton_acces: "jwt", expire_dans: 3600 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const { rafraichir } = await import("../src/lib/connexion");
+      await Promise.all([rafraichir(), rafraichir(), rafraichir()]);
+      expect(appels).toBe(1);
+
+      // Et un appel ultérieur repart bien : la promesse partagée est libérée.
+      await rafraichir();
+      expect(appels).toBe(2);
+    } finally {
+      globalThis.fetch = origine;
+    }
+  });
+});

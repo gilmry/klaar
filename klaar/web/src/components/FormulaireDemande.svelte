@@ -28,7 +28,12 @@
   let urgence = $state<UrgenceKlaar>("NORMAL");
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
-  let creee = $state<{ id: string; doublon: boolean } | null>(null);
+  let creee = $state<{
+    id: string;
+    doublon: boolean;
+    candidats: number;
+    notifies: number;
+  } | null>(null);
   let locale = $state<LocaleKlaar>("fr");
 
   onMount(async () => {
@@ -60,7 +65,12 @@
         longitude: position.coords.longitude,
         urgence,
       });
-      creee = { id: reponse.id, doublon: reponse.code === "REQUEST_DUPLICATE" };
+      creee = {
+        id: reponse.id,
+        doublon: reponse.code === "REQUEST_DUPLICATE",
+        candidats: reponse.candidats ?? 0,
+        notifies: reponse.notifies ?? 0,
+      };
     } catch (e) {
       erreur =
         e instanceof Error && e.message === "POSITION_REFUSEE"
@@ -87,9 +97,23 @@
       Votre demande est diffusée aux prestataires disponibles.
     {/if}
   </p>
-  <p class="klaar-tempere">
-    La mise en relation n'est pas encore livrée : aucune notification ne partira
-    pour l'instant.
+  <!--
+    Deux nombres et non un : un prestataire retenu sans abonnement aux
+    notifications verra la Demande en ouvrant l'application. Les confondre
+    ferait croire que dix personnes ont été réveillées alors que personne n'a
+    rien reçu.
+  -->
+  <p class="klaar-tempere" data-demande-diffusion>
+    {#if creee.candidats === 0}
+      Aucun prestataire disponible dans la zone pour l'instant. Vous pourrez
+      élargir la recherche depuis le suivi.
+    {:else}
+      {creee.candidats} prestataire{creee.candidats > 1 ? "s" : ""} retenu{creee.candidats > 1 ? "s" : ""},
+      dont {creee.notifies} prévenu{creee.notifies > 1 ? "s" : ""} par notification.
+    {/if}
+  </p>
+  <p>
+    <a href={`/demande?id=${creee.id}`} data-action="suivre">Suivre ma demande</a>
   </p>
 {:else}
   <form onsubmit={envoyer} data-formulaire="demande" novalidate>

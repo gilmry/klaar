@@ -12,6 +12,7 @@ use utoipa::OpenApi;
 
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_application::ports::jeton_acces::EmetteurJetonAcces;
+use klaar_application::usecases::soumettre_demande::ReglesSoumission;
 use klaar_email_adapter::CourrielJournalise;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
@@ -27,7 +28,7 @@ pub mod limitation;
 pub mod routes;
 pub mod telemetry;
 
-use limitation::LimiteurMemoire;
+use limitation::{LimiteurMemoire, Quota};
 
 /// Dépendances partagées par les handlers.
 ///
@@ -74,11 +75,19 @@ pub struct EtatApplication {
     /// répond alors 503 avec `Retry-After`, ce qui distingue un retrait
     /// volontaire d'une panne.
     pub catalogue_en_maintenance: bool,
-    /// Exiger une méthode de paiement avant toute Demande (FR-011).
-    /// Vrai par défaut : un contrôle de paiement qu'on oublie de rallumer
-    /// est pire que pas de contrôle, parce que personne ne s'en aperçoit.
-    /// Faux dans le déploiement vitrine, où Stripe est hors périmètre.
-    pub exiger_methode_paiement: bool,
+    /// Plafond des écritures sensibles par adresse et par heure (FR-001).
+    ///
+    /// Cinq en temps normal. Le déploiement de démonstration le relève, parce
+    /// que plusieurs parcours filmés se connectent depuis la même adresse en
+    /// quelques minutes. Injecté plutôt que lu d'une constante pour que ce
+    /// desserrage soit un choix visible, et non un `if` caché dans une route.
+    pub quota_ecriture_sensible: Quota,
+    /// Ce que le déploiement autorise à la soumission d'une Demande (FR-011) :
+    /// méthode de paiement exigée ou non, quota horaire par compte.
+    ///
+    /// Groupé plutôt qu'égrené : ces réglages voyagent ensemble, et une suite
+    /// de booléens finit par se remplir dans le mauvais ordre.
+    pub regles_soumission: ReglesSoumission,
 }
 
 #[derive(OpenApi)]
@@ -100,6 +109,9 @@ pub struct EtatApplication {
         routes::disponibilite::lire_disponibilite,
         routes::disponibilite::regler_disponibilite,
         routes::mission::avancer_mission,
+        routes::suivi::suivre_demande,
+        routes::suivi::demandes_recues,
+        routes::suivi::suivre_mission,
         routes::push::cle_publique,
         routes::push::enregistrer_abonnement,
         routes::push::supprimer_abonnement,
@@ -129,6 +141,9 @@ pub struct EtatApplication {
         routes::disponibilite::ReglageDto,
         routes::mission::TransitionDto,
         routes::mission::MissionAvanceeDto,
+        routes::suivi::SuiviDemandeDto,
+        routes::suivi::DemandeProposeeDto,
+        routes::suivi::SuiviMissionDto,
         routes::push::ClePubliqueDto,
         routes::push::AbonnementDto,
         routes::push::ClesAbonnementDto,
@@ -168,6 +183,9 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::disponibilite::lire_disponibilite)
         .service(routes::disponibilite::regler_disponibilite)
         .service(routes::mission::avancer_mission)
+        .service(routes::suivi::suivre_demande)
+        .service(routes::suivi::demandes_recues)
+        .service(routes::suivi::suivre_mission)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
         .service(routes::push::supprimer_abonnement);
@@ -207,9 +225,13 @@ pub fn etat_de_test(
         derriere_proxy: false,
         cookie_securise: false,
         catalogue_en_maintenance: false,
+        quota_ecriture_sensible: Quota::ecriture_sensible(),
         // Les tests n'ont pas de Stripe : le contrôle est vérifié par ses
         // propres cas, avec un état construit à la main.
-        exiger_methode_paiement: false,
+        regles_soumission: ReglesSoumission {
+            exiger_methode_paiement: false,
+            ..Default::default()
+        },
     })
 }
 

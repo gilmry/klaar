@@ -956,6 +956,130 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > (FR-022). Le domaine connaît la transition vers `CANCELLED` ; aucune route ne
 > l'expose, faute de la règle de pénalités qui doit l'accompagner.
 
+### Story 4.10 — Interface prestataire et suivi demandeur — *faite, hors plan initial*
+- **En tant que** Provider · **je veux** voir et prendre les Demandes qui me sont proposées · **afin de** travailler
+- **En tant que** User · **je veux** suivre ma Demande · **afin de** savoir si quelqu'un vient
+- **4×N** : liste / acceptation / suivi / asymétrie des vues
+- **Couche(s)** : Application + Infra + Frontend
+- **Taille** : **M** (0,75 j)
+
+> **Ajoutée au plan, et pourquoi.** Jusqu'ici, aucun parcours ne pouvait être
+> mené de bout en bout dans un navigateur : accepter une Demande et faire
+> avancer une Mission n'existaient qu'en API. Un service dont la valeur ne se
+> montre pas ne se vérifie pas non plus, et les notifications pointaient déjà
+> vers `/demande?id=…`, une page qui affichait un formulaire vierge.
+>
+> **L'asymétrie des deux vues est le cœur de la story.** Le prestataire voit,
+> avant d'accepter : le secteur, la description, l'urgence, une distance. **Pas
+> l'adresse.** Elle ne lui est révélée qu'une fois la Mission à lui, parce qu'il
+> doit s'y rendre. Faire l'inverse donnerait à dix entreprises l'adresse d'un
+> foyer pour un dépannage que neuf d'entre elles ne feront pas. Ce n'est pas une
+> consigne dans un commentaire : `VuePrestataire` **n'a pas de champ de
+> position**, et un test vérifie que la réponse HTTP n'en porte aucune trace.
+>
+> Le demandeur, lui, apprend le **nom de l'entreprise** dès l'attribution.
+> Savoir qui va sonner à sa porte est le minimum ; rien d'autre du prestataire
+> n'est exposé.
+>
+> **Les boutons d'étape viennent du serveur.** `GET /missions/{id}` rend
+> `suites`, les statuts atteignables. Recopier la machine à états dans
+> l'interface la ferait diverger, et l'écran proposerait un bouton que le
+> domaine refuse.
+>
+> **`tour_ecoule` est exposé au demandeur.** Une Demande peut être « en
+> diffusion » et son tour écoulé, le balayage passant périodiquement. Afficher
+> « recherche en cours » dans ce cas ferait attendre pour rien.
+>
+> **Le suivi sonde toutes les cinq secondes**, et s'arrête quand la Demande est
+> close. C'est une dette assumée : le temps réel appartient au WebSocket de la
+> Story 4.9. Un sondage court est honnête et se voit dans les journaux, là où
+> une absence de rafraîchissement laisserait croire qu'il ne se passe rien.
+>
+> **Correction apportée à la Story 3.8 au passage.** La vérification de la
+> chaîne de trace repartait toujours de l'origine. Deux conséquences : elle ne
+> passerait pas à l'échelle, et une seule ligne signée avec une autre clé — une
+> rotation, une vérification manuelle — casse définitivement le rejeu pour tout
+> le monde. C'est arrivé sur la base de développement. `verifier_chaine` accepte
+> désormais un identifiant de départ, et le rapport annonce que la portée d'une
+> fenêtre est plus faible : elle prouve la cohérence de la fenêtre, pas
+> qu'aucun maillon n'a disparu avant son début.
+
+### Story 4.11 — Parcours filmés et vitrine publiée — *faite, hors plan initial*
+- **En tant que** lecteur du projet · **je veux** voir le service fonctionner · **afin de** juger sur pièces
+- **4×N** : narration / rythme / parcours à deux acteurs / publication
+- **Couche(s)** : Frontend + CI
+- **Taille** : **M** (0,75 j)
+
+> **Une suite à part, et pas un interrupteur sur l'existante.** Les tests de
+> `tests/e2e` vérifient : ils vont vite, simulent l'API et n'ont pas à être
+> regardés. Ceux de `tests/demo` **montrent** : ils tournent contre le service
+> réel — PostgreSQL, l'API, le navigateur —, à vitesse humaine, et leur produit
+> est une vidéo. Ralentir la suite de vérification pour la filmer aurait donné
+> une barrière lente et des vidéos illisibles.
+>
+> **Une seconde entre chaque geste, au minimum.** En dessous, l'œil ne suit
+> pas : un formulaire se remplit et se soumet dans le même quart de seconde. Le
+> temps d'affichage d'une narration est proportionnel à sa longueur, borné entre
+> une et cinq secondes. La saisie se fait caractère par caractère, sans quoi un
+> champ se remplit d'un coup et masque les validations qui réagissent à la
+> frappe.
+>
+> **La narration est incrustée dans la page**, avec le nom de l'acteur. Sans
+> elle, la vidéo montre des clics sans dire ce qu'ils démontrent ; sans
+> l'étiquette, deux enregistrements côte à côte sont indéchiffrables.
+>
+> **Le parcours à deux acteurs est le seul qui prouve la valeur.** Ce qui compte
+> n'est pas ce que chacun fait, mais ce que chacun voit *pendant* que l'autre
+> agit : le prestataire qui n'a pas l'adresse avant d'accepter et l'obtient
+> après, le demandeur qui apprend qui vient puis suit chaque étape sans
+> rafraîchir. Deux contextes de navigateur, deux vidéos, publiées côte à côte.
+>
+> **Site et API sur la même origine.** Un petit serveur sans dépendance sert le
+> build et relaie `/api`. Pointer le front sur un autre port aurait demandé du
+> CORS — relâcher une garantie de production pour une démonstration — et
+> intercepter les appels dans le navigateur aurait montré un chemin réseau qui
+> n'existe pas. La troisième voie est la seule qui reproduise le déploiement
+> réel, derrière un proxy inverse.
+>
+> **Deux quotas sont devenus paramétrables**, et c'est un chiffre et non un
+> interrupteur : la limitation d'écritures sensibles par adresse et le quota
+> horaire de Demandes par compte. Plusieurs parcours se connectent depuis la
+> même adresse en quelques minutes, et le second quota est compté en base donc
+> survit au redémarrage. Un quota qu'on peut *éteindre* finit éteint en
+> production ; un chiffre annoncé au démarrage se remarque.
+>
+> **Deux défauts réels trouvés en filmant, qu'aucun test simulé ne pouvait
+> voir.**
+>
+> 1. Deux îlots Svelte sur l'espace prestataire appelaient chacun
+>    `restaurerSession()` au montage. Le refresh est à usage unique et sa
+>    rotation détecte le rejeu : le second appel passait pour un vol, et la
+>    famille de jetons entière était révoquée — comportement voulu côté serveur
+>    (FR-004), catastrophique quand c'est notre propre page qui le déclenche.
+>    Les appels concurrents partagent désormais une seule requête.
+> 2. L'indicateur de connexion affirmait « En ligne » avant d'avoir rien
+>    vérifié. Sur une page dont les scripts n'ont pas pu être chargés — premier
+>    passage hors ligne — l'îlot ne s'hydrate pas et la pastille restait bloquée
+>    sur « En ligne » alors que le réseau était coupé. Elle part maintenant d'un
+>    état « inconnu ». Un indicateur qui ment sur le réseau est pire que pas
+>    d'indicateur.
+>
+> **La publication est une page écrite à la main**, pas seulement le rapport
+> Playwright. Ce dernier est fait pour diagnostiquer un échec : il liste des
+> étapes, pas des intentions. Les deux rapports sont publiés à côté.
+>
+> **Un enregistrement absent est annoncé** sur la page publiée. Montrer cinq
+> vidéos sur six sans le dire laisserait croire qu'il n'y en a jamais eu que
+> cinq.
+>
+> **Limites.** La démonstration a besoin d'une base ne contenant que ses propres
+> données : sur une base de développement partagée avec la suite de tests, des
+> centaines de prestataires posés au centre évincent ceux de la démonstration du
+> classement. En intégration continue la base est neuve, et le parcours pose sa
+> Demande près de l'atelier plutôt que de modifier les données des autres. La
+> géolocalisation est accordée au contexte du navigateur : aucune boîte de
+> dialogue système n'est cliquée, et c'est un écart avec un usage réel.
+
 ### Story 4.4 — Tracking géoloc temps réel, foreground uniquement (FR-019)
 - **En tant que** User · **je veux** voir la position Provider temps réel · **afin de** savoir quand il arrive
 - **Périmètre** : tracking **foreground**, PWA ouverte pendant EN_ROUTE (`Geolocation.watchPosition`)

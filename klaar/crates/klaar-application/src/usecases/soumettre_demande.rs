@@ -32,6 +32,29 @@ use crate::ports::horloge::Horloge;
 /// l'utilisateur se souvient, lui.
 pub const MAX_DEMANDES_PAR_HEURE: i64 = 5;
 
+/// Ce que le déploiement autorise, quota compris.
+///
+/// Groupé parce que ces réglages voyagent ensemble et qu'une liste de
+/// paramètres booléens finit par se remplir dans le mauvais ordre. Le quota est
+/// paramétré et non constant pour le seul déploiement de démonstration, où le
+/// même compte soumet plusieurs Demandes en quelques minutes. C'est un
+/// **chiffre** et non un interrupteur : un quota qu'on peut éteindre finit
+/// éteint en production, un chiffre annoncé au démarrage se remarque.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReglesSoumission {
+    pub exiger_methode_paiement: bool,
+    pub max_demandes_par_heure: i64,
+}
+
+impl Default for ReglesSoumission {
+    fn default() -> Self {
+        Self {
+            exiger_methode_paiement: true,
+            max_demandes_par_heure: MAX_DEMANDES_PAR_HEURE,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CommandeSoumission {
     pub demandeur_id: Uuid,
@@ -104,7 +127,7 @@ pub async fn soumettre<D, C, P, J, H>(
     paiements: &P,
     journal: &J,
     horloge: &H,
-    exiger_methode_paiement: bool,
+    regles: ReglesSoumission,
     commande: CommandeSoumission,
 ) -> Result<ResultatSoumission, ErreurSoumission>
 where
@@ -131,7 +154,7 @@ where
 
     let maintenant = horloge.maintenant();
 
-    if exiger_methode_paiement && !paiements.possede_methode(commande.demandeur_id).await? {
+    if regles.exiger_methode_paiement && !paiements.possede_methode(commande.demandeur_id).await? {
         return Err(ErreurSoumission::MethodePaiementAbsente);
     }
 
@@ -147,7 +170,7 @@ where
     if demandes
         .compter_depuis_une_heure(commande.demandeur_id, maintenant)
         .await?
-        >= MAX_DEMANDES_PAR_HEURE
+        >= regles.max_demandes_par_heure
     {
         return Err(ErreurSoumission::QuotaAtteint);
     }
@@ -243,6 +266,14 @@ mod tests {
             unreachable!("hors du périmètre de ce cas d'usage")
         }
 
+        async fn proposees_a(
+            &self,
+            _: Uuid,
+            _: DateTime<Utc>,
+        ) -> Result<Vec<crate::ports::demande_repository::DemandeProposee>, RepositoryError>
+        {
+            unreachable!()
+        }
         async fn compter_depuis_une_heure(
             &self,
             demandeur_id: Uuid,
@@ -324,7 +355,10 @@ mod tests {
                 &self.paiements,
                 &self.journal,
                 &HorlogeFigee(maintenant),
-                self.exiger_paiement,
+                ReglesSoumission {
+                    exiger_methode_paiement: self.exiger_paiement,
+                    ..Default::default()
+                },
                 CommandeSoumission {
                     demandeur_id,
                     secteur: secteur.to_string(),

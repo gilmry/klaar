@@ -259,6 +259,9 @@ mod tests {
         ) -> Result<ResultatAttribution, RepositoryError> {
             unreachable!()
         }
+        async fn par_demande(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
+            unreachable!()
+        }
         async fn par_id(&self, _: Uuid) -> Result<Option<Mission>, RepositoryError> {
             unreachable!()
         }

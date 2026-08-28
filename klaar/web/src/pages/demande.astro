@@ -1,19 +1,49 @@
 ---
 import AppLayout from "../layouts/AppLayout.astro";
 import FormulaireDemande from "../components/FormulaireDemande.svelte";
+import SuiviDemande from "../components/SuiviDemande.svelte";
+
+// L'identifiant vient de la barre d'adresse et non du serveur : le site est
+// statique, et c'est le composant qui interroge l'API une fois la session
+// reprise. C'est aussi l'URL que portent les notifications push.
 ---
 
 <AppLayout
   titre="Klaar — demander un dépannage"
   description="Décrivez votre problème, Klaar prévient les prestataires disponibles autour de vous."
 >
-  <h1>Demander un dépannage</h1>
+  <div id="klaar-suivi" hidden>
+    <h1>Ma demande</h1>
+    <SuiviDemande client:load />
+  </div>
 
-  <FormulaireDemande client:load />
+  <div id="klaar-formulaire">
+    <h1>Demander un dépannage</h1>
 
-  <h2>Ce que nous transmettons</h2>
-  <p class="klaar-tempere">
-    Le secteur, votre description et votre position au moment de l'envoi. Votre
-    adresse email n'est pas communiquée aux prestataires.
-  </p>
+    <FormulaireDemande client:load />
+
+    <h2>Ce que nous transmettons</h2>
+    <p class="klaar-tempere">
+      Le secteur, votre description et votre position au moment de l'envoi. Votre
+      adresse email n'est pas communiquée aux prestataires.
+    </p>
+    <p class="klaar-tempere">
+      Les prestataires prévenus ne reçoivent pas votre adresse : seulement le
+      secteur, une distance arrondie et l'urgence. L'adresse exacte n'est donnée
+      qu'à celui qui prend l'intervention.
+    </p>
+  </div>
 </AppLayout>
+
+<script>
+  // Le rendu est statique : le choix entre formulaire et suivi se fait ici, au
+  // chargement, plutôt qu'à la génération. Un paramètre absent ou illisible
+  // ramène au formulaire — c'est ce que quelqu'un qui tape `/demande` attend.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const id = new URLSearchParams(location.search).get("id");
+  if (id && UUID.test(id)) {
+    document.getElementById("klaar-formulaire")?.setAttribute("hidden", "");
+    const suivi = document.getElementById("klaar-suivi");
+    suivi?.removeAttribute("hidden");
+  }
+</script>

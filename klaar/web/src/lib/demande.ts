@@ -19,7 +19,44 @@ export interface DemandeCreee {
   id: string;
   statut: string;
   code: "REQUEST_CREATED" | "REQUEST_DUPLICATE";
+  /** Prestataires retenus pour notification. */
+  candidats?: number;
+  /** Appareils réellement joints. Distinct de `candidats`. */
+  notifies?: number;
 }
+
+export type StatutDemande = "BROADCASTING" | "MATCHED" | "NO_MATCH" | "CANCELLED";
+
+/** L'état d'une Demande, tel que son auteur le voit (Story 4.10). */
+export interface SuiviDemande {
+  id: string;
+  secteur: string;
+  description: string;
+  urgence: UrgenceKlaar;
+  statut: StatutDemande;
+  rayon_metres: number;
+  elargissements: number;
+  /**
+   * Le tour est écoulé bien que le statut dise encore « diffusion ».
+   *
+   * Le balayage passe périodiquement ; sans ce champ, quelqu'un attendrait
+   * devant une Demande que plus personne ne peut accepter.
+   */
+  tour_ecoule: boolean;
+  /** Nom de l'entreprise qui vient, une fois l'intervention attribuée. */
+  prestataire: string | null;
+  mission_id: string | null;
+  mission_statut: string | null;
+}
+
+/** Motifs d'annulation, vocabulaire fermé (FR-014). */
+export const MOTIFS_ANNULATION = [
+  { code: "RESOLVED_ITSELF", libelle: "Le problème s'est réglé tout seul" },
+  { code: "TOO_SLOW", libelle: "Trop long à venir" },
+  { code: "FOUND_ELSEWHERE", libelle: "J'ai trouvé quelqu'un d'autre" },
+  { code: "MISTAKE", libelle: "Je me suis trompé" },
+  { code: "OTHER", libelle: "Autre" },
+] as const;
 
 /** Longueur maximale, alignée sur le domaine. */
 export const DESCRIPTION_MAX = 2000;
@@ -37,11 +74,23 @@ export type CodeErreurDemande =
   | "AUTH_INVALID"
   | "SERVICE_UNAVAILABLE"
   | "POSITION_REFUSEE"
+  | "REQUEST_NOT_FOUND"
+  | "REQUEST_NOT_EXPIRED"
+  | "REQUEST_CLOSED"
+  | "MAX_RADIUS_REACHED"
+  | "ALREADY_MATCHED"
+  | "ALREADY_CANCELLED"
   | "INCONNU"
   | "HORS_LIGNE";
 
 const MESSAGES: Record<LocaleKlaar, Record<CodeErreurDemande, string>> = {
   fr: {
+    REQUEST_NOT_FOUND: "Cette Demande n'existe pas.",
+    REQUEST_NOT_EXPIRED: "Votre Demande est encore diffusée. Laissez-lui trente secondes.",
+    REQUEST_CLOSED: "Cette Demande est déjà attribuée ou annulée.",
+    MAX_RADIUS_REACHED: "La zone a déjà été élargie trois fois. Votre Demande a été annulée.",
+    ALREADY_MATCHED: "Un prestataire a déjà accepté : c'est l'intervention qu'il faut annuler.",
+    ALREADY_CANCELLED: "Cette Demande est déjà annulée.",
     SECTOR_NOT_FOUND: "Choisissez un secteur dans la liste.",
     DESCRIPTION_EMPTY: "Décrivez le problème en quelques mots.",
     DESCRIPTION_TOO_LONG: `Votre description dépasse ${DESCRIPTION_MAX} caractères.`,
@@ -61,6 +110,12 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurDemande, string>> = {
     HORS_LIGNE: "Aucune connexion. Une demande de dépannage a besoin du réseau.",
   },
   nl: {
+    REQUEST_NOT_FOUND: "Deze aanvraag bestaat niet.",
+    REQUEST_NOT_EXPIRED: "Uw aanvraag loopt nog. Geef ze dertig seconden.",
+    REQUEST_CLOSED: "Deze aanvraag is al toegewezen of geannuleerd.",
+    MAX_RADIUS_REACHED: "De zone is al drie keer vergroot. Uw aanvraag is geannuleerd.",
+    ALREADY_MATCHED: "Een vakman heeft al aanvaard: annuleer de interventie.",
+    ALREADY_CANCELLED: "Deze aanvraag is al geannuleerd.",
     SECTOR_NOT_FOUND: "Kies een sector uit de lijst.",
     DESCRIPTION_EMPTY: "Beschrijf het probleem in enkele woorden.",
     DESCRIPTION_TOO_LONG: `Uw beschrijving overschrijdt ${DESCRIPTION_MAX} tekens.`,
@@ -78,6 +133,12 @@ const MESSAGES: Record<LocaleKlaar, Record<CodeErreurDemande, string>> = {
     HORS_LIGNE: "Geen verbinding. Een pechverhelping vereist het netwerk.",
   },
   en: {
+    REQUEST_NOT_FOUND: "This request does not exist.",
+    REQUEST_NOT_EXPIRED: "Your request is still open. Give it thirty seconds.",
+    REQUEST_CLOSED: "This request is already assigned or cancelled.",
+    MAX_RADIUS_REACHED: "The area was already widened three times. Your request was cancelled.",
+    ALREADY_MATCHED: "A provider already accepted: cancel the job instead.",
+    ALREADY_CANCELLED: "This request is already cancelled.",
     SECTOR_NOT_FOUND: "Choose a sector from the list.",
     DESCRIPTION_EMPTY: "Describe the problem in a few words.",
     DESCRIPTION_TOO_LONG: `Your description exceeds ${DESCRIPTION_MAX} characters.`,
@@ -151,5 +212,76 @@ export async function soumettreDemande(demande: DemandeASoumettre): Promise<Dema
     method: "POST",
     body: demande,
     headers: jeton ? { Authorization: `Bearer ${jeton}` } : {},
+  });
+}
+
+/** Ce que le statut veut dire, pour celui qui attend. */
+export function libelleStatutDemande(suivi: SuiviDemande): string {
+  if (suivi.statut === "MATCHED") {
+    return suivi.prestataire
+      ? `${suivi.prestataire} a pris votre demande`
+      : "Un prestataire a pris votre demande";
+  }
+  if (suivi.statut === "CANCELLED") return "Demande annulée";
+  if (suivi.statut === "NO_MATCH") return "Personne n'a répondu";
+  // `BROADCASTING` recouvre deux situations que le demandeur ne doit pas
+  // confondre : le tour court encore, ou il est écoulé et le balayage n'est
+  // pas passé. Dire « en cours » dans le second cas ferait attendre pour rien.
+  return suivi.tour_ecoule
+    ? "Personne n'a répondu"
+    : "Recherche d'un prestataire en cours…";
+}
+
+/** Ce que l'intervention en est, une fois attribuée. */
+export function libelleMission(statut: string | null): string | null {
+  switch (statut) {
+    case "ACCEPTED":
+      return "Acceptée, le prestataire va partir";
+    case "PROVIDER_EN_ROUTE":
+      return "Le prestataire est en route";
+    case "ON_SITE":
+      return "Le prestataire est arrivé";
+    case "COMPLETED":
+      return "Intervention terminée";
+    case "CANCELLED":
+      return "Intervention annulée";
+    default:
+      return null;
+  }
+}
+
+/** Vrai si le demandeur peut encore élargir la zone (FR-015). */
+export function peutElargir(suivi: SuiviDemande): boolean {
+  const attend = suivi.statut === "NO_MATCH" || (suivi.statut === "BROADCASTING" && suivi.tour_ecoule);
+  return attend && suivi.elargissements < 3;
+}
+
+/** Vrai si le demandeur peut encore retirer sa Demande (FR-014). */
+export function peutAnnuler(suivi: SuiviDemande): boolean {
+  return suivi.statut === "BROADCASTING" || suivi.statut === "NO_MATCH";
+}
+
+function autorisationSuivi(): Record<string, string> {
+  const jeton = jetonAcces();
+  return jeton ? { Authorization: `Bearer ${jeton}` } : {};
+}
+
+export async function suivreDemande(id: string): Promise<SuiviDemande> {
+  return request<SuiviDemande>(`/requests/${id}`, { headers: autorisationSuivi() });
+}
+
+export async function elargirZone(id: string): Promise<SuiviDemande> {
+  await request(`/requests/${id}/expand-radius`, {
+    method: "POST",
+    headers: autorisationSuivi(),
+  });
+  return suivreDemande(id);
+}
+
+export async function annulerDemande(id: string, motif?: string): Promise<void> {
+  const suffixe = motif ? `?motif=${encodeURIComponent(motif)}` : "";
+  await request(`/requests/${id}${suffixe}`, {
+    method: "DELETE",
+    headers: autorisationSuivi(),
   });
 }

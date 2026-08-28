@@ -8,6 +8,18 @@ use uuid::Uuid;
 
 use super::erreurs::RepositoryError;
 
+/// Une Demande proposée à un prestataire, avec la distance qui le sépare d'elle.
+///
+/// **Sans la position exacte.** Le prestataire décide sur le secteur, la
+/// description et une distance ; l'adresse ne lui est révélée qu'une fois la
+/// Mission attribuée. Faire l'inverse donnerait à dix entreprises l'adresse
+/// d'un foyer pour un dépannage que neuf d'entre elles ne feront pas.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DemandeProposee {
+    pub demande: Demande,
+    pub distance_metres: f64,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait DemandeRepository {
     async fn creer(&self, demande: &Demande) -> Result<(), RepositoryError>;
@@ -80,6 +92,18 @@ pub trait DemandeRepository {
         id: Uuid,
         motif: Option<MotifAnnulation>,
     ) -> Result<bool, RepositoryError>;
+
+    /// Demandes encore ouvertes pour lesquelles ce prestataire a été retenu.
+    ///
+    /// `depuis` borne le tour de diffusion : une Demande dont la fenêtre est
+    /// écoulée n'est plus proposée, même si le balayage n'est pas encore passé.
+    /// Sans cela, la liste montrerait des Demandes que le prestataire ne
+    /// pourrait plus accepter, et chaque refus lui semblerait un bogue.
+    async fn proposees_a(
+        &self,
+        provider_id: Uuid,
+        depuis: DateTime<Utc>,
+    ) -> Result<Vec<DemandeProposee>, RepositoryError>;
 
     /// Demandes du compte sur la dernière heure (FR-011 `@edge`).
     async fn compter_depuis_une_heure(

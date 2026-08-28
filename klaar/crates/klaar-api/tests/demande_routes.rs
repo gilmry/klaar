@@ -252,7 +252,10 @@ async fn negative_sans_methode_de_paiement_la_demande_est_refusee_en_422() {
     let pool = pool().await;
     let base = etat_de_test(pool.clone(), None);
     let etat = actix_web::web::Data::new(EtatApplication {
-        exiger_methode_paiement: true,
+        regles_soumission: klaar_application::usecases::soumettre_demande::ReglesSoumission {
+            exiger_methode_paiement: true,
+            ..Default::default()
+        },
         ..(**base).clone()
     });
     let app = test::init_service(app_de_test(etat)).await;

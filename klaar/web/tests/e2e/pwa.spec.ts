@@ -128,3 +128,16 @@ test.describe("@security", () => {
     expect(misesEnCache.filter((u) => u.includes("/api/"))).toEqual([]);
   });
 });
+
+test.describe("@security indicateur de connexion", () => {
+  test("n'affirme pas « en ligne » avant d'avoir vérifié", async ({ page }) => {
+    // Le rendu statique est servi avant que l'îlot ne s'hydrate, et il peut
+    // n'être jamais hydraté — chunk absent du cache lors d'un premier passage
+    // hors ligne. Partir de « en ligne » faisait alors mentir la pastille
+    // précisément quand le réseau manquait. Trouvé en filmant un parcours.
+    const reponse = await page.request.get("/");
+    const html = await reponse.text();
+    expect(html).not.toContain('data-etat="en-ligne"');
+    expect(html).toContain('data-etat="inconnu"');
+  });
+});

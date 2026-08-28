@@ -4,7 +4,9 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-use klaar_application::ports::demande_repository::{DemandeRepository, PaiementRepository};
+use klaar_application::ports::demande_repository::{
+    DemandeProposee, DemandeRepository, PaiementRepository,
+};
 use klaar_application::ports::erreurs::RepositoryError;
 use klaar_catalog::CodeCatalogue;
 use klaar_matching::{Demande, MotifAnnulation, StatutDemande, Urgence, FENETRE_DOUBLON_MINUTES};
@@ -31,6 +33,16 @@ impl PgDemandeRepository {
 const COLONNES: &str = "id, demandeur_id, secteur_code, description, urgence, statut, \
      rayon_metres, elargissements, diffuse_depuis, motif_annulation, cree_le, \
      ST_Y(position::geometry) AS lat, ST_X(position::geometry) AS lon";
+
+/// Les mêmes colonnes, préfixées, pour les requêtes qui joignent.
+///
+/// Recopiée plutôt que dérivée de `COLONNES` par substitution de texte : une
+/// substitution attrapait `position` dans `ST_Y(position…)` comme dans le nom
+/// de colonne, et se serait cassée au premier alias ajouté. Deux listes qui se
+/// lisent valent mieux qu'une qui se calcule mal.
+const COLONNES_D: &str = "d.id, d.demandeur_id, d.secteur_code, d.description, d.urgence, \
+     d.statut, d.rayon_metres, d.elargissements, d.diffuse_depuis, d.motif_annulation, \
+     d.cree_le, ST_Y(d.position::geometry) AS lat, ST_X(d.position::geometry) AS lon";
 
 fn depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<Demande, RepositoryError> {
     let secteur: String = ligne.get("secteur_code");
@@ -242,6 +254,42 @@ impl DemandeRepository for PgDemandeRepository {
         .await
         .map_err(erreur)?;
         Ok(resultat.rows_affected() > 0)
+    }
+
+    async fn proposees_a(
+        &self,
+        provider_id: Uuid,
+        depuis: DateTime<Utc>,
+    ) -> Result<Vec<DemandeProposee>, RepositoryError> {
+        // La distance vient de la trace et non d'un calcul refait ici : c'est
+        // celle qui a servi au classement, et en recalculer une autre ferait
+        // afficher au prestataire un chiffre différent de celui qui l'a
+        // sélectionné.
+        let lignes = sqlx::query(&format!(
+            "SELECT {COLONNES_D}, t.distance_metres
+             FROM demande d
+             JOIN trace_matching t ON t.demande_id = d.id
+             WHERE t.provider_id = $1
+               AND t.retenu
+               AND d.statut = 'BROADCASTING'
+               AND d.diffuse_depuis > $2
+             ORDER BY d.diffuse_depuis DESC"
+        ))
+        .bind(provider_id)
+        .bind(depuis)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(erreur)?;
+
+        lignes
+            .iter()
+            .map(|l| {
+                Ok(DemandeProposee {
+                    demande: depuis_ligne(l)?,
+                    distance_metres: l.get("distance_metres"),
+                })
+            })
+            .collect()
     }
 
     async fn compter_depuis_une_heure(

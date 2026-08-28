@@ -123,6 +123,48 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Parcours filmés : ce qui est publié (Story 4.11)
+
+Les vidéos publiées sur GitHub Pages sont l'enregistrement de tests joués contre
+le service réel. Ce qu'elles montrent est donc l'état véritable du service, pas
+une maquette.
+
+**Les données filmées sont fictives.** Les comptes sont sur
+`demo.klaar.invalid` — domaine réservé par la RFC 2606, où rien ne peut être
+livré et qu'aucun compte réel ne peut porter. Les numéros d'entreprise sont
+construits, jamais copiés d'une société existante. Une barrière de CI refuse la
+publication si une adresse de messagerie grand public apparaît dans la vitrine.
+
+**Deux quotas sont relevés pour le déploiement de démonstration** : la
+limitation d'écritures sensibles par adresse et le quota horaire de Demandes par
+compte. Ce sont des **chiffres** paramétrés, annoncés au démarrage, et non des
+interrupteurs : un quota qu'on peut éteindre finit éteint en production.
+
+**Un enregistrement absent est annoncé sur la page publiée.** Montrer cinq
+vidéos sur six sans le dire laisserait croire qu'il n'y en a jamais eu que cinq.
+
+**Écart avec un usage réel, assumé** : la géolocalisation est accordée au
+contexte du navigateur, aucune boîte de dialogue système n'est cliquée.
+
+## Ce que chacun voit d'une Demande (Story 4.10)
+
+**Le prestataire ne voit pas l'adresse avant d'avoir pris l'intervention.** Avant
+d'accepter, il dispose du secteur, de la description, de l'urgence et d'une
+distance. L'adresse n'apparaît qu'une fois la Mission à lui, parce qu'il doit s'y
+rendre. Donner à dix entreprises l'adresse d'un foyer pour un dépannage que neuf
+ne feront pas n'a aucune justification.
+
+Ce n'est pas une consigne : la structure qui porte la vue du prestataire n'a pas
+de champ de position, et un test vérifie que la réponse HTTP n'en porte aucune
+trace.
+
+**Le demandeur apprend le nom de l'entreprise** dès l'attribution — savoir qui va
+sonner à sa porte est le minimum. Rien d'autre du prestataire ne lui est exposé.
+
+**Limite assumée : le suivi est un sondage** toutes les cinq secondes, arrêté dès
+que la Demande est close. Le temps réel appartient au WebSocket de FR-018, non
+livré.
+
 ## Cycle de vie d'une Mission : ce que l'historique enregistre (Story 4.3, FR-018)
 
 **La position est facultative.** FR-018 demande la géolocalisation sur chaque

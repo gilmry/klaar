@@ -28,6 +28,11 @@ pub struct Integrite {
     /// Identifiant de la première ligne dont la chaîne ne tient plus.
     pub rompue_a: Option<i64>,
     pub cle_disponible: bool,
+    /// Premier identifiant examiné. `None` quand le rejeu part de l'origine.
+    ///
+    /// Exposé parce qu'il change la portée de la conclusion : une fenêtre ne
+    /// dit rien de ce qui a pu disparaître avant elle.
+    pub depuis_id: Option<i64>,
 }
 
 /// Ce qu'un endroit a obtenu, sur la période.
@@ -60,19 +65,34 @@ pub struct DispariteGeographique {
     pub mailles: Vec<Maille>,
 }
 
-/// Rejoue la chaîne de signatures, de la première ligne à la dernière.
+/// Rejoue la chaîne de signatures.
 ///
 /// S'arrête à la première rupture : au-delà, les maillons ne prouvent plus
 /// rien, et continuer à les compter comme vérifiés serait mentir.
+///
+/// `depuis_id` borne le rejeu. `None` reprend tout depuis l'origine, ce que
+/// fait l'audit semestriel. Un identifiant de départ vérifie une **fenêtre**,
+/// et cette garantie est plus faible : elle prouve que la fenêtre est
+/// cohérente avec elle-même, pas qu'aucun maillon n'a disparu avant son début.
+/// Le premier maillon examiné est cru sur parole quant à son prédécesseur, et
+/// il n'y a pas moyen de faire autrement sans repartir de l'origine.
+///
+/// Deux usages justifient la fenêtre. Le premier est le passage à l'échelle :
+/// rejouer un million de lignes pour auditer six mois n'a pas de sens. Le
+/// second est la **rotation de clé** — la chaîne étant globale, des lignes
+/// signées avec deux clés différentes se suivent, et seule une fenêtre permet
+/// de vérifier le segment d'une clé donnée.
 pub async fn verifier_chaine(
     pool: &PoolPg,
     signataire: Option<&SignataireTrace>,
+    depuis_id: Option<i64>,
 ) -> Result<Integrite, RepositoryError> {
     let lignes = sqlx::query(
         "SELECT id, demande_id, provider_id, score, distance_metres, retenu, motif_ecart,
                 tracee_le, signature, signature_precedente
-         FROM trace_matching ORDER BY id",
+         FROM trace_matching WHERE id >= $1 ORDER BY id",
     )
+    .bind(depuis_id.unwrap_or(0))
     .fetch_all(pool)
     .await
     .map_err(erreur)?;
@@ -83,8 +103,13 @@ pub async fn verifier_chaine(
         non_signees: 0,
         rompue_a: None,
         cle_disponible: signataire.is_some(),
+        depuis_id,
     };
+    // Sur une fenêtre, le premier maillon signé donne le point de départ : son
+    // prédécesseur déclaré est cru, faute de pouvoir remonter. Depuis
+    // l'origine, la chaîne part bien de rien.
     let mut precedente: Option<Vec<u8>> = None;
+    let mut premier_signe = depuis_id.is_some();
 
     for ligne in &lignes {
         let signature: Option<Vec<u8>> = ligne.get("signature");
@@ -106,6 +131,10 @@ pub async fn verifier_chaine(
         // contrôle, quelqu'un pourrait recoller une chaîne cohérente en
         // réécrivant les deux colonnes ensemble.
         let declaree: Option<Vec<u8>> = ligne.get("signature_precedente");
+        if premier_signe {
+            precedente = declaree.clone();
+            premier_signe = false;
+        }
         if declaree.as_deref() != precedente.as_deref() {
             integrite.rompue_a = Some(ligne.get::<i64, _>("id"));
             break;

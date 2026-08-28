@@ -118,7 +118,10 @@ pub async fn login(
     // le lien entre les deux serait incompréhensible pour l'utilisateur.
     let source = format!("login:{}", adresse_source(&requete, etat.derriere_proxy));
 
-    if let Verdict::Refuse { retry_after } = etat.limiteur.verifier(&source, maintenant) {
+    if let Verdict::Refuse { retry_after } =
+        etat.limiteur
+            .verifier_quota(&source, maintenant, etat.quota_ecriture_sensible)
+    {
         return HttpResponse::TooManyRequests()
             .insert_header(("Retry-After", retry_after.to_string()))
             .json(ErreurValidationDto {

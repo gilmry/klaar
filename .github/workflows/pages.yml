@@ -1,0 +1,120 @@
+name: Vitrine
+
+# Publie les parcours filmés sur GitHub Pages.
+#
+# **Ce que cette publication contient.** Les vidéos de chaque parcours joué
+# contre le service réel — PostgreSQL, l'API, le navigateur —, une page qui dit
+# ce que chacun démontre, et les deux rapports Playwright. C'est de la
+# documentation vivante : elle ne peut pas mentir sur l'état du service, puisque
+# c'est le service qui la produit.
+#
+# Le déclenchement est manuel ou sur `main`, jamais sur une branche : une
+# publication est visible par tout le monde, et la déclencher à chaque poussée
+# de travail en cours mettrait en ligne des états intermédiaires.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Une seule publication à la fois. Deux déploiements concurrents se
+# remplaceraient dans un ordre imprévisible.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  enregistrer:
+    name: Enregistrer les parcours et assembler la vitrine
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # PostGIS et non postgres nu : le service en dépend dès la première
+        # migration.
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: klaar
+          POSTGRES_PASSWORD: klaar_dev_only
+          POSTGRES_DB: klaar
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U klaar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://klaar:klaar_dev_only@localhost:5433/klaar
+      # Secrets jetés avec le job. La base est neuve à chaque exécution et ne
+      # contient que des données fictives.
+      KLAAR_JWT_SECRET: secret-de-vitrine-jamais-utilise-en-production-48o
+      KLAAR_TRACE_HMAC_KEY: cle-de-vitrine-jamais-utilisee-en-production-48o
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: klaar/web/package-lock.json
+
+      - name: Dépendances du site
+        working-directory: klaar/web
+        run: npm ci --no-audit --no-fund
+
+      - name: Navigateur et encodeur vidéo
+        working-directory: klaar/web
+        # `chromium` seul ne suffit pas : l'enregistrement passe par ffmpeg, que
+        # Playwright installe séparément.
+        run: npx playwright install --with-deps chromium ffmpeg
+
+      - name: Suite de vérification (rapport publié à côté des parcours)
+        working-directory: klaar/web
+        # `continue-on-error` : un échec de la vérification doit se **voir** dans
+        # le rapport publié, pas empêcher la publication. La barrière de qualité,
+        # elle, est le workflow CI — celui-ci documente.
+        continue-on-error: true
+        run: |
+          npm run build
+          npm run test:e2e
+
+      - name: Enregistrer les parcours
+        run: klaar/scripts/parcours-filmes.sh
+
+      - name: Assembler la vitrine
+        working-directory: klaar/web
+        run: npm run vitrine
+
+      - name: Aucune donnée personnelle dans la vitrine
+        working-directory: klaar/web
+        # Dernière barrière avant une mise en ligne publique. La liste blanche
+        # de `tools/sync-public.sh` protège le dépôt ; celle-ci protège ce qui
+        # sort du navigateur, que personne n'a relu.
+        run: |
+          if grep -rIl --exclude=\*.webm -E '@(gmail|hotmail|outlook|yahoo)\.' vitrine/; then
+            echo "adresse personnelle dans la vitrine" >&2
+            exit 1
+          fi
+          echo "aucune adresse personnelle détectée"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: klaar/web/vitrine
+
+  publier:
+    name: Publier sur GitHub Pages
+    needs: enregistrer
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - id: deploiement
+        uses: actions/deploy-pages@v4
