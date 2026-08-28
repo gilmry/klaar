@@ -10,6 +10,7 @@ mod mot_de_passe;
 mod numero_bce;
 mod ops;
 mod provider;
+mod revue_kyc;
 mod totp;
 mod utilisateur;
 mod verrouillage;
@@ -21,6 +22,10 @@ pub use ops::{CompteOps, OpsError, Permission, RoleOps, INACTIVITE_MAX_JOURS};
 pub use provider::{
     OrigineKyc, PreuveKyc, Provider, ProviderError, StatutProvider, RAISON_SOCIALE_MAX,
     RAYON_INTERVENTION_DEFAUT, RAYON_INTERVENTION_MAX, RAYON_INTERVENTION_MIN,
+};
+pub use revue_kyc::{
+    DecisionKyc, RevueError, RevueKyc, MOTIF_MAX_CARACTERES as MOTIF_KYC_MAX_CARACTERES,
+    MOTIF_MIN_CARACTERES as MOTIF_KYC_MIN_CARACTERES,
 };
 pub use totp::{
     base32 as base32_totp, calculer as calculer_totp, verifier as verifier_totp, VerificationTotp,

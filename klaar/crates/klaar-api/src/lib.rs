@@ -21,7 +21,8 @@ use klaar_sqlx_repos::{
     PgExportRepository, PgJournalAudit, PgLiberationRepository, PgLitigeRepository,
     PgMessageRepository, PgMissionRepository, PgNotationRepository, PgOpsRepository,
     PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
-    PgReprogrammationRepository, PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
+    PgReprogrammationRepository, PgRevueKycRepository, PgSessionRepository, PgSuiviRepository,
+    PgTableauBordRepository, PgTraceRepository, PgUtilisateurRepository,
 };
 
 pub mod auth;
@@ -66,6 +67,12 @@ pub struct EtatApplication {
     pub ops: Arc<PgOpsRepository>,
     pub exports: Arc<PgExportRepository>,
     pub reprogrammations: Arc<PgReprogrammationRepository>,
+    /// Suivi géolocalisé du trajet (Story 4.4, FR-019).
+    pub suivis: Arc<PgSuiviRepository>,
+    /// Indicateurs d'exploitation (Story 8.3, FR-040).
+    pub tableau_bord: Arc<PgTableauBordRepository>,
+    /// Revue du contrôle d'entreprise (Story 8.1, FR-038).
+    pub revues_kyc: Arc<PgRevueKycRepository>,
     /// Diffusion temps réel des événements de Mission (Story 4.9).
     pub evenements: crate::evenements::BusEvenements,
     /// Billets d'ouverture de socket, à usage unique et de courte vie.
@@ -145,6 +152,17 @@ pub struct EtatApplication {
         routes::ops::export_tva,
         routes::reprogrammation::proposer_reprogrammation,
         routes::reprogrammation::repondre_reprogrammation,
+        routes::ops::lire_tableau_bord,
+        routes::ops::deconnexion_ops,
+        routes::ops::file_litiges,
+        routes::ops::lire_litige,
+        routes::ops::trancher_route,
+        routes::ops::file_kyc,
+        routes::ops::reviser_kyc,
+        routes::disponibilite::retirer_inscription,
+        routes::suivi_position::consentir_suivi,
+        routes::suivi_position::relever_suivi,
+        routes::suivi_position::consulter_suivi,
         routes::temps_reel::demander_billet,
         routes::temps_reel::suivre_en_direct,
         routes::suivi::suivre_demande,
@@ -210,6 +228,21 @@ pub struct EtatApplication {
         routes::reprogrammation::ReprogrammationDto,
         routes::reprogrammation::ReponseReprogrammationDto,
         routes::reprogrammation::RepriseDto,
+        routes::ops::TableauBordDto,
+        routes::ops::DossierLitigeDto,
+        routes::ops::FileMediationDto,
+        routes::ops::DecisionDto,
+        routes::ops::IssueDto,
+        routes::ops::DossierKycDto,
+        routes::ops::RefusEnAttenteDto,
+        routes::ops::FileKycDto,
+        routes::ops::DecisionKycDto,
+        routes::ops::IssueRevueDto,
+        routes::suivi_position::ConsentementSuiviDto,
+        routes::suivi_position::EtatConsentementDto,
+        routes::suivi_position::PositionDto,
+        routes::suivi_position::ReleveDto,
+        routes::suivi_position::VueSuiviDto,
         routes::temps_reel::BilletDto,
         routes::suivi::SuiviDemandeDto,
         routes::suivi::DemandeProposeeDto,
@@ -279,6 +312,17 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::ops::export_tva)
         .service(routes::reprogrammation::proposer_reprogrammation)
         .service(routes::reprogrammation::repondre_reprogrammation)
+        .service(routes::ops::lire_tableau_bord)
+        .service(routes::ops::deconnexion_ops)
+        .service(routes::ops::file_litiges)
+        .service(routes::ops::lire_litige)
+        .service(routes::ops::trancher_route)
+        .service(routes::ops::file_kyc)
+        .service(routes::ops::reviser_kyc)
+        .service(routes::disponibilite::retirer_inscription)
+        .service(routes::suivi_position::consentir_suivi)
+        .service(routes::suivi_position::relever_suivi)
+        .service(routes::suivi_position::consulter_suivi)
         .service(routes::temps_reel::demander_billet)
         .service(routes::temps_reel::suivre_en_direct)
         .service(routes::suivi::suivre_demande)
@@ -320,7 +364,10 @@ pub fn etat_de_test(
         litiges: Arc::new(PgLitigeRepository::new(pool.clone())),
         ops: Arc::new(PgOpsRepository::new(pool.clone())),
         exports: Arc::new(PgExportRepository::new(pool.clone())),
-        reprogrammations: Arc::new(PgReprogrammationRepository::new(pool)),
+        reprogrammations: Arc::new(PgReprogrammationRepository::new(pool.clone())),
+        suivis: Arc::new(PgSuiviRepository::new(pool.clone())),
+        tableau_bord: Arc::new(PgTableauBordRepository::new(pool.clone())),
+        revues_kyc: Arc::new(PgRevueKycRepository::new(pool)),
         evenements: crate::evenements::BusEvenements::new(),
         billets: Arc::new(crate::billet::BilletsMemoire::new()),
         jetons: Arc::new(

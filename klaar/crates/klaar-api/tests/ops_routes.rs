@@ -60,13 +60,34 @@ fn connexion(email: &str, mot_de_passe: &str, code: &str) -> test::TestRequest {
         }))
 }
 
-/// Les identifiants voyagent en paramètres pour les routes authentifiées.
-fn parametres(compte: &CompteOps, secret: &[u8]) -> String {
+/// Ouvre une session et rend l'en-tête `Authorization` correspondant.
+///
+/// **Les identifiants ne voyagent qu'une fois**, dans le corps du `login`. Les
+/// reprendre à chaque requête, comme le faisait la première version de cette
+/// console, mettrait un mot de passe dans chaque URL de test comme dans chaque
+/// URL de navigateur.
+async fn porteur<S>(app: &S, compte: &CompteOps, secret: &[u8]) -> String
+where
+    S: actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+{
+    let reponse = test::call_service(
+        app,
+        connexion(compte.email.as_str(), MDP, &code(secret)).to_request(),
+    )
+    .await;
+    assert_eq!(
+        reponse.status(),
+        StatusCode::OK,
+        "la connexion d'exploitation doit réussir"
+    );
+    let corps: Value = test::read_body_json(reponse).await;
     format!(
-        "email={}&mot_de_passe={}&code={}",
-        urlencoding(compte.email.as_str()),
-        urlencoding(MDP),
-        code(secret)
+        "Bearer {}",
+        corps["jeton"].as_str().expect("jeton de session")
     )
 }
 
@@ -105,10 +126,8 @@ async fn happy_un_super_admin_cree_un_compte_et_recoit_son_secret() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::post()
-            .uri(&format!(
-                "/api/v1/ops/accounts?{}",
-                parametres(&patron, &secret)
-            ))
+            .uri("/api/v1/ops/accounts")
+            .insert_header(("Authorization", porteur(&app, &patron, &secret).await))
             .set_json(serde_json::json!({
                 "email": nouvelle, "mot_de_passe": MDP, "role": "KYC_REVIEWER"
             }))
@@ -172,10 +191,8 @@ async fn negative_un_role_inconnu_est_refuse_a_la_creation() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::post()
-            .uri(&format!(
-                "/api/v1/ops/accounts?{}",
-                parametres(&patron, &secret)
-            ))
+            .uri("/api/v1/ops/accounts")
+            .insert_header(("Authorization", porteur(&app, &patron, &secret).await))
             .set_json(serde_json::json!({
                 "email": format!("x-{}@klaar.test", Uuid::new_v4()),
                 "mot_de_passe": MDP,
@@ -225,10 +242,8 @@ async fn edge_une_adresse_deja_prise_est_refusee() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::post()
-            .uri(&format!(
-                "/api/v1/ops/accounts?{}",
-                parametres(&patron, &secret)
-            ))
+            .uri("/api/v1/ops/accounts")
+            .insert_header(("Authorization", porteur(&app, &patron, &secret).await))
             .set_json(serde_json::json!({
                 "email": existant.email.as_str(), "mot_de_passe": MDP, "role": "READER"
             }))
@@ -281,10 +296,8 @@ async fn security_un_lecteur_ne_cree_pas_de_compte() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::post()
-            .uri(&format!(
-                "/api/v1/ops/accounts?{}",
-                parametres(&lecteur, &secret)
-            ))
+            .uri("/api/v1/ops/accounts")
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .set_json(serde_json::json!({
                 "email": format!("x-{}@klaar.test", Uuid::new_v4()),
                 "mot_de_passe": MDP,
@@ -310,10 +323,8 @@ async fn security_un_refus_de_droit_est_consigne() {
     test::call_service(
         &app,
         test::TestRequest::post()
-            .uri(&format!(
-                "/api/v1/ops/accounts?{}",
-                parametres(&lecteur, &secret)
-            ))
+            .uri("/api/v1/ops/accounts")
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .set_json(serde_json::json!({
                 "email": format!("x-{}@klaar.test", Uuid::new_v4()),
                 "mot_de_passe": MDP,
@@ -346,10 +357,8 @@ async fn security_la_lecture_du_journal_est_elle_meme_journalisee() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::get()
-            .uri(&format!(
-                "/api/v1/ops/audit?{}",
-                parametres(&lecteur, &secret)
-            ))
+            .uri("/api/v1/ops/audit")
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -374,10 +383,8 @@ async fn security_le_journal_d_exploitation_ne_se_modifie_pas() {
     test::call_service(
         &app,
         test::TestRequest::get()
-            .uri(&format!(
-                "/api/v1/ops/audit?{}",
-                parametres(&lecteur, &secret)
-            ))
+            .uri("/api/v1/ops/audit")
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -466,9 +473,9 @@ async fn happy_l_export_rgpd_rend_les_donnees_du_compte() {
         &app,
         test::TestRequest::get()
             .uri(&format!(
-                "/api/v1/ops/exports/gdpr?{}&utilisateur={utilisateur}",
-                parametres(&lecteur, &secret)
+                "/api/v1/ops/exports/gdpr?utilisateur={utilisateur}"
             ))
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -502,10 +509,10 @@ async fn negative_un_compte_inconnu_n_est_pas_un_export_vide() {
         &app,
         test::TestRequest::get()
             .uri(&format!(
-                "/api/v1/ops/exports/gdpr?{}&utilisateur={}",
-                parametres(&lecteur, &secret),
+                "/api/v1/ops/exports/gdpr?utilisateur={}",
                 Uuid::new_v4()
             ))
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -524,10 +531,8 @@ async fn negative_une_periode_a_l_envers_est_refusee() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::get()
-            .uri(&format!(
-                "/api/v1/ops/exports/vat?{}&debut=2026-12-31T00:00:00Z&fin=2026-01-01T00:00:00Z",
-                parametres(&lecteur, &secret)
-            ))
+            .uri("/api/v1/ops/exports/vat?debut=2026-12-31T00:00:00Z&fin=2026-01-01T00:00:00Z")
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -546,10 +551,8 @@ async fn happy_l_export_tva_rend_un_csv_en_centimes() {
     let reponse = test::call_service(
         &app,
         test::TestRequest::get()
-            .uri(&format!(
-                "/api/v1/ops/exports/vat?{}&debut=2026-01-01T00:00:00Z&fin=2027-01-01T00:00:00Z",
-                parametres(&lecteur, &secret)
-            ))
+            .uri("/api/v1/ops/exports/vat?debut=2026-01-01T00:00:00Z&fin=2027-01-01T00:00:00Z")
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -657,10 +660,8 @@ async fn security_un_export_est_journalise_avant_d_etre_produit() {
     test::call_service(
         &app,
         test::TestRequest::get()
-            .uri(&format!(
-                "/api/v1/ops/exports/gdpr?{}&utilisateur={cible}",
-                parametres(&lecteur, &secret)
-            ))
+            .uri(&format!("/api/v1/ops/exports/gdpr?utilisateur={cible}"))
+            .insert_header(("Authorization", porteur(&app, &lecteur, &secret).await))
             .to_request(),
     )
     .await;
@@ -692,13 +693,203 @@ async fn security_un_mediateur_n_exporte_pas() {
         &app,
         test::TestRequest::get()
             .uri(&format!(
-                "/api/v1/ops/exports/gdpr?{}&utilisateur={}",
-                parametres(&mediateur, &secret),
+                "/api/v1/ops/exports/gdpr?utilisateur={}",
                 Uuid::new_v4()
             ))
+            .insert_header(("Authorization", porteur(&app, &mediateur, &secret).await))
             .to_request(),
     )
     .await;
 
     assert_eq!(reponse.status(), StatusCode::FORBIDDEN);
+}
+
+// === Session d'exploitation (Story 8.3) ===
+
+#[actix_web::test]
+async fn happy_la_connexion_rend_un_jeton_et_son_echeance() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (compte, secret) = ops(&pool, "READER", "session-happy").await;
+
+    let corps: Value = test::call_and_read_body_json(
+        &app,
+        connexion(compte.email.as_str(), MDP, &code(&secret)).to_request(),
+    )
+    .await;
+
+    let jeton = corps["jeton"].as_str().expect("jeton rendu");
+    // 32 octets en base64url sans remplissage : 43 caractères.
+    assert_eq!(jeton.len(), 43, "le jeton doit faire 256 bits");
+    assert!(corps["expire_le"].as_str().unwrap().contains('T'));
+}
+
+#[actix_web::test]
+async fn security_le_jeton_n_est_pas_conserve_en_clair() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (compte, secret) = ops(&pool, "READER", "session-empreinte").await;
+
+    let corps: Value = test::call_and_read_body_json(
+        &app,
+        connexion(compte.email.as_str(), MDP, &code(&secret)).to_request(),
+    )
+    .await;
+    let jeton = corps["jeton"].as_str().unwrap();
+
+    // **La table indexe une empreinte, pas le secret.** Quiconque lit
+    // `session_ops` ne doit pas pouvoir usurper une session d'exploitation, et
+    // c'est précisément la table qu'un attaquant irait lire.
+    let en_clair: i64 = sqlx::query_scalar("SELECT count(*) FROM session_ops WHERE empreinte = $1")
+        .bind(jeton)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        en_clair, 0,
+        "le jeton en clair ne doit indexer aucune ligne"
+    );
+
+    let pour_le_compte: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM session_ops WHERE ops_id = $1")
+            .bind(compte.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        pour_le_compte, 1,
+        "la session existe bien, sous son empreinte"
+    );
+}
+
+#[actix_web::test]
+async fn security_une_session_expiree_ne_donne_plus_rien() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (compte, secret) = ops(&pool, "READER", "session-expiree").await;
+    let entete = porteur(&app, &compte, &secret).await;
+
+    // Le temps est avancé par la base plutôt qu'attendu : trente minutes de
+    // sommeil dans une suite de tests seraient trente minutes perdues à chaque
+    // exécution.
+    // La date de création recule avec l'échéance : la contrainte de V30 refuse
+    // une session qui expirerait avant d'être née, et c'est une bonne chose.
+    sqlx::query(
+        "UPDATE session_ops
+            SET cree_le = now() - interval '31 minutes',
+                expire_le = now() - interval '1 minute'
+          WHERE ops_id = $1",
+    )
+    .bind(compte.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/v1/ops/audit")
+            .insert_header(("Authorization", entete))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(reponse.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[actix_web::test]
+async fn happy_la_deconnexion_ferme_la_session() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (compte, secret) = ops(&pool, "READER", "session-fin").await;
+    let entete = porteur(&app, &compte, &secret).await;
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/ops/logout")
+            .insert_header(("Authorization", entete.clone()))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(reponse.status(), StatusCode::NO_CONTENT);
+
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/v1/ops/audit")
+            .insert_header(("Authorization", entete.clone()))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(reponse.status(), StatusCode::UNAUTHORIZED);
+
+    // Idempotent : refermer une session close est le résultat attendu, pas une
+    // erreur. Répondre 404 dirait à qui présente un jeton au hasard s'il en a
+    // trouvé un vrai.
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/v1/ops/logout")
+            .insert_header(("Authorization", entete))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(reponse.status(), StatusCode::NO_CONTENT);
+}
+
+#[actix_web::test]
+async fn negative_un_jeton_invente_est_refuse_comme_un_jeton_absent() {
+    let pool = pool().await;
+    let app = bac!(pool);
+
+    let mut codes = Vec::new();
+    for entete in [
+        None,
+        Some("Bearer ".to_string()),
+        Some("Bearer pas-un-jeton".to_string()),
+        // Sans le préfixe : un jeton nu ne doit pas passer non plus.
+        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()),
+    ] {
+        let mut requete = test::TestRequest::get().uri("/api/v1/ops/audit");
+        if let Some(v) = entete {
+            requete = requete.insert_header(("Authorization", v));
+        }
+        let reponse = test::call_service(&app, requete.to_request()).await;
+        codes.push(reponse.status());
+    }
+
+    // **Le même refus pour tous.** Distinguer « absent » de « inconnu » de
+    // « expiré » apprendrait à qui essaie s'il a mis la main sur quelque chose
+    // de réel.
+    assert!(
+        codes.iter().all(|c| *c == StatusCode::UNAUTHORIZED),
+        "toutes les formes de jeton invalide doivent donner le même refus : {codes:?}"
+    );
+}
+
+#[actix_web::test]
+async fn security_les_identifiants_ne_passent_plus_par_l_url() {
+    let pool = pool().await;
+    let app = bac!(pool);
+    let (compte, secret) = ops(&pool, "READER", "plus-d-url").await;
+
+    // L'ancienne forme, celle qui mettait un mot de passe dans la barre
+    // d'adresse. Elle doit être refusée, et non ignorée en silence.
+    let reponse = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&format!(
+                "/api/v1/ops/audit?email={}&mot_de_passe={}&code={}",
+                urlencoding(compte.email.as_str()),
+                urlencoding(MDP),
+                code(&secret)
+            ))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(
+        reponse.status(),
+        StatusCode::UNAUTHORIZED,
+        "les identifiants en paramètres d'URL ne doivent plus ouvrir quoi que ce soit"
+    );
 }

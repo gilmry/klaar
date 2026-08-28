@@ -18,6 +18,7 @@
    */
   import { onMount, onDestroy } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
+  import { restaurerLangue, t } from "../lib/i18n";
   import { restaurerSession } from "../lib/connexion";
   import { ouvrirFlux } from "../lib/tempsReel";
   import Conversation from "./Conversation.svelte";
@@ -49,7 +50,10 @@
     RECIT_MIN_CARACTERES,
     refuserDevis,
     suivreDemande,
+    suivreTrajet,
+    libelleTrajet,
     validerMission,
+    type TrajetSuivi,
     type SuiviDemande,
   } from "../lib/demande";
 
@@ -74,6 +78,7 @@
   let recitLitige = $state("");
   let litigeOuvert = $state(false);
   let locale = $state<LocaleKlaar>("fr");
+  let trajet = $state<TrajetSuivi | null>(null);
   let minuterie: ReturnType<typeof setInterval> | null = null;
 
   /** Cadence du sondage seul, et cadence quand la socket vit (Story 4.9). */
@@ -85,7 +90,7 @@
   let socketOuverte = $state(false);
 
   onMount(async () => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
     id = new URLSearchParams(location.search).get("id") ?? "";
     if (!id) {
       reprise = false;
@@ -146,6 +151,7 @@
     try {
       suivi = await suivreDemande(id);
       suivreEnDirect(suivi.mission_id);
+      await rafraichirTrajet();
       // Une Demande close ne bouge plus : arrêter le sondage évite de
       // continuer à interroger le serveur pour rien.
       if (suivi.statut === "MATCHED" && suivi.mission_statut === "COMPLETED") arreter();
@@ -153,6 +159,26 @@
     } catch (e) {
       erreur = messageErreur(locale, codeDepuisErreur(e));
       arreter();
+    }
+  }
+
+  /**
+   * Lit le trajet, et seulement pendant le trajet (FR-019).
+   *
+   * **L'échec est silencieux.** Une position indisponible n'est pas une panne
+   * de la page : afficher une erreur rouge parce qu'un GPS n'a rien renvoyé
+   * ferait douter d'une intervention qui se passe bien. L'état `POSITION_LOST`
+   * dit déjà ce qu'il faut.
+   */
+  async function rafraichirTrajet() {
+    if (!suivi?.mission_id || suivi.mission_statut !== "PROVIDER_EN_ROUTE") {
+      trajet = null;
+      return;
+    }
+    try {
+      trajet = await suivreTrajet(suivi.mission_id);
+    } catch {
+      trajet = null;
     }
   }
 
@@ -312,6 +338,20 @@
     <p role="status" data-suivi-etat>{etat}</p>
     {#if intervention}
       <p data-suivi-intervention>{intervention}</p>
+    {/if}
+    {#if trajet}
+      <p data-suivi-trajet={trajet.etat} class="klaar-tempere">
+        {libelleTrajet(trajet.etat, locale)}
+        <!--
+          La position est rendue en clair plutôt que sur une carte : la maille
+          de cinquante mètres appliquée par le serveur rend un point sur un plan
+          plus précis qu'il n'est, et une carte donnerait à croire à un pointé
+          au mètre. Une carte viendra, avec un cercle et non un point.
+        -->
+        {#if trajet.position}
+          <span data-suivi-position>({trajet.position.lat.toFixed(3)}, {trajet.position.lon.toFixed(3)}, {t(locale, "trajet.precision")})</span>
+        {/if}
+      </p>
     {/if}
     <p class="klaar-tempere">
       {suivi.secteur} · zone de {(suivi.rayon_metres / 1000).toFixed(0)} km{#if suivi.elargissements > 0}, élargie {suivi.elargissements} fois sur 3{/if}

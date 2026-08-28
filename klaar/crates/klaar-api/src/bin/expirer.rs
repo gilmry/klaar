@@ -1,8 +1,10 @@
 //! Éteint les tours de diffusion écoulés (Story 3.6, FR-015), les devis sans
-//! réponse (Story 4.1, FR-016 `@edge`), et valide les interventions terminées
-//! depuis plus de soixante-douze heures (Story 4.6, FR-021 `@edge`).
+//! réponse (Story 4.1, FR-016 `@edge`), valide les interventions terminées
+//! depuis plus de soixante-douze heures (Story 4.6, FR-021 `@edge`), et purge
+//! les traces de géolocalisation de plus de vingt-quatre heures (Story 4.4,
+//! FR-019 `@security`).
 //!
-//! **Un seul binaire pour les trois.** Ce sont des balayages indépendants, mais
+//! **Un seul binaire pour les quatre.** Ce sont des balayages indépendants, mais
 //! les lancer séparément doublerait la configuration, la surveillance et les
 //! occasions d'en oublier un. Un échec de l'un n'empêche pas l'autre : les
 //! demandeurs n'ont pas à attendre parce qu'un devis n'a pas pu s'éteindre.
@@ -32,12 +34,13 @@ use std::sync::Arc;
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_application::usecases::expirer::expirer_les_tours;
 use klaar_application::usecases::expirer_devis::expirer_les_devis;
+use klaar_application::usecases::suivre_position::purger_les_traces;
 use klaar_application::usecases::valider_mission::valider_les_echues;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_shared_kernel::Locale;
 use klaar_sqlx_repos::{
     creer_pool, PgDemandeRepository, PgDevisRepository, PgLiberationRepository,
-    PgProviderRepository, PgPushSubscriptionRepository,
+    PgProviderRepository, PgPushSubscriptionRepository, PgSuiviRepository,
 };
 
 #[tokio::main]
@@ -86,6 +89,7 @@ async fn main() -> ExitCode {
     let devis = PgDevisRepository::new(pool.clone());
     let prestataires = PgProviderRepository::new(pool.clone());
     let liberations = PgLiberationRepository::new(pool.clone());
+    let suivis = PgSuiviRepository::new(pool.clone());
     let abonnements = PgPushSubscriptionRepository::new(pool);
 
     // Les devis d'abord, et sans que leur sort n'engage celui des tours : les
@@ -131,6 +135,22 @@ async fn main() -> ExitCode {
         }
         Ok(_) => {}
         Err(e) => tracing::error!(erreur = %e, "balayage des validations interrompu"),
+    }
+
+    // La purge des traces de trajet (FR-019 `@security`). Vingt-quatre heures
+    // après la fin, il ne reste que la distance et la durée : de quoi régler un
+    // litige sur un déplacement, rien de quoi reconstituer une journée.
+    //
+    // **Ce balayage est le seul qui efface.** Un échec ici laisse des positions
+    // au-delà du délai annoncé, ce qui est un manquement et pas seulement un
+    // retard ; il est donc journalisé en erreur, comme les autres, mais mérite
+    // une alerte côté exploitation.
+    match purger_les_traces(&suivis, &HorlogeSysteme).await {
+        Ok(purgees) if purgees > 0 => {
+            tracing::info!(purgees, "traces de géolocalisation purgées");
+        }
+        Ok(_) => {}
+        Err(e) => tracing::error!(erreur = %e, "purge des traces interrompue"),
     }
 
     match expirer_les_tours(

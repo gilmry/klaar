@@ -4,6 +4,7 @@
 import { ApiError, OfflineError, request } from "./api";
 import { jetonAcces } from "./connexion";
 import type { LocaleKlaar } from "./inscription";
+import { t } from "./i18n";
 
 export type UrgenceKlaar = "LOW" | "NORMAL" | "HIGH";
 
@@ -540,4 +541,54 @@ export async function ouvrirLitige(
     body: { motif, description },
     headers: autorisationSuivi(),
   });
+}
+
+/**
+ * État du trajet, tel que le demandeur le voit (Story 4.4, FR-019).
+ *
+ * `POSITION_LOST` ne veut pas dire « panne » : le prestataire peut n'avoir pas
+ * consenti au partage, ou traverser un tunnel. L'écran doit distinguer les deux
+ * pour ne pas faire croire à un problème là où il n'y a qu'un droit exercé.
+ */
+export type EtatSuivi = "EN_ROUTE" | "POSITION_LOST" | "OUT_OF_ZONE" | "STOPPED";
+
+export interface TrajetSuivi {
+  etat: EtatSuivi;
+  /**
+   * Dernière position connue, **déjà dégradée à cinquante mètres par le
+   * serveur**. Le front n'a rien à arrondir : la maille est appliquée à
+   * l'écriture, pas à l'affichage.
+   */
+  position: { lat: number; lon: number } | null;
+  relevee_le: string | null;
+  /** Délai au-delà duquel le serveur déclare la position perdue. */
+  perte_apres_secondes: number;
+}
+
+/** Lit où en est le prestataire pendant le trajet (FR-019). */
+export async function suivreTrajet(missionId: string): Promise<TrajetSuivi> {
+  return request(`/missions/${missionId}/tracking`, {
+    headers: autorisationSuivi(),
+  });
+}
+
+/**
+ * Ce que l'écran dit du trajet (FR-019).
+ *
+ * **`POSITION_LOST` ne dit pas « panne ».** Le prestataire peut n'avoir pas
+ * consenti au partage, ou traverser un tunnel. Annoncer une erreur dans ce cas
+ * ferait douter d'une intervention qui se déroule normalement, et pousserait à
+ * appeler pour rien.
+ */
+export function libelleTrajet(etat: EtatSuivi, locale: LocaleKlaar = "fr"): string {
+  switch (etat) {
+    case "EN_ROUTE":
+      return t(locale, "trajet.en_route");
+    case "OUT_OF_ZONE":
+      return t(locale, "trajet.hors_zone");
+    case "POSITION_LOST":
+      return t(locale, "trajet.perdue");
+    case "STOPPED":
+      return t(locale, "trajet.arrete");
+  }
 }

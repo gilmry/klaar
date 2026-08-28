@@ -6,9 +6,9 @@ use uuid::Uuid;
 
 use klaar_application::ports::erreurs::RepositoryError;
 use klaar_application::ports::litige_repository::{
-    ContexteLitige, LitigeRepository, ResultatOuverture,
+    ContexteLitige, DossierLitige, LitigeRepository, ResultatOuverture,
 };
-use klaar_trust::{Litige, MotifLitige, PartieLitige, StatutLitige};
+use klaar_trust::{Issue, Litige, MotifLitige, PartieLitige, StatutLitige};
 
 use crate::erreur;
 use crate::pool::PoolPg;
@@ -158,4 +158,86 @@ impl LitigeRepository for PgLitigeRepository {
         .map_err(erreur)?;
         Ok(ligne.get("total"))
     }
+
+    async fn ouverts(&self, limite: i64) -> Result<Vec<DossierLitige>, RepositoryError> {
+        // Du plus ancien au plus récent : c'est celui qui approche des trente
+        // jours qui doit remonter en premier, pas le dernier arrivé.
+        let lignes = sqlx::query(&format!(
+            "SELECT {COLONNES_DOSSIER} FROM litige l
+             LEFT JOIN devis q ON q.mission_id = l.mission_id AND q.statut = 'ACCEPTED'
+             WHERE l.statut = 'OPENED'
+             ORDER BY l.ouvert_le ASC
+             LIMIT $1"
+        ))
+        .bind(limite)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(erreur)?;
+
+        lignes.iter().map(dossier_depuis_ligne).collect()
+    }
+
+    async fn dossier(&self, litige_id: Uuid) -> Result<Option<DossierLitige>, RepositoryError> {
+        let ligne = sqlx::query(&format!(
+            "SELECT {COLONNES_DOSSIER} FROM litige l
+             LEFT JOIN devis q ON q.mission_id = l.mission_id AND q.statut = 'ACCEPTED'
+             WHERE l.id = $1"
+        ))
+        .bind(litige_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+        ligne.as_ref().map(dossier_depuis_ligne).transpose()
+    }
+
+    async fn trancher(
+        &self,
+        litige_id: Uuid,
+        issue: Issue,
+        ops_id: Uuid,
+        tranche_le: DateTime<Utc>,
+    ) -> Result<Option<Litige>, RepositoryError> {
+        // **Compare-and-swap sur le statut.** Deux médiateurs qui ouvrent le
+        // même dossier ne doivent pas produire deux décisions ; le second
+        // obtient `None` et voit que l'affaire est réglée. Lire puis écrire
+        // laisserait passer les deux, et le second remboursement partirait sans
+        // que personne ne s'en aperçoive.
+        let ligne = sqlx::query(&format!(
+            "UPDATE litige
+                SET statut = $2, tranche_le = $3, tranche_par = $4, remboursement_cents = $5
+              WHERE id = $1 AND statut = 'OPENED'
+          RETURNING {COLONNES}"
+        ))
+        .bind(litige_id)
+        .bind(issue.statut.as_str())
+        .bind(tranche_le)
+        .bind(ops_id)
+        .bind(issue.remboursement_cents)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+
+        ligne.as_ref().map(depuis_ligne).transpose()
+    }
+}
+
+/// Les colonnes d'un dossier de médiation. Le montant vient du devis accepté,
+/// s'il y en a un : un litige peut naître d'un travail jamais commencé.
+const COLONNES_DOSSIER: &str = "l.id, l.mission_id, l.partie, l.motif, l.description,
+     l.ouvert_le, COALESCE(q.total_ttc_cents, 0) AS total_ttc_cents";
+
+fn dossier_depuis_ligne(ligne: &sqlx::postgres::PgRow) -> Result<DossierLitige, RepositoryError> {
+    let partie: String = ligne.get("partie");
+    let motif: String = ligne.get("motif");
+    Ok(DossierLitige {
+        id: ligne.get("id"),
+        mission_id: ligne.get("mission_id"),
+        partie: PartieLitige::parse(&partie)
+            .ok_or_else(|| RepositoryError::Contrainte(format!("partie inconnue : {partie}")))?,
+        motif: MotifLitige::parse(&motif)
+            .ok_or_else(|| RepositoryError::Contrainte(format!("motif inconnu : {motif}")))?,
+        description: ligne.get("description"),
+        ouvert_le: ligne.get("ouvert_le"),
+        total_ttc_cents: ligne.get("total_ttc_cents"),
+    })
 }

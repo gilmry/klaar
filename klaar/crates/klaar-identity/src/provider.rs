@@ -37,6 +37,20 @@ pub enum StatutProvider {
     /// Écarté du matching sans être effacé : contrôle échu, incident, ou
     /// suspension à sa propre demande.
     Suspendu,
+    /// Contrôle refusé par l'exploitation (FR-038).
+    ///
+    /// **Distinct de `Suspendu`.** Un suspendu a été actif et pourra l'être à
+    /// nouveau ; un refusé n'est jamais entré. Les confondre ferait apparaître
+    /// dans les statistiques de sanction des entreprises qui n'ont jamais
+    /// travaillé.
+    Refuse,
+    /// L'entreprise a retiré sa demande d'inscription avant décision
+    /// (FR-038 `@edge`).
+    ///
+    /// **Ce n'est pas un refus.** Personne n'a rien jugé : lui donner le statut
+    /// « refusé » inscrirait dans son dossier une décision qui n'a pas été
+    /// prise.
+    Retire,
 }
 
 impl StatutProvider {
@@ -45,6 +59,8 @@ impl StatutProvider {
             Self::EnAttenteKyc => "PENDING_KYC",
             Self::Actif => "ACTIVE",
             Self::Suspendu => "SUSPENDED",
+            Self::Refuse => "REJECTED",
+            Self::Retire => "WITHDRAWN",
         }
     }
 
@@ -53,6 +69,8 @@ impl StatutProvider {
             "PENDING_KYC" => Some(Self::EnAttenteKyc),
             "ACTIVE" => Some(Self::Actif),
             "SUSPENDED" => Some(Self::Suspendu),
+            "REJECTED" => Some(Self::Refuse),
+            "WITHDRAWN" => Some(Self::Retire),
             _ => None,
         }
     }
@@ -74,6 +92,13 @@ pub struct PreuveKyc {
 pub enum OrigineKyc {
     /// Contrôle réel auprès de la Banque-Carrefour des Entreprises.
     Bce,
+    /// Un humain de l'exploitation a examiné les pièces (FR-038).
+    ///
+    /// **Ce n'est pas la BCE.** L'origine le dit, plutôt que de faire passer
+    /// une lecture de documents pour une interrogation de registre : le jour où
+    /// l'adaptateur BCE existera, la différence devra rester lisible dans les
+    /// dossiers déjà validés.
+    RevueOps,
     /// Aucun contrôle. Réservé aux jeux de démonstration, et conservé en base
     /// pour qu'un prestataire non contrôlé reste identifiable après coup.
     Demonstration,
@@ -83,6 +108,7 @@ impl OrigineKyc {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Bce => "BCE",
+            Self::RevueOps => "OPS_REVIEW",
             Self::Demonstration => "DEMONSTRATION",
         }
     }
@@ -90,6 +116,7 @@ impl OrigineKyc {
     pub fn parse(valeur: &str) -> Option<Self> {
         match valeur {
             "BCE" => Some(Self::Bce),
+            "OPS_REVIEW" => Some(Self::RevueOps),
             "DEMONSTRATION" => Some(Self::Demonstration),
             _ => None,
         }
@@ -105,6 +132,18 @@ impl PreuveKyc {
     pub fn depuis_verification_bce(verifie_le: DateTime<Utc>) -> Self {
         Self {
             origine: OrigineKyc::Bce,
+            verifie_le,
+        }
+    }
+
+    /// Preuve d'un examen par l'exploitation (FR-038).
+    ///
+    /// **Un humain a lu les pièces.** C'est moins qu'une interrogation de la
+    /// BCE et bien plus que rien ; l'origine le dit, et les dossiers validés
+    /// ainsi resteront distinguables quand l'adaptateur BCE arrivera.
+    pub fn depuis_revue_ops(verifie_le: DateTime<Utc>) -> Self {
+        Self {
+            origine: OrigineKyc::RevueOps,
             verifie_le,
         }
     }

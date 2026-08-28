@@ -13,6 +13,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
+  import { restaurerLangue } from "../lib/i18n";
   import {
     codeDepuisErreur,
     messageErreur,
@@ -30,7 +31,7 @@
   let locale = $state<LocaleKlaar>("fr");
 
   onMount(async () => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
     connecte = await restaurerSession();
     reprise = false;
   });

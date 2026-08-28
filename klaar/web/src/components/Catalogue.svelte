@@ -8,6 +8,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
+  import { restaurerLangue } from "../lib/i18n";
   import {
     chargerCatalogue,
     codeDepuisErreur,
@@ -23,7 +24,7 @@
   let locale = $state<LocaleKlaar>("fr");
 
   onMount(async () => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
     try {
       const catalogue = await chargerCatalogue(locale);
       secteurs = catalogue.secteurs;

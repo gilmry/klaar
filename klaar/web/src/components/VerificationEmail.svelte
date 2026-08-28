@@ -13,6 +13,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
+  import { restaurerLangue } from "../lib/i18n";
   import { codeDepuisErreur, jetonDepuisUrl, messageErreur, messageSucces, verifier } from "../lib/verification";
 
   type Etat = "en-cours" | "confirme" | "echec";
@@ -22,7 +23,7 @@
   let locale = $state<LocaleKlaar>("fr");
 
   onMount(async () => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
     const jeton = jetonDepuisUrl(window.location.href);
 
     if (jeton) {

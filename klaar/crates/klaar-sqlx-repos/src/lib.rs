@@ -19,7 +19,10 @@ mod pool;
 mod provider;
 mod push_subscription;
 mod reprogrammation;
+mod revue_kyc;
 mod session;
+mod suivi;
+mod tableau_bord;
 mod trace;
 mod utilisateur;
 
@@ -39,7 +42,10 @@ pub use pool::{creer_pool, PoolPg};
 pub use provider::PgProviderRepository;
 pub use push_subscription::PgPushSubscriptionRepository;
 pub use reprogrammation::PgReprogrammationRepository;
+pub use revue_kyc::PgRevueKycRepository;
 pub use session::PgSessionRepository;
+pub use suivi::PgSuiviRepository;
+pub use tableau_bord::PgTableauBordRepository;
 pub use trace::PgTraceRepository;
 pub use utilisateur::PgUtilisateurRepository;
 

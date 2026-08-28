@@ -1,0 +1,20 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+import ConsoleOps from "../components/ConsoleOps.svelte";
+---
+
+<AppLayout
+  titre="Klaar — console d'exploitation"
+  description="Indicateurs agrégés de la plateforme, réservés à l'exploitation."
+>
+  <h1>Console d'exploitation</h1>
+
+  <p class="klaar-tempere">
+    Cette console ne montre que des agrégats. Elle ne donne accès à aucun
+    dossier nominatif : les consultations de dossiers passent par des routes qui
+    enregistrent qui a regardé quoi, et c'est une garantie qu'un tableau de bord
+    ne doit pas contourner.
+  </p>
+
+  <ConsoleOps client:load />
+</AppLayout>

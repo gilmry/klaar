@@ -28,6 +28,7 @@ use crate::ports::erreurs::RepositoryError;
 use crate::ports::horloge::Horloge;
 use crate::ports::mission_repository::MissionRepository;
 use crate::ports::provider_repository::ProviderRepository;
+use crate::ports::suivi_repository::SuiviRepository;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErreurConsultation {
@@ -172,6 +173,13 @@ pub struct VueMission {
     /// perdre la Mission, et non après. Zéro signifie qu'un nouvel envoi
     /// l'annulera.
     pub devis_restants: usize,
+    /// Le partage de position est consenti et non retiré (FR-019).
+    ///
+    /// Rendu ici plutôt que deviné par l'interface : sans ce champ, un
+    /// prestataire qui recharge sa page en cours de trajet verrait un bouton
+    /// « partager » alors qu'il partage déjà, et l'écran mentirait sur ce qui
+    /// se passe.
+    pub suivi_consenti: bool,
 }
 
 /// Lit une Demande pour son auteur.
@@ -274,13 +282,24 @@ where
         .collect())
 }
 
+/// Les dépôts dont la vue prestataire a besoin, groupés.
+///
+/// Six références du même genre en paramètres nus s'échangent sans que rien ne
+/// s'en aperçoive : ce sont des paramètres génériques distincts, donc
+/// interchangeables du point de vue de la signature. Les nommer coûte une
+/// structure et supprime la classe d'erreur.
+pub struct DepotsMission<'a, P, M, D, Q, S, H> {
+    pub prestataires: &'a P,
+    pub missions: &'a M,
+    pub demandes: &'a D,
+    pub devis_repo: &'a Q,
+    pub suivis: &'a S,
+    pub horloge: &'a H,
+}
+
 /// Lit une Mission pour le prestataire à qui elle est attribuée.
-pub async fn mission_du_prestataire<P, M, D, Q, H>(
-    prestataires: &P,
-    missions: &M,
-    demandes: &D,
-    devis_repo: &Q,
-    horloge: &H,
+pub async fn mission_du_prestataire<P, M, D, Q, S, H>(
+    depots: DepotsMission<'_, P, M, D, Q, S, H>,
     utilisateur_id: Uuid,
     mission_id: Uuid,
 ) -> Result<VueMission, ErreurConsultation>
@@ -289,8 +308,17 @@ where
     M: MissionRepository,
     D: DemandeRepository,
     Q: DevisRepository,
+    S: SuiviRepository,
     H: Horloge,
 {
+    let DepotsMission {
+        prestataires,
+        missions,
+        demandes,
+        devis_repo,
+        suivis,
+        horloge,
+    } = depots;
     let provider = prestataires
         .par_utilisateur_id(utilisateur_id)
         .await?
@@ -336,5 +364,6 @@ where
             .collect(),
         devis,
         devis_restants: DEVIS_MAX_PAR_MISSION.saturating_sub(deja_envoyes),
+        suivi_consenti: suivis.consenti(mission.id).await?,
     })
 }

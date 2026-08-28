@@ -47,6 +47,8 @@ pub enum Permission {
     LeverLiberation,
     /// Créer, désactiver et réactiver des comptes d'exploitation.
     GererOps,
+    /// Consulter les indicateurs agrégés (FR-040).
+    LireTableauBord,
 }
 
 impl Permission {
@@ -58,6 +60,7 @@ impl Permission {
             Self::TrancherLitige => "DISPUTE_RESOLVE",
             Self::LeverLiberation => "RELEASE_APPROVE",
             Self::GererOps => "OPS_MANAGE",
+            Self::LireTableauBord => "DASHBOARD_READ",
         }
     }
 }
@@ -124,6 +127,7 @@ impl RoleOps {
 
             (Self::ReviseurKyc, Permission::ReviserKyc) => true,
             (Self::ReviseurKyc, Permission::LireAudit) => true,
+            (Self::ReviseurKyc, Permission::LireTableauBord) => true,
             (
                 Self::ReviseurKyc,
                 Permission::ExporterAudit
@@ -134,6 +138,7 @@ impl RoleOps {
 
             (Self::Mediateur, Permission::TrancherLitige | Permission::LeverLiberation) => true,
             (Self::Mediateur, Permission::LireAudit) => true,
+            (Self::Mediateur, Permission::LireTableauBord) => true,
             (
                 Self::Mediateur,
                 Permission::ExporterAudit | Permission::ReviserKyc | Permission::GererOps,
@@ -142,6 +147,12 @@ impl RoleOps {
             // Le lecteur lit, et exporte ce qu'il lit : un export est une
             // lecture mise en forme, pas un pouvoir de plus.
             (Self::Lecteur, Permission::LireAudit | Permission::ExporterAudit) => true,
+            // **Le tableau de bord est ouvert aux quatre rôles.** Il ne porte
+            // que des agrégats anonymisés, et refuser à un réviseur KYC de
+            // savoir combien de contrôles attendent l'obligerait à demander le
+            // chiffre à quelqu'un qui a plus de droits que lui. Restreindre ici
+            // déplacerait le privilège au lieu de le réduire.
+            (Self::Lecteur, Permission::LireTableauBord) => true,
             (
                 Self::Lecteur,
                 Permission::ReviserKyc

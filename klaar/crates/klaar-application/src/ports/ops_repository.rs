@@ -16,6 +16,13 @@ pub struct GesteOps {
     pub fait_le: DateTime<Utc>,
 }
 
+/// Une session d'exploitation ouverte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionOps {
+    pub ops_id: Uuid,
+    pub expire_le: DateTime<Utc>,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait OpsRepository {
     /// Crée un compte. Rend `false` si l'adresse est déjà prise.
@@ -49,6 +56,37 @@ pub trait OpsRepository {
     ///
     /// Rend le nombre de comptes désactivés.
     async fn revoquer_les_inactifs(&self, avant: DateTime<Utc>) -> Result<u64, RepositoryError>;
+
+    /// Ouvre une session pour ce compte.
+    ///
+    /// L'appelant fournit l'**empreinte** du jeton, jamais le jeton : le dépôt
+    /// n'a pas à connaître le secret qu'il indexe.
+    async fn ouvrir_session(
+        &self,
+        empreinte: &str,
+        ops_id: Uuid,
+        cree_le: DateTime<Utc>,
+        expire_le: DateTime<Utc>,
+    ) -> Result<(), RepositoryError>;
+
+    /// Rend la session si elle est vivante à `maintenant`.
+    ///
+    /// **La péremption est vérifiée par la base, pas par l'appelant.** Une
+    /// comparaison faite au-dessus laisserait passer une session expirée le jour
+    /// où quelqu'un oublie de la faire.
+    async fn session(
+        &self,
+        empreinte: &str,
+        maintenant: DateTime<Utc>,
+    ) -> Result<Option<SessionOps>, RepositoryError>;
+
+    /// Révoque une session. Rend `false` si elle n'existait pas ou était déjà
+    /// close.
+    async fn revoquer_session(
+        &self,
+        empreinte: &str,
+        maintenant: DateTime<Utc>,
+    ) -> Result<bool, RepositoryError>;
 
     /// Consigne un geste d'exploitation (FR-042).
     async fn consigner(&self, geste: &GesteOps) -> Result<(), RepositoryError>;

@@ -9,6 +9,7 @@
 mod annulation;
 mod mission;
 mod reprogrammation;
+mod suivi;
 
 pub use annulation::{
     AnnulationError, AnnulationMission, AuteurAnnulation, ConsequenceAnnulation,
@@ -22,4 +23,8 @@ pub use mission::{
 pub use reprogrammation::{
     echeance_reprogrammation, Reprogrammation, ReprogrammationError, StatutReprogrammation,
     FENETRE_REPROGRAMMATION_JOURS,
+};
+pub use suivi::{
+    degrader, echeance_purge, etat as etat_suivi, relever, EtatSuivi, PositionSuivie, SuiviError,
+    PAS_LATITUDE, PAS_LONGITUDE, PERTE_POSITION_SECONDES, PRECISION_METRES, PURGE_HEURES,
 };

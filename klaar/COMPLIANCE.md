@@ -181,6 +181,137 @@ sonner à sa porte est le minimum. Rien d'autre du prestataire ne lui est expos�
 que la Demande est close. Le temps réel appartient au WebSocket de FR-018, non
 livré.
 
+## Médiation et contrôle d'entreprise (Stories 7.4 et 8.1, FR-036, FR-038)
+
+**Une décision de médiation est définitive, et la base le grave.** Le
+déclencheur refuse de retrancher un litige clos, même en SQL direct. Rouvrir
+permettrait de revenir sur un remboursement déjà annoncé, et viderait la
+première décision de sa valeur pour celui qu'elle a débouté. Le recours
+au-delà est judiciaire, et l'écran le dit avant que le geste soit posé.
+
+**Deux médiateurs sur le même dossier ne produisent qu'une décision.** Le
+compare-and-swap sur le statut ferme la course. Lire puis écrire laisserait les
+deux passer, et un second remboursement partirait sans trace de délibération.
+
+**Aucun mouvement d'argent n'est exécuté**, et l'API le rend explicitement
+(`execute: false`). Le séquestre est chez Stripe, non provisionné : l'écran
+écrit « montants à verser », jamais « remboursé ». Annoncer un virement qui ne
+vient pas transforme un litige tranché en second litige.
+
+**La règle des quatre yeux porte sur le refus, pas sur la validation** (FR-038).
+Une validation trop généreuse se corrige par une suspension au premier
+incident ; un refus injuste ne se corrige pas, l'entreprise est déjà partie.
+Exiger deux examinateurs pour valider doublerait le délai d'entrée de chaque
+entreprise honnête pour se prémunir d'un risque déjà couvert.
+
+**Un refus proposé ne produit aucun effet** tant qu'un autre compte n'a pas
+confirmé, et la contrainte de base refuse qu'on confirme le sien : ce ne serait
+pas une seconde paire d'yeux, ce serait un second clic.
+
+**Un refus sans motif n'existe pas** : vingt caractères au moins, parce qu'une
+entreprise refusée doit pouvoir savoir ce qu'on lui reproche, sans quoi elle ne
+peut ni corriger ni contester. Un motif passé avec une **validation** est refusé
+et non ignoré — l'ignorer laisserait son auteur croire qu'il a été consigné.
+
+**Refusée, suspendue et retirée sont trois états distincts.** Un suspendu a été
+actif ; un refusé n'est jamais entré ; une entreprise retirée n'a été jugée par
+personne. Les confondre ferait apparaître dans les statistiques de sanction des
+entreprises qui n'ont jamais travaillé, ou inscrirait au dossier de quelqu'un
+qui s'est ravisé une décision que personne n'a prise.
+
+**L'origine du contrôle dit ce qu'elle vaut.** `OPS_REVIEW` signifie qu'un
+humain a lu les pièces — ni la BCE, ni rien. Le jour où l'adaptateur BCE
+existera, les dossiers validés à la main resteront distinguables.
+
+**Chaque consultation et chaque refus d'accès sont journalisés**, y compris la
+simple lecture d'une file de dossiers : savoir qui regarde, et pas seulement qui
+décide, est ce qu'un audit vient chercher.
+
+## Session d'exploitation (Story 8.3, FR-040, FR-041)
+
+**Les identifiants d'exploitation ne circulent plus qu'une fois.** La première
+version de la console les reprenait à chaque requête en **paramètres d'URL** :
+un mot de passe et un code TOTP dans la barre d'adresse, l'historique du
+navigateur, l'en-tête `Referer` et les journaux d'accès du serveur. Le
+`POST /ops/login` les prend désormais dans un corps de requête et rend un jeton
+porteur ; l'ancienne forme est **retirée**, et un test vérifie qu'elle ne donne
+plus rien. Une forme dépréciée mais encore acceptée resterait le chemin qu'un
+outil ancien continuerait d'emprunter.
+
+**Trente minutes, sans prolongation.** Une session d'exploitation ouvre des
+dossiers nominatifs et des décisions sur l'argent d'autrui ; celle qui se
+renouvelle à chaque clic finit ouverte toute la journée sur un poste partagé.
+
+**La révocation d'un compte ferme ses sessions immédiatement.** La condition
+`compte_ops.actif` est dans la requête qui lit la session, pas dans un balayage
+périodique : un compte désactivé perd ses accès à la requête suivante, pas à
+l'expiration de son jeton.
+
+**Le jeton n'est conservé nulle part.** Côté serveur, seule son empreinte
+SHA-256 est écrite — quiconque lit `session_ops` ne peut pas usurper de session,
+et c'est précisément la table qu'un attaquant irait lire. Côté navigateur, il
+vit en mémoire de page : ni `localStorage`, ni `sessionStorage`, ni cookie. Il
+survivrait sinon à la fermeture de l'onglet et resterait lisible par tout script
+injecté.
+
+**Le tableau de bord ne porte que des agrégats.** Aucun identifiant, aucune
+adresse, aucun UUID : un test le vérifie sur le corps brut de la réponse. Un
+tableau de bord nominatif deviendrait un moyen commode de consulter des dossiers
+sans passer par les routes qui enregistrent qui a regardé quoi. Chaque
+consultation est elle-même journalisée, refus compris.
+
+**La mesure porte le nom de ce qu'elle mesure.** FR-040 demande le NPS ; le
+produit ne pose jamais la question « recommanderiez-vous ». Le tableau rend une
+**note moyenne avec son nombre de notes**, et l'écart est écrit plutôt que
+masqué derrière un intitulé emprunté.
+
+## Suivi géolocalisé du trajet (Story 4.4, FR-019)
+
+**La DPIA reste absente, et c'est le point bloquant.** Le tableau d'ouverture le
+dit déjà : l'analyse d'impact (RGPD art. 35) doit précéder le traitement, pas le
+suivre. Ce qui est décrit ci-dessous réduit le traitement à ce qui est
+défendable ; cela ne remplace pas l'analyse, et le suivi ne doit pas être activé
+sur des positions réelles avant qu'elle soit signée.
+
+**Le consentement est spécifique à une intervention.** Une préférence de compte
+vaudrait pour toutes les missions passées et futures : ce n'est pas un
+consentement éclairé au sens de l'art. 4.11. Une ligne par Mission, donnée par le
+prestataire et révocable à tout moment (art. 7 §3).
+
+**Une révocation ne supprime pas la trace du consentement.** Effacer la ligne
+ferait disparaître la preuve qu'un accord avait été donné, c'est-à-dire
+exactement ce qu'un contrôle vient vérifier. La date du retrait est écrite à côté
+de celle de l'accord.
+
+**Le retrait vaut pour l'avenir.** Les positions déjà partagées restent jusqu'à
+la purge : elles ont été transmises de plein gré et le demandeur s'est organisé
+dessus. Les effacer rétroactivement lui retirerait ce sur quoi il compte, sans
+rien rendre au prestataire qui les a partagées.
+
+**La minimisation est appliquée à l'écriture, pas à l'affichage** (art. 5.1.c).
+Les positions sont ramenées à une grille de cinquante mètres **avant** d'entrer
+en base. Dégrader au moment de montrer laisserait la donnée fine là où une fuite
+la prendrait et où une réquisition la trouverait. Un test interroge la table pour
+le vérifier, parce que la réponse HTTP ne prouve rien sur ce qui est conservé.
+
+**Vingt-quatre heures après la fin, il ne reste qu'une distance, une durée et un
+nombre de relevés.** De quoi arbitrer un litige sur un déplacement, rien de quoi
+reconstituer une journée. L'agrégation et la suppression sont une seule
+instruction SQL : en deux, une panne entre les deux laisserait soit le chemin
+sans la mesure, soit les deux.
+
+**L'échéance se compte sur l'horloge du serveur.** L'heure déclarée par le
+prestataire peut légitimement précéder l'enregistrement, mais l'adosser à un
+délai de suppression la rendrait manipulable dans les deux sens.
+
+**Le prestataire voit ce que le demandeur verra.** La réponse à un envoi de
+position rend la position **dégradée**, et non celle qui a été transmise : la
+maille cesse ainsi d'être une promesse invisible.
+
+**Limite assumée : pas de carte.** Un point sur un plan se lit comme un pointé au
+mètre, ce que la grille de cinquante mètres ne permet pas. La position est rendue
+en clair avec sa marge annoncée.
+
 ## Cycle de vie d'une Mission : ce que l'historique enregistre (Story 4.3, FR-018)
 
 **La position est facultative.** FR-018 demande la géolocalisation sur chaque

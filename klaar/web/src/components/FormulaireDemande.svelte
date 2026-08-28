@@ -9,6 +9,7 @@
    */
   import { onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
+  import { restaurerLangue } from "../lib/i18n";
   import { restaurerSession } from "../lib/connexion";
   import { chargerCatalogue, type SecteurCatalogue } from "../lib/catalogue";
   import { OfflineError } from "../lib/api";
@@ -47,7 +48,7 @@
   let locale = $state<LocaleKlaar>("fr");
 
   onMount(async () => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
     connecte = await restaurerSession();
     try {
       secteurs = (await chargerCatalogue(locale)).secteurs;

@@ -12,8 +12,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 use klaar_identity::{
-    verifier_totp, CompteOps, EmpreinteMotDePasse, MotDePasse, Permission, INACTIVITE_MAX_JOURS,
-    TOTP_SECRET_OCTETS,
+    verifier_totp, CompteOps, EmpreinteMotDePasse, JetonVerification, MotDePasse, Permission,
+    INACTIVITE_MAX_JOURS, TOTP_SECRET_OCTETS,
 };
 use klaar_shared_kernel::Email;
 use std::fmt;
@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::ports::erreurs::RepositoryError;
 use crate::ports::horloge::Horloge;
-use crate::ports::ops_repository::{GesteOps, OpsRepository};
+use crate::ports::ops_repository::{GesteOps, OpsRepository, SessionOps as SessionEnBase};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErreurOps {
@@ -224,4 +224,88 @@ where
 /// Instant limite d'inactivité, pour l'affichage.
 pub fn echeance_inactivite(derniere_activite: DateTime<Utc>) -> DateTime<Utc> {
     derniere_activite + Duration::days(INACTIVITE_MAX_JOURS)
+}
+
+/// Durée d'une session d'exploitation.
+///
+/// **Trente minutes, sans prolongation.** Une session d'exploitation ouvre des
+/// dossiers nominatifs et des décisions sur l'argent d'autrui ; celle qui se
+/// renouvelle à chaque clic finit ouverte toute la journée sur un poste
+/// partagé. Repasser par le code TOTP toutes les demi-heures est le prix de ces
+/// droits-là.
+pub const SESSION_MINUTES: i64 = 30;
+
+/// Une session fraîchement ouverte : le jeton en clair, et son échéance.
+///
+/// Le jeton n'existe qu'ici et dans la réponse HTTP ; rien ne le conserve.
+pub struct SessionOuverte {
+    pub jeton: String,
+    pub expire_le: DateTime<Utc>,
+    pub compte: CompteOps,
+}
+
+/// Ouvre une session pour un compte déjà authentifié.
+///
+/// **L'authentification reste ailleurs.** Ce cas d'usage ne vérifie ni mot de
+/// passe ni code : il en dépend, et les mêler donnerait deux endroits d'où une
+/// session peut naître.
+pub async fn ouvrir_session<O, H>(
+    comptes: &O,
+    horloge: &H,
+    compte: CompteOps,
+) -> Result<SessionOuverte, ErreurOps>
+where
+    O: OpsRepository,
+    H: Horloge,
+{
+    let maintenant = horloge.maintenant();
+    let expire_le = maintenant + Duration::minutes(SESSION_MINUTES);
+    // Trente-deux octets du générateur du système : hors de portée d'une
+    // énumération, y compris hors ligne. Seule l'empreinte est écrite.
+    let jeton = JetonVerification::tirer();
+    comptes
+        .ouvrir_session(jeton.empreinte().as_str(), compte.id, maintenant, expire_le)
+        .await?;
+    Ok(SessionOuverte {
+        jeton: jeton.expose().to_string(),
+        expire_le,
+        compte,
+    })
+}
+
+/// Retrouve le compte derrière un jeton de session.
+///
+/// **Un jeton inconnu, expiré ou révoqué donne le même refus qu'un mot de passe
+/// faux.** Distinguer « ce jeton n'existe pas » de « ce jeton a expiré »
+/// apprendrait à qui essaie qu'il a mis la main sur quelque chose de réel.
+pub async fn compte_de_session<O, H>(
+    comptes: &O,
+    horloge: &H,
+    jeton: &str,
+) -> Result<CompteOps, ErreurOps>
+where
+    O: OpsRepository,
+    H: Horloge,
+{
+    let maintenant = horloge.maintenant();
+    let empreinte = JetonVerification::depuis_chaine(jeton).empreinte();
+    let SessionEnBase { ops_id, .. } = comptes
+        .session(empreinte.as_str(), maintenant)
+        .await?
+        .ok_or(ErreurOps::Refuse)?;
+    comptes.par_id(ops_id).await?.ok_or(ErreurOps::Refuse)
+}
+
+/// Ferme une session. Idempotent : refermer une session close n'est pas une
+/// erreur, c'est le résultat attendu.
+pub async fn fermer_session<O, H>(comptes: &O, horloge: &H, jeton: &str) -> Result<(), ErreurOps>
+where
+    O: OpsRepository,
+    H: Horloge,
+{
+    let empreinte = JetonVerification::depuis_chaine(jeton).empreinte();
+    comptes
+        .revoquer_session(empreinte.as_str(), horloge.maintenant())
+        .await?;
+    Ok(())
 }

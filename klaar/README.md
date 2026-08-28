@@ -913,6 +913,202 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   en diffusion après un second devis expiré — défaire une attribution suppose
   une décision sur l'argent engagé que FR-017 n'a pas tranchée.
 
+- **9.1** (sélecteur et textes d'écran) — **Trois langues à l'écran** (FR-043) :
+  un `<select>` dans l'en-tête, une table de textes typée, et le suivi
+  géolocalisé traduit.
+
+  **Le choix est enregistré et rétabli.** Bruxelles est bilingue : quelqu'un qui
+  a demandé le néerlandais une fois ne doit pas avoir à le redemander à chaque
+  page, sans quoi le sélecteur est un gadget.
+
+  **Il agit sur `<html lang>`**, pas seulement sur un état interne. C'est cet
+  attribut que lisent `localeAffichee()` — donc tous les messages d'erreur d'API
+  déjà traduits —, les lecteurs d'écran et la césure du navigateur. Le suffixe
+  belge est conservé pour le français et le néerlandais, parce que « fr-BE » et
+  « nl-BE » ne donnent pas les mêmes formats de date et de monnaie que « fr-FR »
+  et « nl-NL ». L'anglais n'en reçoit pas : lui inventer une variante belge
+  produirait des formats que personne n'attend.
+
+  **Une traduction manquante ne compile pas.** Chaque entrée de la table est un
+  `Record<LocaleKlaar, string>` : oublier le néerlandais est une erreur de type,
+  pas un texte français qui surgit au milieu d'une page néerlandaise. Un test
+  vérifie en plus qu'aucune traduction n'est identique d'une langue à l'autre,
+  ce qui trahit presque toujours un oubli.
+
+  **Ce qui reste en français, et pourquoi.** La coquille Astro : les pages sont
+  générées statiquement, les traduire demande soit trois jeux de pages, soit un
+  rendu au serveur — un choix d'architecture, pas un oubli. Et la console
+  d'exploitation, qui s'adresse aux équipes de klaar et non aux Bruxellois.
+
+- **7.4** — **Médiation d'un litige** (FR-036) : `GET /api/v1/ops/disputes`,
+  `/disputes/{id}`, `POST /disputes/{id}/resolve`, et l'écran de médiation dans
+  la console.
+
+  **Une décision est définitive, et la base le grave.** Le déclencheur de V31
+  refuse de retrancher un litige clos, même en SQL direct : rouvrir permettrait
+  de revenir sur un remboursement déjà annoncé et viderait la première décision
+  de sa valeur pour celui qu'elle a débouté. Le recours après décision est
+  judiciaire.
+
+  **Deux médiateurs sur le même dossier ne produisent qu'une décision.** Le
+  compare-and-swap sur le statut ferme la course ; le second obtient 409. Lire
+  puis écrire laisserait les deux passer, et le second remboursement partirait
+  sans que personne ne s'en aperçoive.
+
+  **Le centime d'arrondi va au demandeur.** Il doit tomber quelque part : le
+  donner à celui qui conteste plutôt qu'à celui qui est contesté est le choix le
+  moins arbitraire, et il est écrit dans le domaine plutôt que laissé au hasard
+  d'une division entière. Un test parcourt toute l'échelle des parts admissibles
+  et vérifie que rien ne se crée ni ne disparaît. 30 % de 21 780 font 6 534 et
+  15 246, l'exemple du PRD.
+
+  **0 % et 100 % ne sont pas des « partiels »** : ce sont des décisions pour
+  l'une ou l'autre partie, et les laisser passer sous ce nom fausserait les
+  comptages de sanctions, qui se fondent sur le statut.
+
+  **Aucun mouvement d'argent, et l'API le dit** (`execute: false`). Le séquestre
+  est chez Stripe, non provisionné : l'écran écrit « montants à verser », jamais
+  « remboursé ». Annoncer un virement qui ne vient pas transforme un litige
+  tranché en second litige.
+
+  Non livré : la demande d'information complémentaire aux parties et son délai
+  de sept jours (FR-036 `@negative`). Les constantes sont dans le domaine, le
+  geste suppose un canal de message vers les deux parties depuis la console.
+
+- **8.1** — **Contrôle d'entreprise par l'exploitation** (FR-038) :
+  `GET /api/v1/ops/kyc/pending`, `POST /ops/kyc/{id}/review`,
+  `DELETE /api/v1/providers/me/registration`, et l'écran de revue.
+
+  **Les quatre yeux ne valent que pour le refus.** Une validation trop généreuse
+  se corrige par une suspension au premier incident ; un refus injuste ne se
+  corrige pas, l'entreprise est déjà partie. Les exiger aussi pour valider
+  doublerait le délai d'entrée de chaque entreprise honnête pour se prémunir
+  d'un risque déjà couvert.
+
+  **Un refus proposé ne change rien** tant qu'un autre compte n'a pas confirmé,
+  et la contrainte de base refuse qu'on confirme le sien : ce ne serait pas une
+  seconde paire d'yeux, ce serait un second clic. Un test l'écrit en SQL direct.
+
+  **Un refus sans motif n'existe pas** (400 `MOTIVE_REQUIRED`, vingt caractères
+  au moins). Symétriquement, un motif passé avec une validation est **refusé et
+  non ignoré** : l'ignorer laisserait son auteur croire qu'il a été consigné.
+
+  **Trois statuts distincts plutôt qu'un fourre-tout.** Un suspendu a été actif
+  et pourra l'être à nouveau ; un refusé n'est jamais entré ; une entreprise
+  retirée n'a été jugée par personne. Les confondre ferait apparaître dans les
+  statistiques de sanction des entreprises qui n'ont jamais travaillé, ou
+  inscrirait un refus au dossier de quelqu'un qui s'est simplement ravisé.
+
+  **Deux contraintes fausses corrigées, toutes deux trouvées par les tests
+  d'intégration.** V33 : la règle des quatre yeux, écrite pour toute revue,
+  refusait les validations. V34 : `provider_origine_coherente` exigeait une
+  origine de contrôle pour tout statut autre que « en attente » — vrai tant que
+  les seuls autres supposaient une activation, faux dès `REJECTED` et
+  `WITHDRAWN`.
+
+  Non livré : le courriel à l'entreprise (`notifie: false`, et l'écran le dit),
+  et l'affichage des pièces jointes du dossier, qui suppose le stockage objet.
+
+- **8.3** — **Tableau de bord d'exploitation** (FR-040) :
+  `GET /api/v1/ops/dashboard`. **Le service est fait, l'écran est bloqué.**
+
+  **Une requête, pas dix.** Dix agrégats émis séparément seraient dix
+  instantanés pris à dix moments : le nombre de Demandes et celui des
+  attributions ne se rapporteraient plus au même instant, et le taux calculé
+  dessus pourrait dépasser cent pour cent.
+
+  **Chaque taux voyage avec son assiette**, et vaut `null` plutôt que zéro quand
+  il n'y a rien à mesurer. Zéro pour cent se lit comme un échec ; à J0, il n'y a
+  pas d'échec.
+
+  **Le taux de remplissage se compte sur l'attribution, pas sur le statut du
+  jour** : une Demande qui a trouvé puis dont l'intervention a été annulée avait
+  bien trouvé. La GMV se compte sur les libérations, pas sur les devis acceptés :
+  un devis non validé n'est pas encore du chiffre d'affaires.
+
+  **Ce n'est pas le NPS, et le champ ne prétend pas l'être.** FR-040 le demande,
+  mais le produit ne pose jamais la question « recommanderiez-vous » : la
+  calculer à partir de notes sur cinq serait inventer une mesure et lui donner le
+  nom d'une autre. Le tableau rend la note moyenne avec son nombre de notes.
+
+  La consultation est journalisée, refus compris, et un test vérifie qu'aucun
+  identifiant, adresse ou UUID n'apparaît dans la réponse : un tableau de bord ne
+  doit pas devenir un chemin commode pour consulter des dossiers sans laisser de
+  trace nominative.
+
+  **L'écran a d'abord exigé de corriger l'authentification d'exploitation.** Les
+  routes ops se ré-authentifiaient à chaque requête par paramètres d'URL —
+  adresse, mot de passe, code TOTP. Tenable en ligne de commande, intenable dans
+  un navigateur : le mot de passe finit dans la barre d'adresse, l'historique,
+  l'en-tête `Referer` et les journaux d'accès. La migration V30 ajoute
+  `session_ops`, `POST /ops/login` rend un jeton porteur de **trente minutes sans
+  prolongation**, `POST /ops/logout` le ferme, et **la forme en paramètres d'URL
+  est retirée, pas dépréciée** : un test vérifie qu'elle ne donne plus rien.
+  Cela lève au passage le blocage de l'écran de médiation (7.4) et de celui de
+  revue KYC (8.1).
+
+  Le jeton n'est écrit nulle part : côté serveur seule son empreinte SHA-256 est
+  conservée, côté navigateur il vit en mémoire de page et jamais dans
+  `localStorage`, où il survivrait à la fermeture de l'onglet et resterait
+  lisible par tout script injecté. La révocation d'un compte ferme ses sessions
+  dans la seconde, par jointure dans la requête de lecture et non par balayage.
+
+  **Quand le service tombe, la dernière valeur connue reste à l'écran** avec une
+  bannière qui donne l'heure de la lecture (FR-040 `@negative`) : vider le
+  tableau effacerait la seule information disponible au moment où l'exploitation
+  en a le plus besoin. L'écran prévient aussi cinq minutes avant l'échéance de
+  session, parce qu'un 401 au milieu d'une médiation fait perdre ce qui est en
+  train d'être écrit.
+
+- **4.4** — **Suivi géolocalisé du trajet** (FR-019) :
+  `POST /api/v1/missions/{id}/tracking/consent`, `POST` et `GET
+  /api/v1/missions/{id}/tracking`, et le purgeur dans `klaar-expirer`.
+
+  **Le suivi hors trajet n'est pas interdit, il est impossible à écrire.**
+  `relever` prend le statut de la Mission et le consentement, et rend une
+  position ou une erreur ; il n'existe aucun autre moyen de construire une
+  `PositionSuivie`. Un chemin qui voudrait enregistrer une position sans accord,
+  ou après l'arrivée, n'a rien à construire. Une règle qu'on ne peut pas
+  contourner vaut mieux qu'une garde qu'on peut oublier d'appeler.
+
+  **La dégradation à cinquante mètres a lieu à l'écriture.** Arrondir à
+  l'affichage laisserait la donnée fine en base, c'est-à-dire là où une fuite la
+  prendrait et où une réquisition la trouverait : la minimisation (RGPD art.
+  5.1.c) porte sur ce qui est conservé, pas sur ce qui est montré. Le test qui
+  le prouve interroge la table, pas la réponse HTTP.
+
+  **Le consentement est par intervention et révocable.** Un réglage de compte
+  vaudrait pour toutes les missions à venir, ce qui n'est pas un consentement
+  éclairé. Le retrait ne supprime pas la ligne : effacer la preuve qu'un accord
+  avait été donné est exactement ce qu'un contrôle vient vérifier. Il vaut pour
+  la suite, pas pour le passé — les positions déjà partagées l'ont été de plein
+  gré et le demandeur s'est organisé dessus.
+
+  **Vingt-quatre heures après la fin, il ne reste qu'une distance.** La purge
+  agrège et supprime en une seule instruction : en deux, une panne entre les
+  deux laisserait soit la trace fine sans mesure, soit la mesure avec la trace.
+  L'échéance se compte sur l'horloge du serveur et non sur l'heure déclarée par
+  le prestataire, qu'une date antidatée rendrait manipulable dans les deux sens.
+
+  **Aucune mise en file hors-ligne pour une position.** Le reste de
+  l'application enfile les écritures ratées ; celle-ci non. Une position rejouée
+  dix minutes plus tard placerait le prestataire où il n'est plus, et le
+  demandeur descendrait attendre dans la rue.
+
+  **`POSITION_LOST` ne dit pas « panne ».** Le prestataire peut n'avoir pas
+  consenti, ou traverser un tunnel. Annoncer une erreur ferait douter d'une
+  intervention qui se déroule bien.
+
+  Non livré, et écrit comme tel : pas de carte — la maille de cinquante mètres
+  rend un point sur un plan plus précis qu'il n'est, et il faudra un cercle, pas
+  un point. Pas de `watchPosition` non plus, contrairement au périmètre annoncé :
+  il rappelle plusieurs fois par seconde à l'arrêt pour des points que la grille
+  écrase, là où `getCurrentPosition` toutes les trente secondes donne le même
+  résultat visible. Et surtout : **la DPIA géoloc n'est pas faite.** Le code
+  applique la minimisation, la purge et le consentement révocable, mais
+  l'analyse d'impact signée (RGPD art. 35) est un acte à poser avant le premier
+  traitement de position réel.
+
 - **3.9** — **File d'attente hors ligne** (hors plan initial) : une Demande
   écrite sans réseau part au retour de la connexion.
 
@@ -964,6 +1160,31 @@ de connexion affirmait « En ligne » avant d'avoir rien vérifié.
 Le premier run CI a échoué deux fois avant de passer, corrections gardées ici pour mémoire :
 1. `cargo-deny-action` a un input `manifest-path` dédié ; le passer aussi via `arguments` duplique le flag
 2. Le job contrat API compilait `klaar-api` à la volée avant de le lancer en arrière-plan puis d'attendre 20 s max : en CI à froid la compilation seule dépasse ce délai. Corrigé en compilant d'abord (`cargo build`), puis en laissant `schemathesis --wait-for-schema=30` gérer l'attente de démarrage du binaire déjà prêt
+
+## Où en est le périmètre MVP
+
+Les Epics 0 à 9 marqués **Must** au PRD sont livrés, à trois exceptions près,
+toutes tenant à un tiers absent et non à un manque de travail :
+
+- **Epic 5 en entier** (FR-024 à FR-028) : séquestre, capture, remboursement,
+  facturation, webhooks. Il faut un compte Stripe. Tout ce qui précède le
+  mouvement d'argent existe et calcule juste — la répartition de commission, le
+  forfait de déplacement, le partage d'un litige tranché — et chaque route qui
+  aurait dû déclencher un paiement rend explicitement qu'elle ne l'a pas fait
+  (`execute: false`), plutôt que de laisser croire à un virement.
+- **1.5 (itsme), 1.6 et 8.1 côté BCE réelle** : il faut les accès aux registres.
+  Le contrôle d'entreprise fonctionne, mené par un humain, et l'origine
+  `OPS_REVIEW` dit exactement cela plutôt que de se faire passer pour une
+  interrogation de la BCE.
+- **4.5 et 6.2 (photos et pièces jointes)**, **0.7a/b/c et 0.11 (hébergement)**,
+  et la **signature PGP/eIDAS des exports** : stockage objet, compte OVH,
+  trousseau de clés. Trois prérequis d'infrastructure.
+
+Deux prérequis ne sont pas techniques et restent entiers : la **DPIA
+géolocalisation** (RGPD art. 35), à signer avant tout traitement de position
+réel, et la **facturation** (FR-026, FR-044), qui doit naître avec le paiement —
+émettre des numéros de facture pour de l'argent qui n'a jamais bougé créerait
+des pièces comptables sans contrepartie.
 
 ## Ce qui manque avant que le Sprint 0 soit réellement terminé
 

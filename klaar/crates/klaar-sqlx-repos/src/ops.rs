@@ -5,7 +5,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use klaar_application::ports::erreurs::RepositoryError;
-use klaar_application::ports::ops_repository::{GesteOps, OpsRepository};
+use klaar_application::ports::ops_repository::{GesteOps, OpsRepository, SessionOps};
 use klaar_identity::{CompteOps, EmpreinteMotDePasse, RoleOps};
 use klaar_shared_kernel::Email;
 
@@ -138,6 +138,73 @@ impl OpsRepository for PgOpsRepository {
         .await
         .map_err(erreur)?;
         Ok(issue.rows_affected())
+    }
+
+    async fn ouvrir_session(
+        &self,
+        empreinte: &str,
+        ops_id: Uuid,
+        cree_le: DateTime<Utc>,
+        expire_le: DateTime<Utc>,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query(
+            "INSERT INTO session_ops (empreinte, ops_id, cree_le, expire_le)
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(empreinte)
+        .bind(ops_id)
+        .bind(cree_le)
+        .bind(expire_le)
+        .execute(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(())
+    }
+
+    async fn session(
+        &self,
+        empreinte: &str,
+        maintenant: DateTime<Utc>,
+    ) -> Result<Option<SessionOps>, RepositoryError> {
+        // **La péremption et la révocation sont dans le `WHERE`.** Rendre la
+        // ligne puis comparer au-dessus laisserait passer une session expirée le
+        // jour où quelqu'un oublie la comparaison ; ici, il n'y a rien à
+        // oublier. Le compte doit être actif aussi : révoquer un compte doit
+        // fermer ses sessions dans la seconde, pas à leur expiration.
+        let ligne = sqlx::query(
+            "SELECT s.ops_id, s.expire_le
+             FROM session_ops s
+             JOIN compte_ops c ON c.id = s.ops_id AND c.actif
+             WHERE s.empreinte = $1 AND s.revoque_le IS NULL AND s.expire_le > $2",
+        )
+        .bind(empreinte)
+        .bind(maintenant)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+
+        Ok(ligne.map(|l| SessionOps {
+            ops_id: l.get("ops_id"),
+            expire_le: l.get("expire_le"),
+        }))
+    }
+
+    async fn revoquer_session(
+        &self,
+        empreinte: &str,
+        maintenant: DateTime<Utc>,
+    ) -> Result<bool, RepositoryError> {
+        let ecrit = sqlx::query(
+            "UPDATE session_ops SET revoque_le = $2
+             WHERE empreinte = $1 AND revoque_le IS NULL
+             RETURNING empreinte",
+        )
+        .bind(empreinte)
+        .bind(maintenant)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(ecrit.is_some())
     }
 
     async fn consigner(&self, geste: &GesteOps) -> Result<(), RepositoryError> {

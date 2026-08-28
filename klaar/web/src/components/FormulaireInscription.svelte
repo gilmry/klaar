@@ -21,6 +21,7 @@
     messageSucces,
     type LocaleKlaar,
   } from "../lib/inscription";
+  import { restaurerLangue } from "../lib/i18n";
 
   let email = $state("");
   let motDePasse = $state("");
@@ -30,7 +31,7 @@
   let locale = $state<LocaleKlaar>("fr");
 
   $effect(() => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
   });
 
   const motDePasseTropCourt = $derived(

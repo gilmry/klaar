@@ -22,6 +22,7 @@ pub mod push;
 pub mod reprogrammation;
 pub mod session;
 pub mod suivi;
+pub mod suivi_position;
 pub mod temps_reel;
 pub mod validation;
 pub mod verification;

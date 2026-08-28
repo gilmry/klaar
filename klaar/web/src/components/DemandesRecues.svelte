@@ -24,12 +24,15 @@
    */
   import { onDestroy, onMount } from "svelte";
   import { localeAffichee, type LocaleKlaar } from "../lib/inscription";
+  import { restaurerLangue, t } from "../lib/i18n";
   import { restaurerSession } from "../lib/connexion";
   import { ouvrirFlux } from "../lib/tempsReel";
   import Conversation from "./Conversation.svelte";
   import {
     accepter,
     annulerMission,
+    consentirSuivi,
+    envoyerPosition,
     avancerMission,
     centimesDepuisEuros,
     codeDepuisErreur,
@@ -57,6 +60,21 @@
   let occupe = $state(false);
   let erreur = $state<string | null>(null);
   let locale = $state<LocaleKlaar>("fr");
+  /** Partage de position pour l'intervention en cours (Story 4.4, FR-019). */
+  let suiviConsenti = $state(false);
+  let suiviErreur = $state<string | null>(null);
+  let batteurPosition: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Cadence d'envoi des positions.
+   *
+   * **Trente secondes, pas cinq.** Le serveur dégrade à cinquante mètres : en
+   * ville, cinq secondes d'écart tombent le plus souvent dans la même maille,
+   * et l'envoi n'apprend rien tout en vidant la batterie de quelqu'un qui
+   * travaille. Trente secondes est aussi le délai au-delà duquel le serveur
+   * déclare la position perdue : c'est le pas le plus lent qui reste utile.
+   */
+  const CADENCE_POSITION_MS = 30000;
 
   // Champs du devis. Vides à l'ouverture, et jamais préremplis : voir l'en-tête.
   let montantSaisi = $state("");
@@ -90,13 +108,105 @@
   });
 
   onMount(async () => {
-    locale = localeAffichee();
+    locale = restaurerLangue();
     connecte = await restaurerSession();
     if (connecte) await rafraichir();
     reprise = false;
   });
 
-  onDestroy(() => fermerFlux?.());
+  onDestroy(() => {
+    fermerFlux?.();
+    arreterPartage();
+  });
+
+  /**
+   * Démarre ou arrête le partage de position (FR-019).
+   *
+   * **Le consentement est demandé au serveur d'abord, la géolocalisation
+   * ensuite.** L'ordre compte : demander l'autorisation du navigateur avant que
+   * le serveur ait accepté ferait surgir la fenêtre du système même quand le
+   * partage sera refusé, et une permission arrachée pour rien ne se rend pas.
+   */
+  async function basculerSuivi(accepte: boolean) {
+    if (!mission || occupe) return;
+    occupe = true;
+    suiviErreur = null;
+    try {
+      await consentirSuivi(mission.id, accepte);
+      // Relire plutôt que croire la réponse : l'état affiché vient d'une seule
+      // source, et c'est le serveur. Deux chemins vers la même case à cocher
+      // finissent toujours par diverger.
+      mission = await lireMission(mission.id);
+    } catch (e) {
+      suiviErreur = messageErreur(locale, codeDepuisErreur(e));
+    } finally {
+      occupe = false;
+    }
+  }
+
+  /**
+   * Aligne le battement d'envoi sur ce que dit le serveur.
+   *
+   * **Une seule source pour l'état du partage.** Le retenir dans l'écran le
+   * ferait survivre à une révocation faite ailleurs, ou disparaître à un simple
+   * rechargement ; le champ `suivi_consenti` de la Mission tranche.
+   */
+  $effect(() => {
+    const partage = mission?.suivi_consenti === true && mission?.statut === "PROVIDER_EN_ROUTE";
+    suiviConsenti = mission?.suivi_consenti === true;
+    if (partage) {
+      // Sans ce garde, chaque relecture de Mission relancerait un envoi
+      // immédiat, et le rythme choisi ne voudrait plus rien dire.
+      if (!batteurPosition) demarrerPartage();
+    } else {
+      arreterPartage();
+    }
+  });
+
+  function demarrerPartage() {
+    arreterPartage();
+    void pousserPosition();
+    batteurPosition = setInterval(() => void pousserPosition(), CADENCE_POSITION_MS);
+  }
+
+  function arreterPartage() {
+    if (batteurPosition) clearInterval(batteurPosition);
+    batteurPosition = null;
+  }
+
+  /**
+   * Envoie une position, une seule fois.
+   *
+   * **Rien n'est mis en file hors-ligne.** Une position rejouée dix minutes
+   * plus tard placerait le prestataire où il n'est plus, et le demandeur
+   * descendrait attendre dans la rue. Un envoi manqué est perdu, et c'est le
+   * bon comportement.
+   */
+  async function pousserPosition() {
+    if (!mission || mission.statut !== "PROVIDER_EN_ROUTE") return;
+    if (!navigator.geolocation) {
+      suiviErreur = t(locale, "prestataire.geoloc_absente");
+      arreterPartage();
+      return;
+    }
+    const point = await new Promise<GeolocationPosition | null>((resoudre) => {
+      navigator.geolocation.getCurrentPosition(
+        (p) => resoudre(p),
+        () => resoudre(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 },
+      );
+    });
+    if (!point) return;
+    try {
+      await envoyerPosition(mission.id, point.coords.latitude, point.coords.longitude);
+      suiviErreur = null;
+    } catch (e) {
+      // Un refus du serveur arrête le battement : continuer à taper sur une
+      // route qui répond 403 ne changerait rien et remplirait ses journaux.
+      suiviErreur = messageErreur(locale, codeDepuisErreur(e));
+      arreterPartage();
+    }
+  }
 
   /**
    * Ouvre la socket sur la Mission en cours, une seule fois par Mission.
@@ -375,7 +485,7 @@
     {/if}
 
     {#if mission.suites.length === 0}
-      <p role="status" data-mission-close>Cette intervention est close.</p>
+      <p role="status" data-mission-close>{t(locale, "prestataire.intervention_close")}</p>
       <button
         type="button"
         onclick={() => {
@@ -384,9 +494,31 @@
         }}
         data-action="revenir"
       >
-        Revenir aux Demandes
+        {t(locale, "prestataire.revenir_demandes")}
       </button>
     {:else}
+      {#if mission.statut === "PROVIDER_EN_ROUTE"}
+        <div data-bloc="suivi">
+          <p class="klaar-tempere">
+            {t(locale, "prestataire.partage_explication")}
+          </p>
+          <button
+            type="button"
+            onclick={() => void basculerSuivi(!suiviConsenti)}
+            disabled={occupe}
+            data-action="basculer-suivi"
+            data-suivi={suiviConsenti ? "actif" : "inactif"}
+          >
+            {suiviConsenti
+              ? t(locale, "prestataire.arreter_partage")
+              : t(locale, "prestataire.partager_position")}
+          </button>
+          {#if suiviErreur}
+            <p role="alert" data-suivi-erreur>{suiviErreur}</p>
+          {/if}
+        </div>
+      {/if}
+
       <div data-bloc="desistement">
         <label for="motif-desistement">Si vous ne pouvez plus venir, pourquoi</label>
         <select id="motif-desistement" bind:value={motifAnnulation} data-champ="motif-desistement">
@@ -418,8 +550,8 @@
     {/if}
   </section>
 {:else}
-  <button type="button" onclick={rafraichir} disabled={occupe} data-action="rafraichir">
-    Rafraîchir
+  <button type="button" onclick={() => void rafraichir()} disabled={occupe} data-action="rafraichir">
+    {t(locale, "commun.rafraichir")}
   </button>
 
   {#if demandes.length === 0}

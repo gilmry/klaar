@@ -10,7 +10,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use klaar_application::usecases::consulter::{
-    demande_du_demandeur, demandes_proposees, mission_du_prestataire, ErreurConsultation, VueDevis,
+    demande_du_demandeur, demandes_proposees, mission_du_prestataire, DepotsMission,
+    ErreurConsultation, VueDevis,
 };
 
 use crate::auth::Authentifie;
@@ -116,6 +117,8 @@ pub struct SuiviMissionDto {
     pub devis: Option<DevisDto>,
     /// Devis encore envoyables avant que le plafond n'annule la Mission.
     pub devis_restants: usize,
+    /// Le partage de position est en cours pour cette intervention (FR-019).
+    pub suivi_consenti: bool,
 }
 
 fn statut(e: &ErreurConsultation) -> actix_web::http::StatusCode {
@@ -263,11 +266,14 @@ pub async fn suivre_mission(
     };
 
     match mission_du_prestataire(
-        etat.prestataires.as_ref(),
-        etat.missions.as_ref(),
-        etat.demandes.as_ref(),
-        etat.devis.as_ref(),
-        etat.horloge.as_ref(),
+        DepotsMission {
+            prestataires: etat.prestataires.as_ref(),
+            missions: etat.missions.as_ref(),
+            demandes: etat.demandes.as_ref(),
+            devis_repo: etat.devis.as_ref(),
+            suivis: etat.suivis.as_ref(),
+            horloge: etat.horloge.as_ref(),
+        },
         authentifie.utilisateur_id,
         mission_id,
     )
@@ -284,6 +290,7 @@ pub async fn suivre_mission(
             suites: vue.suites.into_iter().map(String::from).collect(),
             devis: vue.devis.map(DevisDto::from),
             devis_restants: vue.devis_restants,
+            suivi_consenti: vue.suivi_consenti,
         }),
         Err(e) => refus(e),
     }

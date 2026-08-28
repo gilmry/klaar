@@ -38,11 +38,17 @@ async fn pool() -> PoolPg {
 /// l'autre, et l'unicité du numéro BCE est justement ce qu'on veut imposer. Le
 /// tirer au sort rend la suite rejouable sans nettoyage préalable.
 fn numero() -> NumeroBce {
-    // Le corps reste sous dix millions : formaté sur huit chiffres, il porte
-    // alors un zéro de tête, et un numéro d'entreprise commence par 0 ou 1.
-    // Un tirage plus large produisait des préfixes 2 à 8, que le domaine refuse
-    // à juste titre.
-    let corps = 1_000_000 + (Uuid::new_v4().as_u128() as u64) % 8_999_999;
+    // Le corps reste sous vingt millions : formaté sur huit chiffres, il porte
+    // alors un 0 ou un 1 de tête, et un numéro d'entreprise commence par l'un
+    // des deux. Un tirage plus large produisait des préfixes 2 à 8, que le
+    // domaine refuse à juste titre.
+    //
+    // **Vingt millions et non neuf.** La base de développement accumule les
+    // prestataires d'une exécution à l'autre ; à quelques milliers de lignes, le
+    // paradoxe des anniversaires rend la collision courante — elle s'est
+    // produite. Doubler l'espace la repousse ; l'appelant qui crée en base
+    // réessaie, parce qu'aucun espace fini ne l'écarte tout à fait.
+    let corps = (Uuid::new_v4().as_u128() as u64) % 20_000_000;
     NumeroBce::parse(&format!("{corps:08}{:02}", 97 - (corps % 97))).expect("numéro construit")
 }
 
@@ -85,12 +91,34 @@ async fn prestataire(
     )
     .expect("prestataire valide");
     p.valider_kyc(PreuveKyc::demonstration(Utc::now()));
-    depot.creer(&p).await.expect("création");
+    creer_en_reessayant(depot, &mut p).await;
     depot
         .definir_disponibilite(p.id, true)
         .await
         .expect("disponibilité");
     p
+}
+
+/// Crée le prestataire, en retirant un numéro BCE tant que celui tiré est déjà
+/// pris.
+///
+/// **Le tirage au sort ne suffit pas.** La base de développement garde ses
+/// prestataires d'une exécution à l'autre ; à quelques milliers de lignes, le
+/// paradoxe des anniversaires rend la collision courante, et elle s'est
+/// produite — un test de la recherche par secteur a échoué sur l'unicité du
+/// numéro BCE, ce qui n'était pas son objet. Aucun espace fini n'écarte le
+/// risque ; réessayer, si.
+async fn creer_en_reessayant(depot: &PgProviderRepository, p: &mut Provider) {
+    for _ in 0..8 {
+        match depot.creer(p).await {
+            Ok(()) => return,
+            Err(e) if format!("{e:?}").contains("provider_numero_bce_key") => {
+                p.numero_bce = numero();
+            }
+            Err(e) => panic!("création : {e:?}"),
+        }
+    }
+    panic!("huit numéros BCE tirés, tous déjà pris : l'espace est-il épuisé ?");
 }
 
 #[tokio::test]

@@ -1170,7 +1170,7 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > **L'écran distingue « en file » de « créée ».** Rien n'a été envoyé au service,
 > et le dire autrement ferait croire que des prestataires ont été prévenus.
 
-### Story 4.4 — Tracking géoloc temps réel, foreground uniquement (FR-019)
+### Story 4.4 — Tracking géoloc temps réel, foreground uniquement (FR-019) — *faite*
 - **En tant que** User · **je veux** voir la position Provider temps réel · **afin de** savoir quand il arrive
 - **Périmètre** : tracking **foreground**, PWA ouverte pendant EN_ROUTE (`Geolocation.watchPosition`)
 - **Hors périmètre, définitivement** : le suivi en arrière-plan. ADR-010 le classe *won't do* — aucune API web ne le fournit. Ce n'est plus un conditionnel sous gate de PoC, c'est une capacité que le produit n'a pas.
@@ -1178,6 +1178,80 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Frontend (Geolocation API + carte Svelte) + Infra (WebSocket actix-web-actors)
 - **Taille** : **L** (1 j) · **Tours** : 6
 - **Prérequis dur** : DPIA géoloc signée **avant** le premier traitement de position réel (RGPD art. 35). Voir `klaar/COMPLIANCE.md`.
+
+> **Le suivi hors trajet n'est pas interdit : il est impossible à écrire.**
+> `relever` prend le statut de la Mission et le consentement, et rend une
+> `PositionSuivie` ou une erreur. Il n'existe aucun constructeur public de
+> `PositionSuivie` : un chemin qui voudrait enregistrer une position sans
+> consentement, ou après l'arrivée, n'a rien à construire. Une règle qu'on ne
+> peut pas contourner vaut mieux qu'une garde qu'on peut oublier d'appeler.
+>
+> **La dégradation à cinquante mètres a lieu à l'écriture, pas à l'affichage.**
+> Arrondir au moment de montrer laisserait la donnée fine en base, c'est-à-dire
+> exactement là où une fuite la prendrait et où une réquisition la trouverait.
+> La minimisation (RGPD art. 5.1.c) porte sur ce qui est conservé. Le test
+> `security_la_position_stockee_est_la_position_degradee` interroge la table,
+> pas la réponse HTTP, parce que c'est la seule façon de le prouver.
+>
+> **Le consentement est par intervention, jamais global.** Une colonne sur
+> `provider` vaudrait pour toutes les missions passées et futures, ce qui n'est
+> pas un consentement spécifique et éclairé. Une ligne par Mission, révocable,
+> et le retrait ne supprime pas la ligne : effacer la preuve qu'un accord avait
+> été donné est ce qu'un contrôle vient précisément vérifier.
+>
+> **Le retrait vaut pour la suite, pas pour le passé.** Les positions déjà
+> partagées restent : elles l'ont été de plein gré, le demandeur les a vues et
+> s'est organisé dessus. Elles partent avec la purge des vingt-quatre heures,
+> comme les autres.
+>
+> **La purge agrège et supprime en une seule instruction SQL.** En deux, une
+> panne entre les deux laisserait soit la trace fine sans mesure, soit la mesure
+> avec la trace. Ce qui survit est une distance, une durée et un nombre de
+> relevés : de quoi arbitrer un litige sur un déplacement, rien de quoi
+> reconstituer une journée. Le `DELETE … RETURNING` prend les verrous de ligne,
+> donc deux balayages concurrents ne peuvent pas compter deux fois le même
+> trajet.
+>
+> **L'échéance se compte sur `enregistre_le`, pas sur `horodate_le`.**
+> La seconde est déclarée par le prestataire et peut légitimement précéder
+> l'enregistrement (transition faite hors connexion) ; l'adosser à un délai de
+> suppression laisserait une date antidatée effacer des positions plus tôt que
+> prévu, et une date avancée les garder plus longtemps. Une échéance de purge se
+> compte sur l'horloge du serveur.
+>
+> **Aucune mise en file hors-ligne pour une position.** Le reste de
+> l'application enfile les écritures ratées ; celle-ci non. Une position rejouée
+> dix minutes plus tard placerait le prestataire où il n'est plus, et le
+> demandeur descendrait attendre dans la rue. Un envoi manqué est perdu, et
+> c'est le bon comportement.
+>
+> **La cadence d'envoi est de trente secondes, pas de cinq.** Le serveur
+> dégrade à cinquante mètres : en ville, cinq secondes d'écart tombent le plus
+> souvent dans la même maille, et l'envoi n'apprend rien tout en vidant la
+> batterie de quelqu'un qui travaille. Trente secondes est aussi le seuil
+> au-delà duquel le serveur déclare la position perdue.
+>
+> **`POSITION_LOST` ne dit pas « panne ».** Le prestataire peut n'avoir pas
+> consenti, ou traverser un tunnel. Un message d'erreur ferait douter d'une
+> intervention qui se déroule normalement et pousserait à téléphoner pour rien.
+> L'état est rendu tel quel et l'écran le dit en toutes lettres.
+>
+> **Ce qui n'est pas livré, et pourquoi.** Pas de carte : la maille de cinquante
+> mètres rend un point sur un plan plus précis qu'il n'est, et un pointé au
+> mètre serait un mensonge visuel. La position est rendue en clair avec sa
+> marge ; une carte viendra avec un cercle, pas un point. Pas de WebSocket
+> dédié au suivi non plus : le flux d'événements de Mission (Story 4.9) existe
+> déjà, et le sondage à trente secondes est à la maille de la donnée.
+>
+> **`watchPosition` n'est pas utilisé**, contrairement au périmètre annoncé :
+> il rappelle à chaque dérive du capteur, soit plusieurs fois par seconde à
+> l'arrêt, pour des points que la grille écrase. `getCurrentPosition` à cadence
+> fixe donne le même résultat visible en consommant moins.
+>
+> **Le prérequis DPIA reste entier.** Le code applique la minimisation, la purge
+> et le consentement révocable, mais l'analyse d'impact signée (RGPD art. 35)
+> est un acte à poser avant le premier traitement de position **réel**. Elle
+> n'est pas faite.
 
 ### Story 4.5 — Preuves photos BEFORE/AFTER (FR-020)
 - **En tant que** Provider · **je veux** prendre photos avant/après · **afin de** documenter
@@ -1519,11 +1593,58 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > photographiques chiffrées (elles attendent le stockage d'objets), et la
 > résolution elle-même.
 
-### Story 7.4 — Médiation ops workflow (FR-036)
+### Story 7.4 — Médiation ops workflow (FR-036) — *faite*
 - **En tant que** ops · **je veux** médiater un Litige · **afin de** trancher
 - **4×N** : PRD FR-036 (timeout 7 j, escalade 30 j)
 - **Couche(s)** : Application + Frontend (admin médiation UI)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Une décision est définitive, et la base le grave.** Le déclencheur de V31
+> refuse de retrancher un litige clos, même en SQL direct. Rouvrir permettrait de
+> revenir sur un remboursement déjà annoncé et viderait la première décision de
+> sa valeur pour celui qu'elle a débouté ; le recours après décision est
+> judiciaire, et c'est une limite écrite plutôt que découverte.
+>
+> **Deux médiateurs sur le même dossier ne produisent qu'une décision.** Le
+> `UPDATE … WHERE statut = 'OPENED' RETURNING` ferme la course ; le second
+> obtient 409 et voit que l'affaire est réglée. Lire puis écrire laisserait les
+> deux passer, et le second remboursement partirait sans que personne ne s'en
+> aperçoive.
+>
+> **Un remboursement partiel porte son taux, et l'arrondi va au demandeur.** Sans
+> le taux dans la décision, « partiel » ne veut rien dire et le montant dépend de
+> qui exécute. Le centime d'arrondi doit tomber quelque part : le donner à celui
+> qui conteste plutôt qu'à celui qui est contesté est le choix le moins
+> arbitraire, et il est écrit dans le domaine. Un test parcourt toute l'échelle
+> des parts admissibles et vérifie que rien ne se crée ni ne disparaît.
+>
+> **Un partiel reste une décision en faveur du demandeur.** C'est ce statut que
+> les comptages de sanctions (FR-035) doivent voir ; l'inventer autrement
+> fausserait la suspension à trois litiges perdus.
+>
+> **0 % et 100 % ne sont pas des « partiels ».** Zéro est une décision pour le
+> prestataire, cent une décision pour le demandeur. Les laisser passer sous le
+> nom « partiel » fausserait les mêmes comptages.
+>
+> **L'escalade à trente jours est calculée par le service**, pas par l'écran :
+> deux calculs du même seuil finissent par diverger, et c'est l'alerte qui se
+> tairait. La file remonte le plus ancien d'abord — c'est celui qui approche de
+> l'échéance qui doit sauter aux yeux.
+>
+> **Écart au FR, assumé : aucun mouvement d'argent.** FR-036 `@happy` dit
+> « l'Escrow est ajusté automatiquement ». Le séquestre est chez Stripe, non
+> provisionné (Epic 5) : la décision écrit le montant dû et l'API rend
+> `execute: false`. L'écran dit « montants à verser », jamais « remboursé » —
+> annoncer un virement qui ne vient pas transforme un litige tranché en second
+> litige.
+>
+> **Non livré, et écrit comme tel** : la demande d'information complémentaire aux
+> parties et son délai de sept jours (FR-036 `@negative`). Les constantes sont
+> dans le domaine (`RELANCE_JOURS`), le geste ne l'est pas — il suppose un canal
+> de message vers les deux parties depuis la console, c'est-à-dire l'Epic 6 vue
+> depuis l'exploitation. La règle des quatre yeux pour un `BAN` (FR-036
+> `@security`) relève de FR-035, dont les sanctions ne sont pas encore
+> prononçables depuis la console.
 
 ### Story 7.5 — Rating Wilson pondéré (FR-037)
 - **En tant que** système · **je veux** calcul Wilson score · **afin de** éviter le biais faible échantillon
@@ -1537,11 +1658,61 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 8 — Ops & Admin (OPS) · Priorité **Must**
 
-### Story 8.1 — KYC review console (FR-038)
+### Story 8.1 — KYC review console (FR-038) — *faite*
 - **En tant que** ops · **je veux** valider KYC Providers · **afin de** sécuriser la plateforme
 - **4×N** : PRD FR-038 (4-eyes, motif, Provider annule)
 - **Couche(s)** : Application + Frontend (admin web console)
 - **Taille** : **L** (1 j) · **Tours** : 5
+
+> **Valider et refuser ne coûtent pas le même prix, et le code le dit.** Une
+> validation trop généreuse se corrige : le prestataire sera suspendu au premier
+> incident. Un refus injuste ne se corrige pas — l'entreprise est déjà partie
+> voir ailleurs. D'où les quatre yeux sur le refus **seul** : les exiger aussi
+> pour valider doublerait le délai d'entrée de chaque entreprise honnête pour se
+> prémunir d'un risque que la suspension corrige déjà.
+>
+> **Un refus proposé ne change rien.** L'entreprise reste `PENDING_KYC` tant
+> qu'un **autre** compte n'a pas confirmé. La contrainte
+> `revue_quatre_yeux` le grave en base : un refus confirmé par son propre auteur
+> ne serait pas une seconde paire d'yeux, ce serait un second clic. Un test
+> l'écrit en SQL direct et vérifie que la base refuse.
+>
+> **Un refus sans motif n'existe pas** (FR-038 `@negative`, 400
+> `MOTIVE_REQUIRED`). Vingt caractères au moins : « non » n'est pas un motif, et
+> une entreprise refusée doit pouvoir savoir ce qu'on lui reproche, sans quoi
+> elle ne peut ni corriger ni contester. Symétriquement, un motif passé avec une
+> **validation** est refusé et non ignoré : l'ignorer laisserait son auteur
+> croire qu'il a été consigné.
+>
+> **`REJECTED` n'est pas `SUSPENDED`, `WITHDRAWN` n'est pas `REJECTED`.** Un
+> suspendu a été actif et pourra l'être à nouveau ; un refusé n'est jamais entré.
+> Les confondre ferait apparaître dans les statistiques de sanction des
+> entreprises qui n'ont jamais travaillé. Et un retrait n'est pas un jugement :
+> inscrire « refusée » à une entreprise qui s'est retirée consignerait une
+> décision que personne n'a prise.
+>
+> **L'entreprise peut retirer sa candidature** (`DELETE
+> /api/v1/providers/me/registration`), et la revue répond alors 409
+> `PROVIDER_CANCELLED` — le scénario `@edge` du FR, dont la moitié « côté
+> entreprise » manquait.
+>
+> **Une troisième origine de contrôle : `OPS_REVIEW`.** Un humain a lu les
+> pièces. Ce n'est ni la BCE ni une démonstration, et le dire ainsi permettra de
+> distinguer les dossiers validés à la main le jour où l'adaptateur BCE existera.
+>
+> **Deux contraintes corrigées en cours de route, toutes deux trouvées par les
+> tests d'intégration.** V33 : la règle des quatre yeux était écrite pour toute
+> revue et refusait donc les validations, closes par leur unique auteur. V34 :
+> `provider_origine_coherente` exigeait une origine de contrôle pour tout statut
+> autre que `PENDING_KYC` — vrai tant que les seuls autres étaient `ACTIVE` et
+> `SUSPENDED`, faux dès `REJECTED` et `WITHDRAWN`, qui n'ont jamais été activés.
+>
+> **Non livré, et écrit comme tel** : le courriel à l'entreprise (FR-038
+> `@happy`). Le service de courriel est journalisé et non expédié tant qu'aucun
+> fournisseur n'est provisionné ; l'API rend `notifie: false` et l'écran le dit,
+> plutôt que de laisser croire que l'entreprise a été prévenue. Les pièces
+> jointes du dossier (assurance, itsme) ne sont pas non plus affichées : elles
+> supposent le stockage objet, non provisionné (Story 4.5).
 
 ### Story 8.2 — Exports régulateurs RGPD/NIS2/TVA (FR-039)
 - **En tant que** ops · **je veux** générer exports signés · **afin de** répondre aux autorités
@@ -1578,11 +1749,85 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > trousseau que ce déploiement n'a pas ; l'export asynchrone au-delà de cent
 > mille lignes ; et l'envoi effectif à l'autorité.
 
-### Story 8.3 — Dashboard temps réel KPI (FR-040)
+### Story 8.3 — Dashboard temps réel KPI (FR-040) — *faite*
 - **En tant que** ops · **je veux** dashboard · **afin de** piloter
 - **4×N** : PRD FR-040 (backend down, empty state, RBAC)
 - **Couche(s)** : Application + Frontend (Svelte 5 dashboard)
 - **Taille** : **M** (0,75 j) · **Tours** : 4
+
+> **Une requête, pas dix.** Chaque agrégat est indépendant, mais les émettre
+> séparément donnerait dix instantanés pris à dix moments différents : le nombre
+> de Demandes et celui des attributions ne se rapporteraient plus au même
+> instant, et le taux calculé dessus pourrait dépasser cent pour cent. Une seule
+> instruction les prend sur la même vue de la base.
+>
+> **Chaque taux voyage avec son assiette.** Le service rend les numérateurs et
+> les dénominateurs, pas des pourcentages : « 60 % » sur trois Demandes se lit
+> autrement que « 60 % » sur trois mille, et un tableau qui masque son
+> dénominateur fait décider sur du bruit.
+>
+> **Un taux sans assiette est `null`, jamais zéro** (FR-040 `@edge`). Zéro pour
+> cent se lit comme un échec de la plateforme ; à J0, il n'y a pas d'échec, il
+> n'y a rien à mesurer.
+>
+> **Le *fill rate* se compte sur l'attribution, pas sur le statut courant.** Une
+> Demande qui a trouvé un prestataire puis dont l'intervention a été annulée
+> avait bien trouvé. Compter le statut du jour ferait baisser le taux à chaque
+> désistement, ce qui mesurerait autre chose et donnerait l'impression que le
+> matching se dégrade.
+>
+> **La GMV se compte sur les libérations, pas sur les devis acceptés.** Un devis
+> accepté mais non validé n'est pas encore du chiffre d'affaires ; l'y compter
+> gonflerait la mesure de tout ce qui finit en annulation.
+>
+> **Écart au FR, assumé : ce n'est pas le NPS.** FR-040 demande le NPS. Le
+> produit ne pose jamais la question « recommanderiez-vous » ; le calculer à
+> partir de notes sur cinq serait inventer une mesure et lui donner le nom d'une
+> autre. Le tableau rend la **note moyenne avec son nombre de notes**, et le
+> champ est nommé comme tel.
+>
+> **La consultation est journalisée, y compris le refus** (FR-040 `@security`),
+> par le même chemin que le journal d'audit. Sans cible : le tableau ne porte
+> sur personne.
+>
+> **Le tableau de bord est ouvert aux quatre rôles.** Il ne contient que des
+> agrégats anonymisés ; refuser à un réviseur KYC de savoir combien de contrôles
+> attendent l'obligerait à demander le chiffre à quelqu'un de plus habilité, ce
+> qui déplacerait le privilège au lieu de le réduire. Un test vérifie qu'aucun
+> identifiant, adresse ou UUID n'apparaît dans la réponse.
+>
+> **L'écran a exigé de corriger l'authentification d'exploitation d'abord.**
+> Les routes ops se ré-authentifiaient à chaque requête par **paramètres d'URL**
+> (adresse, mot de passe, code TOTP). Tenable pour un appel en ligne de
+> commande ; intenable pour un navigateur, où le mot de passe finit dans la
+> barre d'adresse, l'historique, l'en-tête `Referer` et les journaux d'accès du
+> serveur — et comme le code TOTP tourne toutes les trente secondes, il aurait
+> fallu soit le redemander sans cesse, soit garder le mot de passe en mémoire de
+> page. La migration V30 ajoute `session_ops`, `POST /ops/login` rend un jeton
+> porteur, `POST /ops/logout` le ferme, et **la forme en paramètres d'URL est
+> retirée, pas dépréciée** : un test vérifie qu'elle ne donne plus rien. Cela
+> lève au passage le blocage de l'écran de médiation (7.4) et de celui de revue
+> KYC (8.1).
+>
+> **Trente minutes, sans prolongation.** Une session qui se renouvelle à chaque
+> clic finit ouverte toute la journée sur un poste partagé. La révocation d'un
+> compte ferme ses sessions dans la seconde — la jointure sur `compte_ops.actif`
+> est dans la requête de lecture, pas dans un balayage.
+>
+> **Le jeton n'est écrit nulle part**, ni côté serveur (seule son empreinte
+> SHA-256 est conservée), ni côté navigateur (mémoire de page, jamais
+> `localStorage` : un jeton d'exploitation y survivrait à la fermeture de
+> l'onglet et resterait lisible par tout script injecté). Fermer l'onglet ferme
+> la session, et le composant appelle `logout` à son démontage.
+>
+> **La dernière valeur connue reste à l'écran quand le service tombe** (FR-040
+> `@negative`), avec une bannière qui donne l'heure de la lecture. Vider le
+> tableau effacerait la seule information disponible au moment où
+> l'exploitation en a le plus besoin. Rafraîchissement toutes les trente
+> secondes, comme demandé.
+>
+> **L'écran prévient cinq minutes avant l'échéance.** Une console qui répond 401
+> au milieu d'une médiation fait perdre ce qui était en train d'être écrit.
 
 ### Story 8.4 — RBAC ops + MFA TOTP (FR-041)
 - **En tant que** super-admin · **je veux** gérer ops users + rôles · **afin de** sécuriser admin
@@ -1637,12 +1882,43 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 
 ## Epic 9 — i18n · Priorité **Must**
 
-### Story 9.1 — i18n FR/NL/EN toutes surfaces (FR-043)
+### Story 9.1 — i18n FR/NL/EN toutes surfaces (FR-043) — *service et sélecteur faits ; coquille Astro en français*
 - **En tant que** User · **je veux** choisir ma langue · **afin d'** utiliser l'app confortablement
 - **4×N** : PRD FR-043
 - **Couche(s)** : Frontend (catalogues compilés) + Backend (emails)
 - **Taille** : **M** (0,75 j) · **Tours** : 3
 
+> **Sélecteur de langue livré (complément Story 9.1).** Un `<select>` dans
+> l'en-tête, dont le choix est enregistré et rétabli à chaque page : Bruxelles
+> est bilingue, et quelqu'un qui a demandé le néerlandais une fois ne doit pas
+> avoir à le redemander à chaque écran, sans quoi le sélecteur est un gadget.
+>
+> **Il agit sur `<html lang>`**, et pas seulement sur un état interne : c'est cet
+> attribut que lisent `localeAffichee()` — donc tous les messages d'erreur d'API
+> déjà traduits —, les lecteurs d'écran et la césure du navigateur. Le suffixe
+> régional est conservé pour le français et le néerlandais : « fr-BE » et
+> « nl-BE » ne se lisent pas comme « fr-FR » et « nl-NL », et les formats de date
+> et de monnaie en dépendent. L'anglais n'en reçoit pas : lui inventer une
+> variante belge donnerait des formats que personne n'attend.
+>
+> **Une table typée plutôt que trois fichiers.** `Record<LocaleKlaar, string>`
+> sur chaque entrée fait **échouer la compilation** si une langue manque : une
+> traduction oubliée est une erreur de type, pas un texte français qui surgit au
+> milieu d'une page néerlandaise. Un test vérifie de surcroît qu'aucune
+> traduction n'est identique d'une langue à l'autre, ce qui trahit presque
+> toujours un oubli.
+>
+> **Le changement recharge la page.** Les composants lisent leur langue à
+> l'initialisation ; leur demander de réagir à un changement supposerait un
+> magasin partagé que chacun devrait penser à écouter, et le premier oubli
+> laisserait un écran à moitié traduit.
+>
+> **Ce qui reste en français, et pourquoi.** La coquille Astro : les pages sont
+> générées statiquement à la construction, les traduire demande soit trois jeux
+> de pages, soit un rendu au serveur — un choix d'architecture, pas un oubli de
+> traduction. Et la **console d'exploitation**, qui s'adresse aux équipes de
+> klaar et non aux Bruxellois ; FR-043 porte sur l'usage du public.
+>
 > **Faite côté service ; les écrans restent à traduire.** Ce qui est livré : la
 > route de changement de langue, et surtout la correction d'un défaut réel — la
 > locale vivait sur le compte depuis la Story 1.1, mais **chaque avis partait en
@@ -1671,11 +1947,36 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > Reste à faire : la traduction du texte statique des écrans. Les tables de
 > messages d'erreur sont déjà trilingues ; le texte de mise en page ne l'est pas.
 
-### Story 9.2 — i18n factures + emails (FR-044)
+### Story 9.2 — i18n factures + emails (FR-044) — *emails faits ; factures sans objet à ce jour*
 - **En tant que** User/Provider · **je veux** docs dans ma langue · **afin de** comprendre
 - **4×N** : PRD FR-044 (mix destinataires)
 - **Couche(s)** : Application + Infra (template PDF multilingue)
 - **Taille** : **M** (0,75 j) · **Tours** : 3
+
+> **La moitié « courriels » est livrée, et corrigeait un défaut réel.** Chaque
+> avis part dans la langue de son destinataire, lue sur son compte : voir la
+> Story 9.1. Le scénario `@happy` « Email dans langue destinataire » est tenu,
+> et le mélange de destinataires aussi — c'est `notifier()` qui compose par
+> candidat, et non une langue choisie une fois pour l'envoi entier.
+>
+> **La moitié « factures » n'a rien à traduire, parce qu'il n'y a pas de
+> facture.** La génération relève de FR-026 (Story 5.3), dans l'Epic 5, bloqué
+> faute de compte Stripe. Écrire un gabarit PDF trilingue pour un document que
+> rien ne produit reviendrait à livrer une traduction sans texte.
+>
+> **Et ce n'est pas seulement une question de dépendance.** Une facture porte un
+> numéro dans une séquence continue, et engage fiscalement son émetteur. En
+> émettre pour des paiements qui n'ont jamais eu lieu créerait des pièces
+> comptables sans contrepartie — précisément ce qu'un contrôle TVA cherche. La
+> facture doit naître avec le paiement, pas avant lui.
+>
+> **Ce qui existe déjà côté fiscal** : l'export TVA de la Story 8.2 (FR-039),
+> qui rend en centimes la ventilation de chaque libération. C'est la donnée dont
+> une facture se déduira, le jour où il y en aura.
+>
+> **La règle du `@edge` reste à trancher quand ce jour viendra** : « la version
+> officielle est dans la langue du prestataire, émetteur légal ». Elle est
+> notée ici pour ne pas être redécouverte.
 
 **Epic 9 total** : 2 stories · ~1,5 j wall-clock · ~6 tours
 

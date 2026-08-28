@@ -142,3 +142,54 @@ fn repondre(resultat: Result<EtatDisponibilite, ErreurDisponibilite>) -> HttpRes
         }
     }
 }
+
+/// L'entreprise retire sa demande d'inscription (Story 8.1, FR-038 `@edge`).
+///
+/// **Ce n'est pas une suppression de compte.** Le compte utilisateur reste ; ce
+/// qui est retiré est la candidature en cours de contrôle. Effacer la ligne
+/// ferait disparaître la trace qu'une inscription avait été déposée, et le jour
+/// où la même entreprise revient, personne ne saurait qu'elle était déjà passée.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/providers/me/registration",
+    tag = "prestataires",
+    responses(
+        (status = 204, description = "Demande retirée"),
+        (status = 401, description = "Jeton absent ou invalide"),
+        (status = 404, description = "Aucune entreprise pour ce compte", body = ErreurValidationDto),
+        (status = 409, description = "La demande n'est plus en attente de contrôle", body = ErreurValidationDto),
+        (status = 503, description = "Service indisponible", body = ErreurValidationDto),
+    ),
+    security(("bearer" = []))
+)]
+#[actix_web::delete("/api/v1/providers/me/registration")]
+pub async fn retirer_inscription(
+    authentifie: Authentifie,
+    etat: web::Data<EtatApplication>,
+) -> HttpResponse {
+    use klaar_application::usecases::revue_kyc::{retirer, ErreurRevue};
+
+    match retirer(
+        etat.revues_kyc.as_ref(),
+        etat.prestataires.as_ref(),
+        authentifie.utilisateur_id,
+    )
+    .await
+    {
+        Ok(true) => HttpResponse::NoContent().finish(),
+        // 409 : la demande a déjà été tranchée, ou déjà retirée. Ce n'est pas
+        // un échec de la requête, c'est un état qui a changé.
+        Ok(false) => HttpResponse::Conflict().json(ErreurValidationDto {
+            code: "REGISTRATION_NOT_PENDING".to_string(),
+        }),
+        Err(ErreurRevue::Introuvable) => HttpResponse::NotFound().json(ErreurValidationDto {
+            code: "PROVIDER_NOT_FOUND".to_string(),
+        }),
+        Err(e) => {
+            tracing::error!(erreur = %e, "retrait d'inscription impossible");
+            HttpResponse::ServiceUnavailable().json(ErreurValidationDto {
+                code: "SERVICE_UNAVAILABLE".to_string(),
+            })
+        }
+    }
+}

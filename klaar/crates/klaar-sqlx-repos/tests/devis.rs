@@ -37,7 +37,7 @@ async fn pool() -> PoolPg {
 
 /// Numéro BCE construit et tiré au sort, jamais copié d'une entreprise réelle.
 fn numero() -> NumeroBce {
-    let corps = 1_000_000 + (Uuid::new_v4().as_u128() as u64) % 8_999_999;
+    let corps = (Uuid::new_v4().as_u128() as u64) % 20_000_000;
     NumeroBce::parse(&format!("{corps:08}{:02}", 97 - (corps % 97))).expect("numéro construit")
 }
 

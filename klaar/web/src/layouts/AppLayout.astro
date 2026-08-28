@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import SelecteurLangue from "../components/SelecteurLangue.svelte";
 
 interface Props {
   titre: string;
@@ -24,7 +25,8 @@ const { titre, description = "Dépannage et services à la demande à Bruxelles.
     <header class="klaar-entete">
       <img src="/icons/icon-192.png" alt="" width="32" height="32" />
       <strong>Klaar</strong>
-      <span class="klaar-tempere">Bruxelles</span>
+      <span class="klaar-tempere">Bruxelles · Brussel</span>
+      <SelecteurLangue client:load />
     </header>
     <main>
       <slot />

@@ -35,6 +35,14 @@ export interface Mission {
   devis: Devis | null;
   /** Devis encore envoyables avant que le plafond n'annule la Mission. */
   devis_restants: number;
+  /**
+   * Le partage de position est consenti et en cours (FR-019).
+   *
+   * Rendu par le serveur plutôt que retenu par l'écran : après un
+   * rechargement, l'état local est perdu et le bouton annoncerait le contraire
+   * de ce qui se passe.
+   */
+  suivi_consenti: boolean;
 }
 
 /**
@@ -459,6 +467,47 @@ export async function envoyerDevis(
   return request(`/missions/${missionId}/quote`, {
     method: "POST",
     body: proposition,
+    headers: autorisation(),
+  });
+}
+
+/**
+ * Consentement au partage de position pendant le trajet (Story 4.4, FR-019).
+ *
+ * **Par intervention, et révocable.** Un réglage global vaudrait pour toutes
+ * les interventions à venir, ce qui n'est pas un consentement éclairé : le
+ * prestataire doit pouvoir accepter aujourd'hui et refuser demain sans que cela
+ * lui coûte quoi que ce soit.
+ */
+export async function consentirSuivi(
+  missionId: string,
+  accepte: boolean,
+): Promise<{ consenti: boolean }> {
+  return request(`/missions/${missionId}/tracking/consent`, {
+    method: "POST",
+    body: { accepte },
+    headers: autorisation(),
+  });
+}
+
+/**
+ * Envoie une position pendant le trajet (FR-019).
+ *
+ * **Pas de mise en file hors-ligne.** Une position rejouée dix minutes plus
+ * tard placerait le prestataire où il n'est plus, ce qui est pire qu'une carte
+ * vide : le demandeur descendrait attendre dans la rue. Une position ratée est
+ * perdue, et c'est le bon comportement.
+ *
+ * Le serveur rend la position **dégradée**, celle que le demandeur verra.
+ */
+export async function envoyerPosition(
+  missionId: string,
+  lat: number,
+  lon: number,
+): Promise<{ lat: number; lon: number; hors_zone: boolean; relevee_le: string }> {
+  return request(`/missions/${missionId}/tracking`, {
+    method: "POST",
+    body: { lat, lon },
     headers: autorisation(),
   });
 }
