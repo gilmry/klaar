@@ -19,6 +19,7 @@ pub mod mission;
 pub mod notation;
 pub mod ops;
 pub mod push;
+pub mod reprogrammation;
 pub mod session;
 pub mod suivi;
 pub mod temps_reel;

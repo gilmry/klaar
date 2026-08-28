@@ -23,6 +23,7 @@ pub mod ops_repository;
 pub mod provider_repository;
 pub mod push;
 pub mod push_repository;
+pub mod reprogrammation_repository;
 pub mod session_repository;
 pub mod trace_repository;
 pub mod utilisateur_repository;

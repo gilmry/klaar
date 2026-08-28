@@ -22,6 +22,7 @@ pub mod ops;
 pub mod ouvrir_litige;
 pub mod rafraichir;
 pub mod repondre_devis;
+pub mod reprogrammer;
 pub mod soumettre_demande;
 pub mod transiter_mission;
 pub mod valider_mission;

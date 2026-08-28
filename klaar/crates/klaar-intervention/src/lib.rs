@@ -8,6 +8,7 @@
 
 mod annulation;
 mod mission;
+mod reprogrammation;
 
 pub use annulation::{
     AnnulationError, AnnulationMission, AuteurAnnulation, ConsequenceAnnulation,
@@ -17,4 +18,8 @@ pub use annulation::{
 };
 pub use mission::{
     Mission, MissionError, StatutMission, TransitionMission, DERIVE_HORODATAGE_MAX_MINUTES,
+};
+pub use reprogrammation::{
+    echeance_reprogrammation, Reprogrammation, ReprogrammationError, StatutReprogrammation,
+    FENETRE_REPROGRAMMATION_JOURS,
 };

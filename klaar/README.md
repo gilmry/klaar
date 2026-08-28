@@ -613,6 +613,28 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   Le suivi sonde et s'arrête quand la Demande est close. Depuis la Story 4.9, une
   socket double ce sondage et le ralentit à trente secondes tant qu'elle vit.
 
+- **4.8** — **Reprogrammer une intervention annulée** (FR-023) :
+  `POST /api/v1/missions/{id}/reschedule` et `/reschedule/answer`.
+
+  **L'invariant « une Demande donne au plus une Mission » devient « au plus une
+  Mission vivante ».** Deux Missions simultanées feraient partir deux
+  camionnettes — mais une Mission annulée n'envoie personne. Interdire une
+  seconde ligne obligerait à recréer une Demande, donc à rediffuser et à
+  renégocier un prix déjà convenu. L'index partiel garde la garantie utile et
+  lève celle qui gênait.
+
+  **Seule une annulation du prestataire se reprogramme.** Un demandeur qui a
+  renoncé refait une Demande : elle rediffusera, et il trouvera peut-être mieux.
+
+  **Le devis est recopié, pas déplacé** : celui de l'intervention annulée reste
+  attaché à elle, c'est lui qui explique ce qui avait été convenu. La copie naît
+  acceptée — les deux parties se sont déjà mises d'accord.
+
+  Un ordre d'écriture corrigé par la base : la contrainte lie le statut
+  `ACCEPTED` à la présence d'une nouvelle Mission, et basculer le statut avant
+  de créer la Mission la violait. Le verrou de ligne prend la place du
+  compare-and-swap.
+
 - **8.2** — **Exports réglementaires** (FR-039) :
   `/api/v1/ops/exports/gdpr`, `/exports/vat`.
 

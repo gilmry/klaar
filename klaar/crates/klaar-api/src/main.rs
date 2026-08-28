@@ -23,7 +23,7 @@ use klaar_sqlx_repos::{
     PgDevisRepository, PgExportRepository, PgJournalAudit, PgLiberationRepository,
     PgLitigeRepository, PgMessageRepository, PgMissionRepository, PgNotationRepository,
     PgOpsRepository, PgPaiementRepository, PgProviderRepository, PgPushSubscriptionRepository,
-    PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
+    PgReprogrammationRepository, PgSessionRepository, PgTraceRepository, PgUtilisateurRepository,
 };
 
 #[actix_web::main]
@@ -259,6 +259,7 @@ async fn main() -> std::io::Result<()> {
             litiges: Arc::new(PgLitigeRepository::new(pool.clone())),
             ops: Arc::new(PgOpsRepository::new(pool.clone())),
             exports: Arc::new(PgExportRepository::new(pool.clone())),
+            reprogrammations: Arc::new(PgReprogrammationRepository::new(pool.clone())),
             // Le bus et les billets sont **partagés entre les fabriques
             // d'application** : `HttpServer::new` appelle sa fermeture une fois
             // par fil d'exécution, et un bus par fil ne relierait qu'un

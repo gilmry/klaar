@@ -1259,6 +1259,36 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Couche(s)** : Domain + Application
 - **Taille** : **S** (0,5 j) · **Tours** : 2
 
+> **Faite.** Le demandeur propose, le prestataire accepte ou décline.
+>
+> **L'invariant « une Demande donne au plus une Mission » devient « au plus une
+> Mission vivante ».** C'était une contrainte d'unicité simple depuis V13, et
+> elle disait quelque chose de juste : deux Missions simultanées feraient partir
+> deux camionnettes. Ce qui change n'est pas cela — une Mission annulée n'envoie
+> personne. Reprogrammer, c'est reprendre là où l'annulation s'est arrêtée, avec
+> le même devis et le même prestataire ; interdire une seconde ligne obligerait
+> à recréer une Demande, donc à rediffuser et à renégocier un prix déjà convenu.
+> L'index partiel garde la garantie utile et lève celle qui gênait.
+>
+> **Seule une annulation du prestataire se reprogramme.** Un demandeur qui a
+> renoncé et qui change d'avis fait une nouvelle Demande : elle rediffusera, et
+> il trouvera peut-être mieux. Lui offrir de reprendre l'ancien devis le
+> priverait de ce tour.
+>
+> **Le devis est recopié, pas déplacé.** Celui de l'intervention annulée reste
+> attaché à elle : c'est lui qui explique ce qui avait été convenu, et le
+> déplacer réécrirait l'histoire de l'annulation. La copie naît acceptée — les
+> deux parties se sont déjà mises d'accord, et le refaire valider serait leur
+> demander deux fois la même chose.
+>
+> **Un ordre d'écriture corrigé par la base.** La contrainte lie le statut
+> `ACCEPTED` à la présence d'une nouvelle Mission, et PostgreSQL la vérifie à
+> chaque instruction : basculer le statut avant de créer la Mission la violait.
+> Le verrou de ligne prend la place du compare-and-swap, et les deux avancent
+> ensemble.
+>
+> Non livré : le remboursement ou le report du séquestre (Stripe).
+
 ### Story 4.9 — WebSocket statut Mission temps réel
 - **En tant que** User · **je veux** le statut live · **afin de** suivre sans refresh
 - **4×N** : WebSocket OK / déconnecté / reconnect / multi-device

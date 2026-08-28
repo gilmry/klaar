@@ -233,22 +233,29 @@ async fn edge_le_balayage_eteint_les_echus_et_ne_les_rend_qu_une_fois() {
     devis.expire_le = devis.cree_le + Duration::minutes(60);
     depot.emettre(&devis, DEVIS_MAX_PAR_MISSION).await.unwrap();
 
-    // Un passage borné à un grand nombre balaie forcément le nôtre, mais la
-    // base est partagée : l'assertion porte sur **notre** devis, jamais sur le
-    // total, sinon un autre cas exécuté en parallèle la ferait tomber.
-    let mut vu = false;
+    // La file est vidée plutôt que balayée une fois : un passage rend les plus
+    // anciens d'abord, et une base partagée avec le reste de la suite en garde
+    // beaucoup.
     for _ in 0..10 {
-        let eteints = depot.expirer_les_echus(Utc::now(), 500).await.unwrap();
-        if eteints.iter().any(|d| d.id == devis.id) {
-            vu = true;
-            break;
-        }
-        if eteints.is_empty() {
+        if depot
+            .expirer_les_echus(Utc::now(), 500)
+            .await
+            .unwrap()
+            .is_empty()
+        {
             break;
         }
     }
-    assert!(vu, "le devis échu doit être rendu par le balayage");
 
+    // **Ce qui est asserté est l'issue, pas qui l'a produite.** Un autre binaire
+    // de test balaie la même table au même moment : si son passage éteint ce
+    // devis avant le nôtre, le nôtre ne le rendra pas — et ce serait le
+    // comportement correct, puisqu'un balayage ne rend que ce qu'il vient
+    // d'éteindre. Assertée telle quelle, la propriété « il nous est rendu »
+    // dépendait de ce qui tournait en parallèle.
+    //
+    // Que le balayage rende exactement ce qu'il éteint est vérifié là où c'est
+    // isolable : `usecases::expirer_devis`, sur un double en mémoire.
     let relu = depot
         .dernier_pour_mission(mission_id)
         .await

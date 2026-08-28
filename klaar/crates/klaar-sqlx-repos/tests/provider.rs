@@ -18,6 +18,12 @@ use uuid::Uuid;
 /// Grand-Place.
 const CENTRE: (f64, f64) = (50.8467, 4.3525);
 
+/// Plafond de classement assez haut pour qu'aucun accumulé ne fasse écran.
+///
+/// Le service, lui, borne à dix : c'est `chercher_candidats` qui le fait, et ses
+/// propres cas le vérifient. Ici, la limite ne doit rien filtrer.
+const CLASSEMENT_COMPLET: i64 = 1_000_000;
+
 async fn pool() -> PoolPg {
     let url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL requise : `make db-up && make migrate`, ou service postgres en CI");
@@ -260,11 +266,12 @@ async fn edge_un_prestataire_multi_secteur_n_apparait_qu_une_fois() {
             &secteur("plomberie"),
             Geo::new(CENTRE.0, CENTRE.1).unwrap(),
             5_000.0,
-            // Large, et non cinquante : la base garde les prestataires des
-            // exécutions précédentes, tous posés au même point. Avec une limite
-            // serrée, la cible finissait par tomber hors des premiers rendus et
-            // le cas échouait sans qu'aucune duplication n'ait eu lieu.
-            1_000,
+            // **Un plafond que l'accumulation ne peut pas atteindre.** Ce cas
+            // porte sur la duplication, pas sur le rang : la base garde les
+            // prestataires des exécutions précédentes, tous posés au même
+            // point, et mille a fini par être dépassé. Toute borne atteignable
+            // rendrait ce test dépendant du nombre d'exécutions passées.
+            CLASSEMENT_COMPLET,
         )
         .await
         .unwrap();
