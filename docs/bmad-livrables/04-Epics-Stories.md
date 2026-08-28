@@ -262,11 +262,38 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 - **Taille** : **L** (1 j) · **Tours** : 6
 - **Dépendance** : sandbox itsme à demander (story amont)
 
-### Story 1.6 — Onboarding Provider KYC BCE (FR-003)
+### Story 1.6 — Onboarding Provider KYC BCE (FR-003) — *agrégat fait, KYC non fourni*
 - **En tant que** Provider candidat · **je veux** soumettre BCE + assurance + Skills · **afin de** recevoir des Demandes
 - **4×N** : PRD FR-003 (validation BCE, faillite, doublon)
 - **Couche(s)** : Domain (Provider aggregate) + Infra (KBO-BCE API + S3 + ClamAV) + Frontend (wizard onboarding)
 - **Taille** : **L** (1 j) · **Tours** : 5
+
+> **Ce qui est vérifiable hors ligne l'est.** Le numéro BCE porte une clé de contrôle — les
+> deux derniers chiffres valent `97 - (les huit premiers modulo 97)`. Cette vérification
+> attrape ce qui compte le plus souvent : une faute de frappe, deux chiffres intervertis, un
+> numéro inventé. Elle ne dit rien de l'existence de l'entreprise, de sa faillite ni de son
+> activité, qui demandent l'API de la BCE.
+>
+> **Le KYC n'est pas fourni, et le type l'impose.** Un prestataire naît `PENDING_KYC` ; le
+> seul chemin vers `ACTIVE` réclame une `PreuveKyc`, type opaque sans constructeur littéral.
+> Il n'existe que deux façons d'en obtenir une : `depuis_verification_bce`, **qui n'a aucun
+> appelant** faute d'adaptateur, et `demonstration`, dont le nom dit ce qu'elle vaut. L'origine
+> est conservée en base, et la contrainte `provider_origine_coherente` interdit qu'un
+> prestataire actif n'en porte aucune. Un prestataire actif sans contrôle réel se retrouve
+> donc par une requête, longtemps après.
+>
+> **Le peuplement de démonstration est un binaire, pas un endpoint** : une commande hors
+> ligne ne s'atteint pas par HTTP, alors qu'une route d'activation, même protégée, serait une
+> route qu'on peut oublier d'enlever. Elle refuse de tourner sans `KLAAR_PRESTATAIRES_DEMO=1`
+> et journalise ce qu'elle fait.
+>
+> **Non fourni** : l'attestation d'assurance (stockage objet chiffré + antivirus), le contrôle
+> de faillite, le contrôle de doublon d'identité. Le champ `disponible` est un interrupteur
+> simple, en attendant les plages horaires de la Story 3.7.
+>
+> Livre au passage la recherche par rayon que la Story 3.2 attendait : `ST_DWithin` sur une
+> `geography`, filtre de compétence en `EXISTS` — joindre dupliquerait la ligne du prestataire
+> par compétence, et la limite porterait sur les couples plutôt que sur les prestataires.
 
 ### Story 1.7 — Gestion méthode paiement User (FR-006)
 - **En tant que** User · **je veux** enregistrer ma carte via Stripe Elements · **afin de** accélérer mes Demandes

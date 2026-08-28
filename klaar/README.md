@@ -299,6 +299,28 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   obligatoirement toute fourchette — sans elle, une fourchette se lit comme un devis, et
   l'écart devient un litige.
 
+- **1.6 (partielle)** — **Prestataires** (FR-003) : agrégat `Provider`, numéro BCE avec sa clé de contrôle, compétences, recherche par rayon.
+
+  **Ce qui est vérifiable hors ligne l'est.** Un numéro BCE porte une clé : les deux derniers
+  chiffres valent `97 - (les huit premiers modulo 97)`. Cette vérification attrape une faute
+  de frappe ou deux chiffres intervertis — un test le montre en inversant deux chiffres d'un
+  numéro valide. Elle ne dit rien de l'existence de l'entreprise, qui demande l'API de la BCE.
+
+  **Le KYC n'est pas fourni, et le type l'impose.** Un prestataire naît `PENDING_KYC` ; le
+  seul chemin vers `ACTIVE` réclame une `PreuveKyc`, type opaque sans constructeur littéral.
+  Deux fabriques seulement : `depuis_verification_bce`, **qui n'a aucun appelant** faute
+  d'adaptateur, et `demonstration`, dont le nom dit ce qu'elle vaut. L'origine est conservée
+  en base et une contrainte interdit qu'un actif n'en porte aucune, de sorte qu'un
+  prestataire non contrôlé se retrouve par une requête longtemps après.
+
+  Le peuplement de démonstration est un **binaire, pas un endpoint** : une commande hors
+  ligne ne s'atteint pas par HTTP, alors qu'une route d'activation serait une route qu'on
+  peut oublier d'enlever.
+
+  **Un défaut de montage trouvé par les tests** : mes numéros BCE de test étaient
+  déterministes et entraient en collision avec les lignes de l'exécution précédente. La
+  contrainte d'unicité faisait son travail ; c'est le montage qui présumait une base vierge.
+
 ## Epic 3 — Demandes et matching
 
 - **3.1** — **Soumission d'une Demande** (FR-011) : `POST /api/v1/requests`, page `/demande`, position PostGIS, détection de doublon, quota horaire par compte.

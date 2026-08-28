@@ -57,6 +57,13 @@ path = "src/bin/vapid.rs"
 name = "klaar-effacer"
 path = "src/bin/effacer.rs"
 
+# Story 1.6 (partielle) — prestataires de démonstration, sans contrôle BCE.
+# Un binaire hors ligne et non un endpoint : une route d'activation, même
+# protégée, serait une route qu'on peut oublier d'enlever.
+[[bin]]
+name = "klaar-prestataires-demo"
+path = "src/bin/prestataires_demo.rs"
+
 [dev-dependencies]
 actix-rt = "2"
 # Pour lancer deux requêtes réellement concurrentes sur le même jeton et

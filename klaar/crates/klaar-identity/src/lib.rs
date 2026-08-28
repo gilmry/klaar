@@ -7,10 +7,16 @@
 
 mod jeton_verification;
 mod mot_de_passe;
+mod numero_bce;
+mod provider;
 mod utilisateur;
 mod verrouillage;
 
 pub use jeton_verification::{EmpreinteJeton, JetonVerification};
 pub use mot_de_passe::{EmpreinteMotDePasse, MotDePasse, MotDePasseError, ParametresArgon2};
+pub use numero_bce::{NumeroBce, NumeroBceError};
+pub use provider::{
+    OrigineKyc, PreuveKyc, Provider, ProviderError, StatutProvider, RAISON_SOCIALE_MAX,
+};
 pub use utilisateur::{JetonEmis, StatutUtilisateur, Utilisateur, DELAI_EFFACEMENT_JOURS};
 pub use verrouillage::{Verrouillage, DUREE_VERROU_MINUTES, FENETRE_ECHECS_MINUTES, MAX_ECHECS};

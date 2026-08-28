@@ -1,4 +1,4 @@
-.PHONY: bootstrap test build db-up db-down migrate hooks codegen frontend frontend-test msrv
+.PHONY: bootstrap test test-sobre build db-up db-down migrate hooks codegen frontend frontend-test msrv
 
 # Story 0.1 — DoD : idempotent, tous les crates compilent, cargo test vert.
 bootstrap: build test frontend
@@ -8,6 +8,13 @@ build:
 
 test:
 	cargo test --workspace
+
+# La compilation incrémentale fait grossir `target/` d'un facteur six (4 Go
+# contre 25 Go observés sur ce dépôt) : elle conserve un état par version de
+# chaque unité de compilation, et rien ne le purge. Utile en itération courte,
+# coûteuse sur une machine partagée — d'où cette cible pour les longues séances.
+test-sobre:
+	CARGO_INCREMENTAL=0 cargo test --workspace
 
 # Story 0.1 — la MSRV déclarée dans Cargo.toml doit être vraie, pas décorative.
 msrv:

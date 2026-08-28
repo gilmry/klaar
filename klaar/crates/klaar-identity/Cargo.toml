@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 klaar-shared-kernel = { path = "../klaar-shared-kernel", version = "0.0.0" }
+klaar-catalog = { path = "../klaar-catalog", version = "0.0.0" }
 # argon2id : exigé nommément par FR-001 `@security`. Le calcul est du CPU pur,
 # sans IO ni dépendance à un fournisseur : il reste donc dans le domaine, où
 # l'invariant « un mot de passe n'est jamais conservé en clair » est énoncé.

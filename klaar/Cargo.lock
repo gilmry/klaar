@@ -1538,6 +1538,7 @@ dependencies = [
  "argon2",
  "base64",
  "chrono",
+ "klaar-catalog",
  "klaar-shared-kernel",
  "rand_core 0.6.4",
  "serde",

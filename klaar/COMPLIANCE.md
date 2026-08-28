@@ -123,6 +123,27 @@ plutôt que d'en générer une, ce qui invaliderait toutes les sessions à chaqu
 HS256 signifie que le secret sert à la fois à signer et à vérifier : ne le partagez pas avec
 un second service, ce serait lui donner le pouvoir d'émettre des jetons.
 
+## Prestataires : le KYC n'est pas fait (Story 1.6, FR-003)
+
+FR-003 exige la validation du numéro à la Banque-Carrefour des Entreprises, le contrôle de
+l'état de faillite et la collecte d'une attestation d'assurance. **Rien de cela n'est
+fourni** : l'API de la BCE, le stockage objet chiffré et l'antivirus sont hors du périmètre.
+
+Ce qui est fourni : la **clé de contrôle** du numéro BCE, vérifiée hors ligne. Elle attrape
+une faute de frappe ou un numéro inventé, jamais l'existence réelle d'une entreprise. Un
+numéro bien formé n'est pas un numéro valide.
+
+Ce qui remplace le contrôle : un prestataire naît `PENDING_KYC` et n'en sort que sur
+présentation d'une `PreuveKyc`, dont la seule fabrique utilisable aujourd'hui s'appelle
+`demonstration`. L'origine est écrite en base, et une contrainte interdit qu'un prestataire
+actif n'en porte aucune. **Conséquence à connaître** : toute fiche prestataire de ce
+déploiement porte `origine_kyc = 'DEMONSTRATION'`, et se retrouve par
+`SELECT ... WHERE origine_kyc = 'DEMONSTRATION'`.
+
+Le peuplement passe par le binaire `klaar-prestataires-demo`, qui refuse de tourner sans
+`KLAAR_PRESTATAIRES_DEMO=1`. Ce drapeau ne protège de rien — qui peut lancer le binaire peut
+poser la variable — mais il empêche qu'une exécution distraite peuple une base réelle.
+
 ## Périmètre géographique : un rectangle, pas la Région (Story 3.1, FR-011)
 
 Le contrôle `GEO_OUTSIDE_RBC` ramène les dix-neuf communes de la Région de

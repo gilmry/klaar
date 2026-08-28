@@ -2,9 +2,11 @@
 
 mod catalogue;
 mod demande;
+pub mod demonstration;
 mod effacement;
 mod journal_audit;
 mod pool;
+mod provider;
 mod push_subscription;
 mod session;
 mod utilisateur;
@@ -13,6 +15,7 @@ pub use catalogue::PgCatalogueRepository;
 pub use demande::{PgDemandeRepository, PgPaiementRepository};
 pub use journal_audit::PgJournalAudit;
 pub use pool::{creer_pool, PoolPg};
+pub use provider::PgProviderRepository;
 pub use push_subscription::PgPushSubscriptionRepository;
 pub use session::PgSessionRepository;
 pub use utilisateur::PgUtilisateurRepository;
