@@ -18,7 +18,10 @@ import {
   resteAvantEcheance,
   sessionFinie,
   tableauDeBord,
+  catalogueAdmin,
+  creerSecteur,
   fileKyc,
+  libelleStatutSecteur,
   fileMediation,
   MOTIF_KYC_MIN,
   reviserKyc,
@@ -291,6 +294,57 @@ describe("@happy revue KYC", () => {
     expect(MOTIF_KYC_MIN).toBe(20);
     expect("non".length >= MOTIF_KYC_MIN).toBe(false);
     expect("Le numéro d'entreprise est inconnu.".length >= MOTIF_KYC_MIN).toBe(true);
+  });
+});
+
+describe("@happy catalogue", () => {
+  const SECTEUR = {
+    code: "chauffage",
+    libelle_fr: "Chauffage",
+    libelle_nl: "Verwarming",
+    libelle_en: "Heating",
+    ordre: 6,
+    statut: "DRAFT",
+    cree_par_moi: true,
+    missions_en_cours: 0,
+  };
+
+  it("crée un secteur et le lit avec son statut", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(reponse(SESSION))
+      .mockResolvedValueOnce(new Response(null, { status: 201 }))
+      .mockResolvedValueOnce(reponse({ secteurs: [SECTEUR] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await connexionOps("ops@klaar.test", "mdp", "123456");
+    await creerSecteur({
+      code: "chauffage",
+      libelle_fr: "Chauffage",
+      libelle_nl: "Verwarming",
+      libelle_en: "Heating",
+      ordre: 6,
+    });
+    // Les trois libellés partent ensemble : le service les exige, et un secteur
+    // publié sans néerlandais s'afficherait en français à un néerlandophone.
+    const envoye = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(envoye.libelle_nl).toBe("Verwarming");
+    expect(envoye.libelle_en).toBe("Heating");
+
+    const lus = await catalogueAdmin();
+    // Le brouillon est rendu à l'exploitation, avec ce qu'il faut pour décider.
+    expect(lus[0].statut).toBe("DRAFT");
+    expect(lus[0].cree_par_moi).toBe(true);
+  });
+
+  it("dit ce que chaque statut veut dire, sans jargon", () => {
+    // « DRAFT » nu ne dit pas qu'il est invisible du public, ce qui est
+    // précisément l'information qui compte.
+    expect(libelleStatutSecteur("DRAFT")).toContain("invisible du public");
+    expect(libelleStatutSecteur("PUBLISHED")).toBe("Publié");
+    expect(libelleStatutSecteur("DISABLED")).toContain("Retiré");
+    const tous = (["DRAFT", "PUBLISHED", "DISABLED"] as const).map(libelleStatutSecteur);
+    expect(new Set(tous).size).toBe(3);
   });
 });
 

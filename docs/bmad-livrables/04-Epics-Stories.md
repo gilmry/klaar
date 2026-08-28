@@ -608,8 +608,24 @@ architecture_source: docs/bmad-livrables/03-Architecture.md v0.2
 > l'exploitation comptera assez de monde pour qu'un tel rôle serve, il se créera
 > avec ses propres raisons.
 >
-> **Non livré** : l'écran. Les routes existent et sont vérifiées ; la console
-> les câblera comme elle a câblé la médiation et la revue KYC.
+> **L'écran est livré aussi**, dans la console, réservé au super-administrateur
+> — le montrer à un autre rôle le ferait cliquer pour recevoir un 403.
+>
+> **Publier prévient avant le clic** que le geste rend le secteur proposable à
+> toute la Région et qu'un retrait ultérieur laisserait des interventions sans
+> secteur. Sur son **propre** brouillon, le bouton est **absent et non grisé**,
+> remplacé par une phrase disant qu'un autre compte doit valider : un bouton
+> grisé invite à chercher pourquoi, la phrase dit quoi faire. Le bouton
+> « Retirer » est en revanche désactivé quand des interventions sont en cours —
+> là, c'est un état du monde qui changera de lui-même, et le message invite à
+> attendre plutôt qu'à réessayer.
+>
+> **Un défaut du client HTTP trouvé au passage.** `request` ne traitait que le
+> 204 pour les réponses sans corps ; une route rendant `201 Created` sans
+> contenu — ce que HTTP autorise, et ce que fait la création de secteur —
+> faisait échouer l'analyse JSON sur une chaîne vide. Le défaut dormait faute
+> qu'aucune route n'ait encore ce profil. Corrigé pour toutes : le corps est lu
+> en texte, et n'est analysé que s'il n'est pas vide.
 
 **Epic 2 total** : 4 stories · ~2,5 j wall-clock · ~10 tours
 

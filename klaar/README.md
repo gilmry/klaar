@@ -1018,7 +1018,15 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
   laissé soumettre des Demandes dans un secteur où aucun prestataire ne s'est
   déclaré.
 
-  Non livré : l'écran. Les routes existent et sont vérifiées.
+  **L'écran est livré aussi**, réservé au super-administrateur. Publier prévient
+  avant le clic ; sur son propre brouillon le bouton est **absent et non grisé**,
+  remplacé par une phrase disant qu'un autre compte doit valider — un bouton
+  grisé invite à chercher pourquoi, la phrase dit quoi faire.
+
+  **Un défaut du client HTTP trouvé au passage** : `request` ne traitait que le
+  204 pour les réponses sans corps, et une route rendant `201 Created` sans
+  contenu faisait échouer l'analyse JSON sur une chaîne vide. Le défaut dormait
+  faute qu'aucune route n'ait eu ce profil.
 
 - **1.5** (garanties) — **Échange OIDC itsme** (FR-002) : `state`, `nonce`,
   PKCE, et le contrôle des revendications du jeton d'identité.

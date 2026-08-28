@@ -293,3 +293,73 @@ export async function retirerInscription(jeton: string): Promise<void> {
 
 /** Motif minimal exigé pour un refus, en caractères. */
 export const MOTIF_KYC_MIN = 20;
+
+/** Un secteur, vu par l'exploitation (Story 2.4, FR-010). */
+export interface SecteurAdmin {
+  code: string;
+  libelle_fr: string;
+  libelle_nl: string;
+  libelle_en: string;
+  ordre: number;
+  statut: "DRAFT" | "PUBLISHED" | "DISABLED";
+  /**
+   * Vrai si c'est **vous** qui l'avez créé.
+   *
+   * Un brouillon se publie par un autre compte : l'écran doit pouvoir le dire
+   * avant le clic, plutôt que de laisser cliquer pour recevoir un 403.
+   */
+  cree_par_moi: boolean;
+  /** Non nul, il empêche le retrait. */
+  missions_en_cours: number;
+}
+
+/** Le catalogue entier, brouillons compris. */
+export async function catalogueAdmin(): Promise<SecteurAdmin[]> {
+  const corps = await request<{ secteurs: SecteurAdmin[] }>("/ops/catalog/sectors", {
+    headers: autorisationOps(),
+  });
+  return corps.secteurs;
+}
+
+/** Crée un secteur — toujours en brouillon. */
+export async function creerSecteur(secteur: {
+  code: string;
+  libelle_fr: string;
+  libelle_nl: string;
+  libelle_en: string;
+  ordre: number;
+}): Promise<void> {
+  return request<void>("/ops/catalog/sectors", {
+    method: "POST",
+    body: secteur,
+    headers: autorisationOps(),
+  });
+}
+
+/** Publie un brouillon. Refusé si c'est vous qui l'avez créé. */
+export async function publierSecteur(code: string): Promise<void> {
+  return request<void>(`/ops/catalog/sectors/${code}/publish`, {
+    method: "POST",
+    headers: autorisationOps(),
+  });
+}
+
+/** Retire un secteur du public. Refusé s'il porte des interventions en cours. */
+export async function desactiverSecteur(code: string): Promise<void> {
+  return request<void>(`/ops/catalog/sectors/${code}/disable`, {
+    method: "POST",
+    headers: autorisationOps(),
+  });
+}
+
+/** Ce que le statut d'un secteur veut dire, pour l'exploitation. */
+export function libelleStatutSecteur(statut: SecteurAdmin["statut"]): string {
+  switch (statut) {
+    case "DRAFT":
+      return "Brouillon — invisible du public";
+    case "PUBLISHED":
+      return "Publié";
+    case "DISABLED":
+      return "Retiré du public";
+  }
+}

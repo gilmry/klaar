@@ -15,6 +15,7 @@
   import { onDestroy } from "svelte";
   import Mediation from "./Mediation.svelte";
   import RevueKyc from "./RevueKyc.svelte";
+  import CatalogueOps from "./CatalogueOps.svelte";
   import {
     connexionOps,
     deconnexionOps,
@@ -269,6 +270,15 @@
     {#if role === "KYC_REVIEWER" || role === "SUPER_ADMIN"}
       <h2>Entreprises à contrôler</h2>
       <RevueKyc />
+    {/if}
+
+    <!--
+      Le catalogue est réservé au super-administrateur : le montrer à un autre
+      rôle le ferait cliquer pour recevoir un 403.
+    -->
+    {#if role === "SUPER_ADMIN"}
+      <h2>Catalogue</h2>
+      <CatalogueOps />
     {/if}
 
     <button type="button" onclick={() => void quitter()} data-action="ops-sortir">

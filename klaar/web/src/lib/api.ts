@@ -89,8 +89,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (!response.ok) {
     throw new ApiError(response.status, await response.text().catch(() => ""));
   }
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  // **Toute réponse sans corps, pas seulement 204.** La version précédente ne
+  // traitait que le 204, et une route rendant `201 Created` sans contenu — ce
+  // que HTTP autorise, et ce que fait la création de secteur — faisait échouer
+  // l'analyse JSON sur une chaîne vide. Le défaut est apparu au premier appel
+  // d'une telle route ; lire le texte d'abord le ferme pour toutes.
+  const texte = await response.text();
+  if (texte === "") return undefined as T;
+  return JSON.parse(texte) as T;
 }
 
 export const api = {
