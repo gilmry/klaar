@@ -256,14 +256,18 @@ mod tests {
     #[test]
     fn security_aucune_saisie_hostile_ne_fait_paniquer() {
         // Ce contrôle est en frontière : il reçoit ce que le formulaire envoie.
+        // Clés de contrôle volontairement fausses : ces entrées testent le
+        // rejet d'une saisie hostile, pas la validation d'un numéro. Une clé
+        // valide en ferait un numéro potentiellement attribué à une entreprise
+        // réelle, ce que la barrière de publication refuse — à raison.
         for hostile in [
             "../../etc/passwd",
             "'; DROP TABLE provider; --",
-            "0000000097\u{0}",
+            "0000000000\u{0}",
             "٠١٢٣٤٥٦٧٤٩",
             &"9".repeat(1_000),
             "BE",
-            "BEBEBE0000000097",
+            "BEBEBE0000000000",
         ] {
             let _ = NumeroBce::parse(hostile);
         }
