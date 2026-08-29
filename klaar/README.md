@@ -1438,6 +1438,30 @@ Vérifié de bout en bout : image construite, base initialisée depuis zéro,
 trente-sept migrations appliquées, `/api/v1/health` et le catalogue servis, le
 balayage tournant, la base injoignable depuis l'hôte.
 
+**La PWA fait partie du déploiement**, et l'oublier revenait à déployer l'API
+sans l'application. Le front appelle `/api/v1` en **relatif** : le servir sur
+une autre origine demanderait du CORS — relâcher une garantie de production pour
+une commodité — et le cookie de rafraîchissement ne voyagerait pas sans
+`SameSite=None`, qui est justement ce qu'on ne veut pas. Une image nginx sert le
+site statique et relaie l'API sur la même origine, en passant les en-têtes de
+socket que le temps réel exige.
+
+**Trois défauts trouvés en interrogeant le déploiement, pas en le lisant :**
+
+- `pg_isready` sans hôte réussit contre le serveur temporaire que PostgreSQL
+  lance pour initialiser son répertoire, lequel n'écoute que sur le socket
+  Unix. La base était déclarée saine, les migrations partaient, la connexion
+  était refusée ;
+- nginx construisait ses redirections avec **son** port d'écoute interne :
+  `/demande` renvoyait vers `http://localhost:8081/demande/`, un port fermé
+  côté client. `absolute_redirect off` le corrige ;
+- la règle de non-cache visait `/sw.js`, qui n'existe pas — le fichier
+  s'appelle `service-worker.js`. La règle ne s'appliquait à rien et le service
+  worker était servi avec le cache par défaut, ce qui aurait retenu chaque mise
+  à jour chez les gens qui se servent le plus de l'application.
+
+Aucun des trois ne se serait vu en relisant les fichiers.
+
 **Ce que cela change au décompte des dépendances.** « Il faut un compte OVH »
 devient « il faut un hôte », ce qui n'est pas la même phrase : un VPS, une
 machine de bureau, ce qu'on veut. Restent les dépendances qui ne se remplacent

@@ -13,7 +13,13 @@ services:
     volumes:
       - klaar-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U klaar"]
+      # `-h 127.0.0.1` : au premier démarrage, l'image officielle lance un
+      # serveur temporaire pour initialiser le répertoire de données, qui
+      # n'écoute que sur le socket Unix. `pg_isready` sans hôte le trouve et
+      # déclare la base saine alors que le vrai serveur n'écoute pas encore.
+      # Ici le service est lancé à la main, donc la faiblesse ne se voyait pas —
+      # elle mordrait au premier service ajouté qui dépend de la base.
+      test: ["CMD-SHELL", "pg_isready -U klaar -d klaar -h 127.0.0.1"]
       interval: 5s
       timeout: 3s
       retries: 10

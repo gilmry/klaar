@@ -80,15 +80,32 @@ services:
       # adresse de connexion directe ; avec lui et sans proxy, elle devient
       # contournable par un simple en-tête.
       KLAAR_DERRIERE_PROXY: ${KLAAR_DERRIERE_PROXY:-}
-    ports:
-      # Sur la boucle locale seulement : c'est le proxy inverse de l'hôte qui
-      # termine TLS et publie. Ouvrir 0.0.0.0 servirait l'API en clair.
-      - "127.0.0.1:${KLAAR_PORT:-8080}:8080"
+    # **Aucun port publié.** Le service n'est joint que par le site, sur le
+    # réseau interne. L'exposer en plus donnerait une seconde porte d'entrée
+    # sans proxy devant — et c'est celle qu'on oublie de fermer.
     depends_on:
       base:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Le site, et le relais de l'API sur la **même origine**.
+  #
+  # **Sans lui, l'application n'est pas déployée, seulement son API.** Le front
+  # appelle `/api/v1` en relatif ; le servir sur une autre origine demanderait
+  # du CORS et empêcherait le cookie de rafraîchissement de voyager. C'est la
+  # différence entre « l'API tourne » et « les gens peuvent s'en servir », et je
+  # l'avais manquée en n'empaquetant que le binaire.
+  site:
+    image: klaar-site:local
+    ports:
+      # Sur la boucle locale seulement : c'est le proxy inverse de l'hôte qui
+      # termine TLS et publie. Ouvrir 0.0.0.0 servirait le site en clair.
+      - "127.0.0.1:${KLAAR_PORT:-8080}:8081"
+    depends_on:
+      service:
+        condition: service_started
     restart: unless-stopped
 
   # Le balayage périodique (Story 3.6, 4.1, 4.6, 4.4). **Un binaire lancé par

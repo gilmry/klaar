@@ -80,3 +80,35 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
 # démarrage du conteneur ferait tourner un balayage par exemplaire du serveur,
 # ce que leur en-tête interdit explicitement.
 CMD ["klaar-api"]
+
+# --- étape 3 : construction du site ----------------------------------------
+#
+# **La PWA fait partie du déploiement.** Le front appelle `/api/v1` sur la
+# **même origine** : sans un serveur qui l'expose et relaie l'API, le service
+# déployé n'est joignable que par un client HTTP, pas par l'application. C'est
+# la différence entre « l'API est déployable » et « l'application est
+# déployable », et je l'avais manquée en n'empaquetant que le binaire.
+FROM docker.io/library/node:22-bookworm-slim AS construction-site
+
+WORKDIR /site
+COPY web/package.json web/package-lock.json ./
+# `npm ci` et non `install` : il installe exactement le verrou, et échoue si le
+# verrou et le manifeste divergent. Une construction qui résoudrait ses
+# dépendances ne produirait pas deux fois le même site.
+RUN npm ci --no-audit --no-fund
+COPY web ./
+RUN npm run build
+
+# --- étape 4 : service du site ---------------------------------------------
+FROM docker.io/library/nginx:1.27-alpine AS site
+
+COPY --from=construction-site /site/dist /usr/share/nginx/html
+# La carte `$connection_upgrade` doit vivre dans le contexte `http`, pas dans
+# un bloc `server` : nginx refuse de démarrer si elle est au mauvais endroit.
+COPY web/nginx-upgrade.conf /etc/nginx/conf.d/../conf.d/00-upgrade.conf
+COPY web/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 8081
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8081/ || exit 1
