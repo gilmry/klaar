@@ -1,0 +1,297 @@
+---
+import AppLayout from "../layouts/AppLayout.astro";
+
+// Identité de l'éditeur injectée au build, comme PUBLIC_KLAAR_API_BASE, et non
+// codée en dur : ce dépôt est publié sous MIT et se déploie chez d'autres que
+// son auteur. Un nom en dur ferait porter à celui-ci la responsabilité
+// éditoriale d'un service qu'il n'exploite pas.
+//
+// **Les défauts sont vides, et c'est délibéré.** Un numéro d'entreprise dont
+// la clé de contrôle tombe juste désigne une personne morale réelle, et un
+// défaut se recopie sans être relu. Non renseignés, ces champs affichent ce
+// qu'il reste à faire plutôt qu'une identité plausible mais fausse.
+//
+// Le balayage de `tools/sync-public.sh` rattrape un numéro à clé de contrôle
+// valide, séparateurs compris. Il ne rattrape pas un numéro à clé fausse comme
+// `BE0123.456.789` — celui-ci ne désigne aucune entreprise, c'est pourquoi il
+// passe, et c'est pourquoi un exemple s'écrit ainsi.
+const domaine = import.meta.env.PUBLIC_KLAAR_DOMAINE ?? "";
+const editeur = import.meta.env.PUBLIC_KLAAR_LEGAL_EDITEUR ?? "";
+const statut = import.meta.env.PUBLIC_KLAAR_LEGAL_STATUT ?? "";
+const ville = import.meta.env.PUBLIC_KLAAR_LEGAL_VILLE ?? "";
+const numeroEntreprise = import.meta.env.PUBLIC_KLAAR_LEGAL_BCE ?? "";
+const contact = import.meta.env.PUBLIC_KLAAR_LEGAL_CONTACT ?? "";
+const depot = import.meta.env.PUBLIC_KLAAR_DEPOT ?? "gilmry/klaar";
+
+const identiteComplete = Boolean(editeur && numeroEntreprise && contact);
+
+// La phrase est assemblée ici plutôt que par des fragments conditionnels dans
+// le gabarit : en JSX, le saut de ligne entre deux expressions devient une
+// espace, et les champs vides laissaient une espace avant le point final.
+const qualites = [statut, ville && `basé à ${ville}`].filter(Boolean).join(", ");
+---
+
+<AppLayout
+  titre="Mentions légales — Klaar"
+  description="Éditeur, hébergement, et ce que Klaar fait des données personnelles."
+>
+  <h1>Mentions légales</h1>
+
+  {
+    !identiteComplete && (
+      <p class="klaar-reserve">
+        <strong>Ce déploiement n'a pas renseigné son éditeur.</strong> Les
+        variables <code>PUBLIC_KLAAR_LEGAL_*</code> sont vides, et cette page
+        ne peut donc pas dire qui exploite ce service. Un service accessible au
+        public doit les poser : l'identification de l'éditeur est une
+        obligation, pas une courtoisie.
+      </p>
+    )
+  }
+
+  <h2>Éditeur du site</h2>
+  <p>
+    Klaar{domaine && <> (<code>{domaine}</code>)</>} est édité par{" "}
+    {editeur || <em>éditeur non renseigné</em>}{qualites && <>, {qualites}</>}.
+  </p>
+  <p>
+    Numéro d'entreprise (BCE/TVA) :{" "}
+    {numeroEntreprise || <em>non renseigné</em>}<br />
+    Contact :{" "}
+    {contact ? <a href={`mailto:${contact}`}>{contact}</a> : <em>non renseigné</em>}
+  </p>
+
+  <h2>Directeur de publication</h2>
+  <p>{editeur || <em>non renseigné</em>}.</p>
+
+  <h2>Hébergement</h2>
+  <p>
+    Klaar est prévu pour être auto-hébergé : l'API, le site et la base
+    PostgreSQL tournent sur un serveur administré par l'éditeur, sans
+    sous-traitant d'hébergement tiers. Le trafic est chiffré par un proxy
+    inverse qui termine TLS devant l'application, avec un certificat Let's
+    Encrypt renouvelé automatiquement.
+  </p>
+  <p class="klaar-tempere">
+    L'hébergeur effectif dépend de l'exploitant : si ce déploiement n'est pas
+    le vôtre, c'est à lui qu'il revient de le nommer ici.
+  </p>
+
+  <h2>Propriété intellectuelle</h2>
+  <p>
+    Le code source de Klaar est publié sous licence libre MIT et disponible sur{" "}
+    <a href={`https://github.com/${depot}`} target="_blank" rel="noopener">github.com/{depot}</a>. La licence couvre le logiciel ; elle ne couvre pas la conformité
+    réglementaire d'un déploiement, qui incombe à celui qui l'exploite.
+  </p>
+
+  <h2>Données personnelles</h2>
+  <p>
+    Cette section décrit ce que le logiciel traite réellement, tel qu'il est
+    écrit. Elle ne décrit ni les intentions de conception, ni ce qui reste à
+    faire : ces deux-là sont dans <code>COMPLIANCE.md</code>, à la racine du
+    dépôt.
+  </p>
+
+  <h3>Ce qu'un compte contient</h3>
+  <p>
+    L'adresse de courriel, normalisée en minuscules ; l'empreinte du mot de
+    passe, calculée avec argon2id, jamais le mot de passe lui-même ; la langue
+    choisie parmi le français, le néerlandais et l'anglais ; la date de création
+    et le statut du compte. Rien d'autre n'est demandé à l'inscription : exiger
+    un nom ou une adresse avant qu'une adresse de courriel soit seulement
+    confirmée reviendrait à collecter avant d'avoir la moindre preuve que la
+    personne existe.
+  </p>
+
+  <h3>Vérification de l'adresse, et comptes jamais confirmés</h3>
+  <p>
+    Le lien de vérification vaut une heure. Le jeton n'est pas conservé en
+    clair : la base n'en garde que l'empreinte SHA-256, de sorte qu'une lecture
+    de cette table ne permet pas d'activer les comptes en attente.
+  </p>
+  <p>
+    Un compte que personne ne confirme est <strong>effacé au bout de
+    soixante-douze heures</strong>. Conservées indéfiniment, ces lignes
+    transformeraient des tentatives d'inscription en liste de personnes, y
+    compris celles créées avec l'adresse de gens qui n'ont rien demandé et
+    n'ont fait que recevoir un courriel. Les trois jours ne servent pas au
+    parcours normal, qui tient en une heure : ils laissent la place à un renvoi
+    de lien demandé le lendemain ou après un week-end.
+  </p>
+
+  <h3>Courriels</h3>
+  <p>
+    Le message, son sujet traduit et son lien de vérification sont composés par
+    l'application, puis remis à un relais d'expédition configuré par
+    l'exploitant. Ce relais est un destinataire au sens du RGPD : il reçoit
+    l'adresse et le contenu du message. <strong>Sans relais configuré, aucun
+    courriel n'est expédié</strong> et le message n'est qu'écrit dans le
+    journal du serveur.
+  </p>
+
+  <h3>Sessions</h3>
+  <p>
+    Le jeton d'accès vit une heure, et <strong>en mémoire de l'onglet</strong> :
+    ni <code>localStorage</code> ni <code>sessionStorage</code>, que le moindre
+    script de la page peut lire. Il disparaît au rechargement.
+  </p>
+  <p>
+    Le jeton de rafraîchissement vit trente jours, dans un cookie{" "}
+    <code>HttpOnly</code> — donc hors de portée de JavaScript —,{" "}
+    <code>SameSite=Lax</code> et <code>Secure</code> dès lors que le service est
+    servi en HTTPS.
+  </p>
+  <p>
+    À l'ouverture d'une session, l'empreinte SHA-256 de l'agent utilisateur est
+    conservée, <strong>et non l'agent lui-même</strong>. Elle sert à une seule
+    chose : repérer qu'un rafraîchissement est présenté depuis un contexte
+    différent de celui qui l'a obtenu. C'est une mesure de sécurité au sens de
+    l'article 32 du RGPD, pas une mesure d'audience.
+  </p>
+
+  <h3>Protection des comptes</h3>
+  <p>
+    Cinq échecs de connexion en dix minutes verrouillent un compte pour quinze
+    minutes, et son titulaire en est averti. La limitation du nombre
+    d'inscriptions se fait par adresse IP, mais <strong>l'adresse n'est pas
+    conservée</strong> : la clé du compteur est son empreinte SHA-256 tronquée,
+    et ce compteur vit en mémoire du processus, donc disparaît au redémarrage.
+  </p>
+
+  <h3>Journal d'audit</h3>
+  <p>
+    Chaque entrée porte un code d'événement, un horodatage et, quand l'événement
+    doit être rattaché à un compte, son identifiant. <strong>Ni adresse IP, ni
+    agent utilisateur</strong> : ces données sont personnelles, et aucune
+    finalité ni durée de conservation n'a été arrêtée pour elles ici. Une
+    tentative d'inscription sur une adresse déjà prise est consignée sans
+    l'identifiant du titulaire, faute de quoi ce journal deviendrait le moyen
+    d'énumérer les comptes que le reste du service refuse d'être.
+  </p>
+
+  <h3>Notifications</h3>
+  <p>
+    L'abonnement aux notifications est facultatif et se retire depuis le
+    navigateur. Il est rattaché au compte et disparaît avec lui : un abonnement
+    orphelin continuerait à recevoir les notifications d'un compte supprimé.
+  </p>
+
+  <h3>Position pendant une intervention</h3>
+  <p>
+    Le partage de position par un prestataire est consenti{" "}
+    <strong>intervention par intervention</strong>, et révocable à tout moment.
+    Une préférence de compte vaudrait pour toutes les missions passées et à
+    venir, ce qui n'est pas un consentement éclairé.
+  </p>
+  <p>
+    Les positions sont ramenées à une grille de cinquante mètres{" "}
+    <strong>avant</strong> d'être enregistrées, et non au moment de les
+    afficher : dégrader à l'affichage laisserait la donnée fine là où une fuite
+    la prendrait. Vingt-quatre heures après la fin d'une intervention, il ne
+    reste qu'une distance, une durée et un nombre de relevés. Un retrait de
+    consentement vaut pour l'avenir ; les positions déjà transmises restent
+    jusqu'à cette purge, et la date du retrait est conservée à côté de celle de
+    l'accord, sans quoi la preuve qu'un accord avait été donné disparaîtrait.
+  </p>
+  <p class="klaar-reserve">
+    <strong>L'analyse d'impact (RGPD art. 35) n'est pas faite.</strong> Elle
+    doit précéder le traitement, pas le suivre. Le suivi de position ne doit pas
+    être activé sur des positions réelles avant qu'elle soit signée.
+  </p>
+
+  <h3>Effacement et droits</h3>
+  <p>
+    L'effacement se demande depuis le compte et s'exécute après trente jours. Le
+    délai n'a de raison d'être que parce qu'il est réversible : le compte reste
+    utilisable pendant l'attente, sans quoi son titulaire ne pourrait pas se
+    connecter pour annuler sa propre demande.
+  </p>
+  <p>
+    Sont effacés l'adresse, l'empreinte du mot de passe, les jetons de
+    vérification, les sessions et les abonnements aux notifications. La ligne de
+    compte est <strong>vidée et non supprimée</strong> : la supprimer emporterait
+    les entrées du journal d'audit, qui doivent être conservées. L'adresse est
+    remplacée par une valeur dérivée de l'identifiant sur un domaine réservé aux
+    usages fictifs.
+  </p>
+  <p class="klaar-reserve">
+    <strong>Ce qui n'est pas encore couvert, et qu'il faut savoir avant de
+    déployer :</strong> l'effacement ne traite pas les interventions, les
+    documents de facturation, les traces de position ni les identifiants du
+    prestataire de paiement. L'export de vos données (droit à la portabilité,
+    art. 20) et l'information des destinataires (art. 19) ne sont pas fournis
+    non plus. Ces droits restent dus par l'exploitant, qui devra les honorer
+    hors de l'application tant qu'ils n'y sont pas.
+  </p>
+
+  <h3>Prestataires</h3>
+  <p>
+    Seule la clé de contrôle du numéro d'entreprise est vérifiée, hors ligne.
+    Elle attrape une faute de frappe ou un numéro inventé, jamais l'existence
+    réelle d'une entreprise : ni la Banque-Carrefour des Entreprises, ni l'état
+    de faillite, ni l'attestation d'assurance ne sont interrogés. Les fiches
+    prestataires de ce déploiement portent en base une origine{" "}
+    <code>DEMONSTRATION</code> qui les rend identifiables comme telles.
+  </p>
+
+  <h3>Paiement</h3>
+  <p>
+    Le séquestre s'appuie sur Stripe Connect, qui est donc destinataire des
+    données de paiement. Aucune donnée de carte ne transite par ce service ni
+    n'y est conservée.
+  </p>
+
+  <h3>Traceurs</h3>
+  <p>
+    Aucun traceur publicitaire, aucune mesure d'audience, aucun cookie autre que
+    celui de rafraîchissement décrit plus haut, qui est nécessaire au
+    fonctionnement du service.
+  </p>
+
+  <h3>Vos droits</h3>
+  <p>
+    Accès, rectification, effacement, limitation, opposition et portabilité
+    s'exercent{" "}
+    {contact ? (
+      <>auprès de <a href={`mailto:${contact}`}>{contact}</a></>
+    ) : (
+      <>auprès de l'éditeur, dont ce déploiement n'a pas renseigné l'adresse</>
+    )}. Une réclamation peut être adressée à l'Autorité de protection des
+    données (<a href="https://www.autoriteprotectiondonnees.be" target="_blank" rel="noopener">autoriteprotectiondonnees.be</a>).
+  </p>
+
+  <h2>Langue de cette page</h2>
+  <p class="klaar-tempere">
+    Le reste de Klaar est traduit en français, néerlandais et anglais. Cette
+    page ne l'est pas encore. Un texte juridique traduit approximativement dit
+    autre chose que l'original, ce qui est pire ici qu'ailleurs ; la traduction
+    demande une relecture, pas une génération. À Bruxelles, la mener est
+    nécessaire et non optionnel.
+  </p>
+
+  <p><a href="/">Retour à l'accueil</a></p>
+</AppLayout>
+
+<style>
+  h2 {
+    font-size: 1.15rem;
+    margin: 2rem 0 .5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--klaar-bord);
+  }
+
+  h3 {
+    font-size: .975rem;
+    margin: 1.5rem 0 .35rem;
+  }
+
+  /* Les réserves ne sont pas des avertissements décoratifs : elles portent ce
+     qu'un exploitant doit avoir lu avant d'ouvrir le service au public. Le
+     filet les distingue du texte courant sans employer de couleur d'alerte,
+     qui se lirait comme une panne. */
+  .klaar-reserve {
+    border-left: 3px solid var(--klaar-accent);
+    padding: .25rem 0 .25rem .875rem;
+    margin: 1rem 0;
+  }
+</style>

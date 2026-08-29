@@ -49,3 +49,15 @@ a { color: inherit; }
 .klaar-pastille[data-etat="hors-ligne"] { background: #c2543a; }
 /* `inconnu` garde la couleur neutre par défaut : tant que rien n'a été
    vérifié, afficher du vert ou du rouge serait une affirmation. */
+
+/* Le pied porte le lien vers les mentions légales. Il n'est pas décoratif :
+   une page d'identification de l'éditeur qu'aucun lien n'atteint ne remplit
+   pas l'obligation qu'elle prétend remplir. */
+.klaar-pied {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2rem;
+  border-top: 1px solid var(--klaar-bord);
+  font-size: .875rem;
+  color: var(--klaar-tempere);
+}
