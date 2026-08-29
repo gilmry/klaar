@@ -1460,7 +1460,25 @@ socket que le temps réel exige.
   worker était servi avec le cache par défaut, ce qui aurait retenu chaque mise
   à jour chez les gens qui se servent le plus de l'application.
 
-Aucun des trois ne se serait vu en relisant les fichiers.
+Un quatrième, trouvé en regardant l'état du déploiement plutôt que ses
+réponses : le conteneur de **balayage** héritait du contrôle de santé de
+l'image, qui interroge l'API qu'il ne sert pas. Il fonctionnait, et se déclarait
+perpétuellement malsain. Un tableau de bord aurait montré un déploiement dégradé
+en permanence, et un orchestrateur qui redémarre les conteneurs malsains
+l'aurait relancé en boucle. La sonde héritée est désactivée : la santé d'une
+boucle de balayage est que son processus vive, ce que le moteur sait déjà.
+
+Aucun des quatre ne se serait vu en relisant les fichiers.
+
+**Ce qui n'a pas pu être vérifié ici, et pourquoi.** Faire tourner les parcours
+filmés *contre le déploiement conteneurisé* aurait prouvé qu'il sert une
+application qui marche, et pas seulement des en-têtes corrects. La tentative a
+échoué pour une raison de harnais : la configuration des parcours démarre son
+**propre** serveur de même origine (`scripts/serveur-demo.mjs`) et relaie l'API
+vers le port du service natif ; pointer `KLAAR_DEMO_BASE_URL` sur le conteneur
+ne suffit pas à le contourner. Adapter le harnais est faisable mais n'a pas été
+fait — c'est une vérification qui reste à mener, et la dire manquante vaut mieux
+que de la laisser croire acquise.
 
 **Ce que cela change au décompte des dépendances.** « Il faut un compte OVH »
 devient « il faut un hôte », ce qui n'est pas la même phrase : un VPS, une

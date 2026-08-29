@@ -80,6 +80,13 @@ services:
       # adresse de connexion directe ; avec lui et sans proxy, elle devient
       # contournable par un simple en-tête.
       KLAAR_DERRIERE_PROXY: ${KLAAR_DERRIERE_PROXY:-}
+      # Réglages de démonstration. Vides en production : exiger une méthode de
+      # paiement est le comportement normal, et les quotas par défaut sont ceux
+      # qui protègent. Les relever se fait sciemment, et le service l'annonce au
+      # démarrage.
+      KLAAR_EXIGER_METHODE_PAIEMENT: ${KLAAR_EXIGER_METHODE_PAIEMENT:-}
+      KLAAR_QUOTA_ECRITURE_SENSIBLE: ${KLAAR_QUOTA_ECRITURE_SENSIBLE:-}
+      KLAAR_MAX_DEMANDES_PAR_HEURE: ${KLAAR_MAX_DEMANDES_PAR_HEURE:-}
     # **Aucun port publié.** Le service n'est joint que par le site, sur le
     # réseau interne. L'exposer en plus donnerait une seconde porte d'entrée
     # sans proxy devant — et c'est celle qu'on oublie de fermer.
@@ -124,6 +131,20 @@ services:
       DATABASE_URL: postgres://klaar:${KLAAR_PG_PASSWORD:?}@base:5432/klaar
       KLAAR_VAPID_PRIVATE_KEY: ${KLAAR_VAPID_PRIVATE_KEY:-}
       KLAAR_VAPID_SUBJECT: ${KLAAR_VAPID_SUBJECT:-}
+    # **Le contrôle de santé hérité de l'image est désactivé ici.** Il
+    # interroge `/api/v1/health`, que ce conteneur ne sert pas : il fait tourner
+    # un balayage, pas le serveur. Hérité tel quel, il rend le conteneur
+    # perpétuellement « unhealthy » alors qu'il fonctionne — constaté en
+    # regardant l'état du déploiement, où il était le seul point rouge. Un
+    # tableau de bord montrerait un déploiement dégradé en permanence, et un
+    # orchestrateur qui redémarre les conteneurs malsains le relancerait en
+    # boucle.
+    #
+    # La santé d'une boucle de balayage est que son processus vive, ce que le
+    # moteur sait déjà. Lui inventer une sonde ajouterait une chose à surveiller
+    # sans rien apprendre.
+    healthcheck:
+      disable: true
     depends_on:
       migrations:
         condition: service_completed_successfully
