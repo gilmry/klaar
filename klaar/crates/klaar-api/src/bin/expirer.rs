@@ -1,10 +1,11 @@
 //! Éteint les tours de diffusion écoulés (Story 3.6, FR-015), les devis sans
 //! réponse (Story 4.1, FR-016 `@edge`), valide les interventions terminées
-//! depuis plus de soixante-douze heures (Story 4.6, FR-021 `@edge`), et purge
-//! les traces de géolocalisation de plus de vingt-quatre heures (Story 4.4,
-//! FR-019 `@security`).
+//! depuis plus de soixante-douze heures (Story 4.6, FR-021 `@edge`), purge les
+//! traces de géolocalisation de plus de vingt-quatre heures (Story 4.4,
+//! FR-019 `@security`) et efface les comptes jamais vérifiés (Story 1.1,
+//! FR-001 `@security`).
 //!
-//! **Un seul binaire pour les quatre.** Ce sont des balayages indépendants, mais
+//! **Un seul binaire pour les cinq.** Ce sont des balayages indépendants, mais
 //! les lancer séparément doublerait la configuration, la surveillance et les
 //! occasions d'en oublier un. Un échec de l'un n'empêche pas l'autre : les
 //! demandeurs n'ont pas à attendre parce qu'un devis n'a pas pu s'éteindre.
@@ -34,13 +35,14 @@ use std::sync::Arc;
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_application::usecases::expirer::expirer_les_tours;
 use klaar_application::usecases::expirer_devis::expirer_les_devis;
+use klaar_application::usecases::purger_comptes::purger_les_comptes_non_verifies;
 use klaar_application::usecases::suivre_position::purger_les_traces;
 use klaar_application::usecases::valider_mission::valider_les_echues;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_shared_kernel::Locale;
 use klaar_sqlx_repos::{
     creer_pool, PgDemandeRepository, PgDevisRepository, PgLiberationRepository,
-    PgProviderRepository, PgPushSubscriptionRepository, PgSuiviRepository,
+    PgProviderRepository, PgPushSubscriptionRepository, PgSuiviRepository, PgUtilisateurRepository,
 };
 
 #[tokio::main]
@@ -90,6 +92,7 @@ async fn main() -> ExitCode {
     let prestataires = PgProviderRepository::new(pool.clone());
     let liberations = PgLiberationRepository::new(pool.clone());
     let suivis = PgSuiviRepository::new(pool.clone());
+    let utilisateurs = PgUtilisateurRepository::new(pool.clone());
     let abonnements = PgPushSubscriptionRepository::new(pool);
 
     // Les devis d'abord, et sans que leur sort n'engage celui des tours : les
@@ -151,6 +154,23 @@ async fn main() -> ExitCode {
         }
         Ok(_) => {}
         Err(e) => tracing::error!(erreur = %e, "purge des traces interrompue"),
+    }
+
+    // La purge des comptes jamais vérifiés (FR-001 `@security`). Une adresse
+    // suffit à créer un compte, y compris l'adresse de quelqu'un qui n'a rien
+    // demandé : les garder ferait d'une tentative une liste de personnes.
+    //
+    // **Comme la purge des traces, un échec ici est un manquement et pas un
+    // retard** : au-delà du délai annoncé, ces adresses ne devraient plus être
+    // là. Journalisé en erreur, sans interrompre le reste.
+    match purger_les_comptes_non_verifies(&utilisateurs, &HorlogeSysteme).await {
+        Ok(effaces) if effaces > 0 => {
+            // Un nombre, jamais une adresse : ce journal n'a pas à conserver
+            // ce que la purge vient précisément d'effacer.
+            tracing::info!(effaces, "comptes non vérifiés effacés");
+        }
+        Ok(_) => {}
+        Err(e) => tracing::error!(erreur = %e, "purge des comptes non vérifiés interrompue"),
     }
 
     match expirer_les_tours(

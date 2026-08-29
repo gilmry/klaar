@@ -1549,9 +1549,12 @@ dependencies = [
 name = "klaar-email-adapter"
 version = "0.0.0"
 dependencies = [
+ "awc",
  "klaar-application",
  "klaar-identity",
  "klaar-shared-kernel",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]

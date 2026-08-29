@@ -1,0 +1,80 @@
+# Publication derrière un Traefik déjà présent sur l'hôte (Story 0.7).
+#
+#   docker compose -f compose.deploiement.yml -f compose.traefik.yml up -d
+#
+# **Pourquoi celle-ci plutôt que `compose.tls.yml`.** Les deux terminent TLS et
+# obtiennent un certificat Let's Encrypt ; elles ne s'adressent pas au même
+# hôte. Caddy convient à une machine dédiée : un fichier lisible, aucun concept
+# à apprendre, et il possède les ports 80 et 443. Traefik convient à une machine
+# qui héberge **déjà** d'autres services derrière lui — et deux serveurs ne
+# peuvent pas posséder les mêmes ports. Choisir Caddy là où Traefik tourne déjà
+# aurait produit un conflit de ports, un second compte ACME et deux endroits où
+# lire la configuration du routage.
+#
+# **Rien n'est publié sur l'hôte.** Traefik atteint le site par le réseau qu'il
+# surveille ; publier en plus offrirait une porte en clair à côté de celle qui
+# chiffre.
+
+services:
+  site:
+    # **Rien n'est publié sur l'hôte.** Traefik atteint le site par le réseau
+    # qu'il surveille ; publier en plus offrirait une porte en clair à côté de
+    # celle qui chiffre, et c'est celle-là qu'un scanner trouve.
+    ports: !override []
+    # Le site rejoint **deux** réseaux : celui de la composition, pour joindre
+    # le service, et celui de Traefik, pour être joint par lui. Le second est
+    # externe : il appartient à Traefik, pas à cette composition, et la
+    # composition n'a pas à le créer ni à le détruire.
+    networks:
+      - default
+      - traefik
+    labels:
+      # `exposedbydefault=false` du côté de Traefik : sans cette étiquette, rien
+      # n'est publié. C'est le bon défaut — un conteneur ne devient joignable
+      # de l'extérieur que si on le dit.
+      traefik.enable: "true"
+      traefik.docker.network: ${KLAAR_TRAEFIK_RESEAU:-ecosolva-web}
+
+      traefik.http.routers.klaar.rule: Host(`${KLAAR_DOMAINE:?nom d'hôte requis}`)
+      traefik.http.routers.klaar.entrypoints: ${KLAAR_TRAEFIK_ENTREE:-websecure}
+      traefik.http.routers.klaar.tls: "true"
+      traefik.http.routers.klaar.tls.certresolver: ${KLAAR_TRAEFIK_RESOLVEUR:-letsencrypt}
+
+      # **Le port interne, pas un port publié.** Traefik parle au conteneur
+      # directement ; l'indiquer évite qu'il devine mal quand le conteneur
+      # expose plusieurs ports.
+      traefik.http.services.klaar.loadbalancer.server.port: "8081"
+
+      # En-têtes de sécurité. Ils ne remplacent aucune garantie du service, mais
+      # ferment des chemins que le navigateur ouvrirait sinon tout seul.
+      traefik.http.middlewares.klaar-entetes.headers.stsSeconds: "31536000"
+      traefik.http.middlewares.klaar-entetes.headers.stsIncludeSubdomains: "true"
+      # Le type déclaré fait foi : sans cela, un fichier téléversé et servi
+      # pourrait être interprété comme du script par reniflage.
+      traefik.http.middlewares.klaar-entetes.headers.contentTypeNosniff: "true"
+      # La console d'exploitation dans une iframe étrangère se détourne au clic.
+      traefik.http.middlewares.klaar-entetes.headers.frameDeny: "true"
+      # Le référent ne sort pas du site : les URL portent des identifiants de
+      # Demande et de Mission.
+      traefik.http.middlewares.klaar-entetes.headers.referrerPolicy: same-origin
+      traefik.http.routers.klaar.middlewares: klaar-entetes
+
+  service:
+    environment:
+      # **Vrai, enfin.** Le cookie de rafraîchissement porte `Secure` : il ne
+      # part plus qu'en TLS. C'était impossible sans certificat — le navigateur
+      # l'aurait refusé sans rien dire.
+      KLAAR_COOKIE_SECURE: "true"
+      # Traefik pose `X-Forwarded-For` ; le service peut donc le croire, et la
+      # limitation de débit compte par adresse réelle plutôt que par celle du
+      # proxy — sans quoi tout le trafic paraîtrait venir d'un seul client.
+      KLAAR_DERRIERE_PROXY: "1"
+
+networks:
+  # **Externe** : ce réseau est celui de Traefik. Le déclarer sans `external`
+  # en ferait créer un second, du même nom préfixé par le projet, que Traefik
+  # ne surveille pas — et le site resterait injoignable sans que rien ne le
+  # dise.
+  traefik:
+    external: true
+    name: ${KLAAR_TRAEFIK_RESEAU:-ecosolva-web}

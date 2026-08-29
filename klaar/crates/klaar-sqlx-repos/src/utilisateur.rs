@@ -242,6 +242,41 @@ impl UtilisateurRepository for PgUtilisateurRepository {
         ligne.as_ref().map(depuis_ligne).transpose()
     }
 
+    async fn purger_non_verifies(
+        &self,
+        avant: DateTime<Utc>,
+        par_passage_max: i64,
+    ) -> Result<u64, RepositoryError> {
+        // La sous-requête sélectionne, le DELETE efface : une seule instruction,
+        // donc aucune fenêtre entre le choix des lignes et leur effacement. En
+        // deux temps, un compte vérifié entre les deux serait effacé alors qu'il
+        // ne remplit plus la condition.
+        //
+        // Le `LIMIT` porte sur la sous-requête, seul endroit où PostgreSQL
+        // l'accepte pour un DELETE.
+        //
+        // Les jetons, sessions, demandes et fiches prestataire partent par
+        // `ON DELETE CASCADE` ; les messages, notations et litiges gardent leur
+        // texte avec un auteur à NULL (`ON DELETE SET NULL`). Un compte non
+        // vérifié n'en a de toute façon aucun : il ne peut rien faire avant
+        // d'être actif.
+        let efface = sqlx::query(
+            "DELETE FROM utilisateur \
+             WHERE id IN ( \
+                 SELECT id FROM utilisateur \
+                 WHERE statut = 'PENDING_EMAIL_VERIFY' AND cree_le < $1 \
+                 ORDER BY cree_le \
+                 LIMIT $2 \
+             )",
+        )
+        .bind(avant)
+        .bind(par_passage_max)
+        .execute(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(efface.rows_affected())
+    }
+
     async fn definir_locale(
         &self,
         utilisateur_id: Uuid,

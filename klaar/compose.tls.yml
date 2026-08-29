@@ -1,0 +1,67 @@
+# Terminaison TLS pour un déploiement public (Story 0.7).
+#
+# **Une surcouche, et non un second fichier complet.** Elle s'ajoute à
+# `compose.deploiement.yml` :
+#
+#   docker compose -f compose.deploiement.yml -f compose.tls.yml up -d
+#
+# Dupliquer la composition entière pour y ajouter un service ferait diverger les
+# deux au premier changement, et c'est toujours celle qu'on ne relit pas qui
+# part en production.
+#
+# **Un seul nom d'hôte, et c'est un choix d'architecture.** Le front appelle
+# `/api/v1` en relatif : donner à l'API son propre nom imposerait du CORS et un
+# `SameSite=None` sur le cookie de rafraîchissement — deux garanties relâchées
+# pour un sous-domaine. Caddy sert donc le site et relaie l'API derrière le même
+# nom, exactement comme le fait déjà nginx à l'intérieur.
+
+services:
+  # **Caddy plutôt que nginx + certbot.** Il obtient et renouvelle les
+  # certificats Let's Encrypt tout seul, sans tâche planifiée à surveiller ni
+  # rechargement à orchestrer. Un renouvellement qui demande une intervention
+  # est un renouvellement qu'on oublie, et le certificat expire un dimanche.
+  tls:
+    image: docker.io/library/caddy:2-alpine
+    ports:
+      # 80 est requis : c'est par lui que Let's Encrypt valide le domaine, et
+      # c'est aussi lui qui redirige vers 443. Le fermer empêcherait
+      # l'obtention du certificat.
+      - "80:80"
+      - "443:443"
+    environment:
+      KLAAR_DOMAINE: ${KLAAR_DOMAINE:?nom d'hôte requis, par exemple klaar.exemple.org}
+      # Let's Encrypt prévient à cette adresse avant l'expiration d'un
+      # certificat qu'il n'aurait pas pu renouveler.
+      KLAAR_ACME_EMAIL: ${KLAAR_ACME_EMAIL:?adresse de contact requise}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Les certificats survivent au redémarrage. Sans ce volume, chaque
+      # relance en redemanderait un, et Let's Encrypt limite à cinq par semaine
+      # et par domaine — la limite s'atteint en une après-midi de mise au point.
+      - klaar-certificats:/data
+      - klaar-caddy-config:/config
+    depends_on:
+      site:
+        condition: service_started
+    restart: unless-stopped
+
+  # Le site ne publie plus rien sur l'hôte : Caddy l'atteint par le réseau
+  # interne. Le laisser publié offrirait une porte d'entrée en clair à côté de
+  # celle qui chiffre, et c'est celle-là qu'un scanner trouve.
+  site:
+    ports: !override []
+
+  service:
+    environment:
+      # **Vrai, enfin.** Le cookie de rafraîchissement porte `Secure` : il ne
+      # part plus qu'en TLS. C'était impossible sans certificat — le navigateur
+      # l'aurait refusé sans rien dire.
+      KLAAR_COOKIE_SECURE: "true"
+      # Caddy pose `X-Forwarded-For` ; le service peut donc le croire, et la
+      # limitation de débit compte par adresse réelle plutôt que par celle du
+      # proxy — sans quoi tout le trafic paraîtrait venir d'un seul client.
+      KLAAR_DERRIERE_PROXY: "1"
+
+volumes:
+  klaar-certificats:
+  klaar-caddy-config:

@@ -13,7 +13,7 @@ use utoipa::OpenApi;
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_application::ports::jeton_acces::EmetteurJetonAcces;
 use klaar_application::usecases::soumettre_demande::ReglesSoumission;
-use klaar_email_adapter::CourrielJournalise;
+use klaar_email_adapter::{Courriel, CourrielJournalise};
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::WebPushSender;
 use klaar_sqlx_repos::{
@@ -91,7 +91,7 @@ pub struct EtatApplication {
     /// Signataire du jeton d'accès. Derrière un trait : le format du jeton
     /// est remplaçable sans toucher aux cas d'usage.
     pub jetons: Arc<dyn EmetteurJetonAcces>,
-    pub courriel: Arc<CourrielJournalise>,
+    pub courriel: Arc<Courriel>,
     pub horloge: Arc<HorlogeSysteme>,
     pub limiteur: Arc<LimiteurMemoire>,
     /// Paramètres argon2id. Injectés plutôt que lus depuis `production()` pour
@@ -413,7 +413,10 @@ pub fn etat_de_test(
             crate::jwt::JwtHs256::new(b"secret-de-test-uniquement-quarante-huit-octets")
                 .expect("secret de test valide"),
         ),
-        courriel: Arc::new(CourrielJournalise::new("https://klaar.test", false)),
+        courriel: Arc::new(Courriel::Journalise(CourrielJournalise::new(
+            "https://klaar.test",
+            false,
+        ))),
         horloge: Arc::new(HorlogeSysteme),
         limiteur: Arc::new(LimiteurMemoire::new()),
         argon2: ParametresArgon2::tests(),

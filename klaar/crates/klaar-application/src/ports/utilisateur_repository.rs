@@ -84,6 +84,24 @@ pub trait UtilisateurRepository {
     ///
     /// Rend `false` si le compte n'existe pas. La langue est validée en amont :
     /// ce port reçoit un code que le service parle, pas une chaîne du réseau.
+    /// Efface les comptes restés non vérifiés au-delà de `avant`, au plus
+    /// `par_passage_max` par appel. Rend le nombre effacé.
+    ///
+    /// **Ce sont des comptes que personne n'a confirmés.** Une adresse suffit à
+    /// en créer un, y compris l'adresse de quelqu'un qui n'a rien demandé et
+    /// qui n'a fait que recevoir un courriel de vérification. Les garder
+    /// indéfiniment constituerait une liste de personnes à partir de simples
+    /// tentatives, ce que la minimisation interdit.
+    ///
+    /// Le plafond par passage borne la transaction : sans lui, un premier
+    /// balayage sur une base ancienne verrouillerait la table le temps
+    /// d'effacer tout l'arriéré. Le reliquat part au passage suivant.
+    async fn purger_non_verifies(
+        &self,
+        avant: DateTime<Utc>,
+        par_passage_max: i64,
+    ) -> Result<u64, RepositoryError>;
+
     async fn definir_locale(
         &self,
         utilisateur_id: Uuid,

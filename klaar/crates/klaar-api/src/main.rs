@@ -15,7 +15,7 @@ use klaar_api::telemetry::SpanSansDonneesPersonnelles;
 use klaar_api::{configurer, ApiDoc, EtatApplication};
 use klaar_application::ports::horloge::HorlogeSysteme;
 use klaar_audit_adapter::SignataireTrace;
-use klaar_email_adapter::CourrielJournalise;
+use klaar_email_adapter::Courriel;
 use klaar_identity::ParametresArgon2;
 use klaar_push_adapter::{ClesVapid, WebPushSender};
 use klaar_sqlx_repos::{
@@ -191,7 +191,7 @@ async fn main() -> std::io::Result<()> {
         database_url.clone(),
         evenements.clone(),
     ));
-    let courriel = Arc::new(CourrielJournalise::depuis_environnement());
+    let courriel = Arc::new(Courriel::depuis_environnement());
     let derriere_proxy = std::env::var("KLAAR_DERRIERE_PROXY").as_deref() == Ok("1");
     if !derriere_proxy {
         tracing::info!(

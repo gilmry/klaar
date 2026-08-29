@@ -1480,6 +1480,25 @@ ne suffit pas à le contourner. Adapter le harnais est faisable mais n'a pas ét
 fait — c'est une vérification qui reste à mener, et la dire manquante vaut mieux
 que de la laisser croire acquise.
 
+**Déploiement public avec TLS** : `compose.tls.yml` s'ajoute en surcouche à la
+composition de déploiement et place Caddy devant, qui obtient et renouvelle le
+certificat Let's Encrypt tout seul — un renouvellement qui demande une
+intervention est un renouvellement qu'on oublie, et le certificat expire un
+dimanche. Le site cesse alors de publier quoi que ce soit sur l'hôte : laisser
+une porte en clair à côté de celle qui chiffre, c'est celle-là qu'un scanner
+trouve. Le cookie de rafraîchissement reprend son attribut `Secure`, impossible
+sans certificat — le navigateur l'aurait refusé sans rien dire.
+
+**Un seul nom d'hôte, et c'est un choix d'architecture.** Le front appelle
+`/api/v1` en relatif. Donner à l'API son propre sous-domaine imposerait du CORS
+sur l'API et un `SameSite=None` sur le cookie de rafraîchissement : deux
+garanties de production relâchées pour un nom. Caddy sert donc le site et relaie
+l'API derrière le même nom, exactement comme nginx le fait déjà à l'intérieur.
+
+Le nom doit résoudre vers la machine **avant** le premier démarrage : Let's
+Encrypt valide le domaine par le port 80, et limite à cinq essais par semaine et
+par domaine — la limite s'atteint en une après-midi de mise au point.
+
 **Ce que cela change au décompte des dépendances.** « Il faut un compte OVH »
 devient « il faut un hôte », ce qui n'est pas la même phrase : un VPS, une
 machine de bureau, ce qu'on veut. Restent les dépendances qui ne se remplacent

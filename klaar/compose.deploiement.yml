@@ -70,6 +70,13 @@ services:
       KLAAR_VAPID_PRIVATE_KEY: ${KLAAR_VAPID_PRIVATE_KEY:-}
       KLAAR_VAPID_SUBJECT: ${KLAAR_VAPID_SUBJECT:-}
       KLAAR_STRIPE_WEBHOOK_SECRET: ${KLAAR_STRIPE_WEBHOOK_SECRET:-}
+      # Envoi de courriel. Vide, les messages sont composés et journalisés sans
+      # être expédiés — le défaut sûr : une URL mal recopiée enverrait des
+      # jetons de vérification à qui s'y trouve.
+      KLAAR_COURRIEL_WEBHOOK_URL: ${KLAAR_COURRIEL_WEBHOOK_URL:-}
+      KLAAR_COURRIEL_WEBHOOK_JETON: ${KLAAR_COURRIEL_WEBHOOK_JETON:-}
+      # Racine publique, pour le lien de vérification qui part dans le courriel.
+      KLAAR_URL_PUBLIQUE: ${KLAAR_URL_PUBLIQUE:-}
       # Vrai par défaut : le service est derrière un terminateur TLS. Le mettre
       # à faux ici ferait refuser le cookie de session par le navigateur, ce
       # qui se manifeste par des déconnexions inexpliquées plutôt que par une
@@ -107,9 +114,13 @@ services:
   site:
     image: klaar-site:local
     ports:
-      # Sur la boucle locale seulement : c'est le proxy inverse de l'hôte qui
-      # termine TLS et publie. Ouvrir 0.0.0.0 servirait le site en clair.
-      - "127.0.0.1:${KLAAR_PORT:-8080}:8081"
+      # **Boucle locale par défaut, et c'est délibéré** : la place normale de ce
+      # service est derrière un proxy inverse qui termine TLS. `KLAAR_BIND`
+      # permet d'ouvrir sur une adresse publique — utile pour une vitrine — mais
+      # le service est alors servi **en clair**, et tout ce qui transite l'est
+      # aussi : mots de passe, codes de seconde authentification, jetons de
+      # session. Le défaut protège ; l'ouvrir est un choix qui doit se voir.
+      - "${KLAAR_BIND:-127.0.0.1}:${KLAAR_PORT:-8080}:8081"
     depends_on:
       service:
         condition: service_started

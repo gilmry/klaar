@@ -1,0 +1,47 @@
+# Terminaison TLS et relais vers le site (Story 0.7).
+#
+# **Le certificat est obtenu et renouvelé automatiquement.** Caddy s'en charge
+# dès que le nom résout vers cette machine et que le port 80 est joignable.
+# Rien à planifier, rien à recharger : un renouvellement qui demande une
+# intervention est un renouvellement qu'on oublie.
+
+{
+	email {$KLAAR_ACME_EMAIL}
+	# Pas de page d'accueil d'administration exposée : elle écoute par défaut
+	# sur 2019 et n'a rien à faire sur une machine publique.
+	admin off
+}
+
+{$KLAAR_DOMAINE} {
+	# Tout passe par le conteneur du site, qui sert la PWA et relaie déjà
+	# `/api/v1` vers le service. **Un seul point d'entrée**, donc une seule
+	# origine : le front appelle l'API en relatif, et les séparer imposerait du
+	# CORS et un `SameSite=None` sur le cookie de rafraîchissement.
+	reverse_proxy site:8081
+
+	# En-têtes de sécurité. Ils ne remplacent aucune garantie du service, mais
+	# ferment des chemins que le navigateur ouvrirait sinon tout seul.
+	header {
+		# Un an, et le sous-domaine compris : une seule requête en clair suffit
+		# à intercepter un jeton de session.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Le type déclaré fait foi : sans cela, un fichier téléversé et servi
+		# pourrait être interprété comme du script par reniflage.
+		X-Content-Type-Options "nosniff"
+		# Aucune mise en cadre : la console d'exploitation dans une iframe
+		# étrangère se détourne au clic.
+		X-Frame-Options "DENY"
+		# Le référent ne sort pas du site : les URL portent des identifiants de
+		# Demande et de Mission.
+		Referrer-Policy "same-origin"
+		# La bannière de version ne sert qu'à qui cherche une faille connue.
+		-Server
+	}
+
+	# Journal en JSON, comme celui du service, pour qu'une même collecte les
+	# lise tous les deux.
+	log {
+		output stdout
+		format json
+	}
+}

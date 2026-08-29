@@ -67,10 +67,22 @@ export default defineConfig({
   // sur l'API — relâcher une garantie de production pour une démonstration —
   // et intercepter les appels dans le navigateur aurait montré un chemin réseau
   // qui n'existe pas.
-  webServer: {
-    command: "node scripts/serveur-demo.mjs",
-    url: "http://127.0.0.1:4321/",
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  //
+  // **Sauf si `KLAAR_DEMO_BASE_URL` désigne un déploiement externe.** Le
+  // conteneur `klaar-site` sert le site et relaie l'API sur la même origine :
+  // il fait exactement ce que ce petit serveur fait, et le lancer en plus
+  // relaierait vers un port que le déploiement conteneurisé ne publie pas.
+  //
+  // Le défaut a coûté une heure : les parcours pointés sur le conteneur
+  // tournaient en réalité contre ce serveur-ci, dont le relais visait un
+  // service natif éteint. Les vidéos continuaient de sortir, et c'est le
+  // journal du service — muet depuis le début — qui l'a montré.
+  webServer: process.env.KLAAR_DEMO_BASE_URL
+    ? undefined
+    : {
+        command: "node scripts/serveur-demo.mjs",
+        url: "http://127.0.0.1:4321/",
+        reuseExistingServer: false,
+        timeout: 60_000,
+      },
 });

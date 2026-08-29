@@ -13,6 +13,9 @@ use klaar_application::ports::courriel::{
 use klaar_shared_kernel::{Email, Locale};
 
 mod messages;
+mod webhook;
+
+pub use webhook::{CourrielWebhook, DELAI_SECONDES as DELAI_WEBHOOK_SECONDES};
 
 pub use messages::{
     corps_inscription, corps_securite, sujet_inscription, sujet_securite, MessageCourriel,
@@ -113,6 +116,82 @@ impl EnvoiCourriel for CourrielJournalise {
         }
 
         Ok(())
+    }
+}
+
+/// L'adaptateur retenu au démarrage.
+///
+/// **Une énumération plutôt qu'un objet-trait.** `EnvoiCourriel` porte des
+/// `async fn`, qui ne sont pas compatibles avec le dispatch dynamique sans
+/// boxer chaque appel. Deux variantes connues à la compilation coûtent moins,
+/// et surtout : ajouter un adaptateur oblige à venir ici, donc à décider
+/// explicitement quand il est choisi.
+pub enum Courriel {
+    /// Compose et journalise. Le défaut, et le seul comportement sûr quand
+    /// aucun relais n'est configuré.
+    Journalise(CourrielJournalise),
+    /// Compose et remet à un automate (n8n ou équivalent).
+    Webhook(CourrielWebhook),
+}
+
+impl Courriel {
+    /// Choisit l'adaptateur d'après l'environnement.
+    ///
+    /// **Sans `KLAAR_COURRIEL_WEBHOOK_URL`, on journalise.** Le défaut ne doit
+    /// jamais être « essayer d'envoyer quelque part » : une variable mal
+    /// recopiée enverrait alors les courriels d'inscription — jeton de
+    /// vérification compris — à l'adresse qui s'y trouve.
+    pub fn depuis_environnement() -> Self {
+        match std::env::var("KLAAR_COURRIEL_WEBHOOK_URL") {
+            Ok(url) if !url.is_empty() => {
+                let publique = std::env::var("KLAAR_URL_PUBLIQUE")
+                    .unwrap_or_else(|_| "http://127.0.0.1:4321".to_string());
+                // L'URL n'est pas journalisée : elle porte souvent le jeton du
+                // webhook dans son chemin, et ce journal se relit sans droits
+                // particuliers.
+                tracing::info!("courriels remis au webhook configuré");
+                Self::Webhook(CourrielWebhook::new(
+                    url,
+                    std::env::var("KLAAR_COURRIEL_WEBHOOK_JETON")
+                        .ok()
+                        .filter(|j| !j.is_empty()),
+                    publique,
+                ))
+            }
+            _ => {
+                tracing::warn!(
+                    "KLAAR_COURRIEL_WEBHOOK_URL absente : les courriels sont composés et \
+                     journalisés, jamais expédiés"
+                );
+                Self::Journalise(CourrielJournalise::depuis_environnement())
+            }
+        }
+    }
+}
+
+impl EnvoiCourriel for Courriel {
+    async fn envoyer_securite(
+        &self,
+        destinataire: &Email,
+        locale: Locale,
+        contenu: CourrielSecurite,
+    ) -> Result<(), ErreurEnvoi> {
+        match self {
+            Self::Journalise(a) => a.envoyer_securite(destinataire, locale, contenu).await,
+            Self::Webhook(a) => a.envoyer_securite(destinataire, locale, contenu).await,
+        }
+    }
+
+    async fn envoyer_inscription(
+        &self,
+        destinataire: &Email,
+        locale: Locale,
+        contenu: CourrielInscription,
+    ) -> Result<(), ErreurEnvoi> {
+        match self {
+            Self::Journalise(a) => a.envoyer_inscription(destinataire, locale, contenu).await,
+            Self::Webhook(a) => a.envoyer_inscription(destinataire, locale, contenu).await,
+        }
     }
 }
 

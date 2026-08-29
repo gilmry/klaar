@@ -22,6 +22,7 @@ pub mod noter;
 pub mod notifier;
 pub mod ops;
 pub mod ouvrir_litige;
+pub mod purger_comptes;
 pub mod rafraichir;
 pub mod repondre_devis;
 pub mod reprogrammer;

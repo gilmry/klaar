@@ -370,6 +370,17 @@ mod tests {
     }
 
     impl UtilisateurRepository for DepotMemoire {
+        async fn purger_non_verifies(
+            &self,
+            _avant: DateTime<Utc>,
+            _par_passage_max: i64,
+        ) -> Result<u64, RepositoryError> {
+            // Ce double ne sert pas la purge : les cas d'usage testés ici ne
+            // l'appellent pas, et lui donner un comportement inventé ferait croire
+            // à une couverture qui n'existe pas.
+            unimplemented!("purge non sollicitée par ce cas d'usage")
+        }
+
         async fn definir_locale(
             &self,
             _: Uuid,
