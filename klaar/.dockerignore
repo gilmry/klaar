@@ -1,0 +1,16 @@
+# Le contexte de build est envoyé au démon avant la première instruction :
+# `target/` pèse à lui seul des dizaines de gigaoctets, et rien n'en a besoin
+# puisque l'image compile depuis les sources.
+target/
+web/node_modules/
+web/dist/
+web/.astro/
+web/test-results/
+web/playwright-report/
+web/playwright-report-demo/
+web/demo-resultats/
+.git/
+.schemathesis/
+*.cdx.json
+*.sig
+*.pem

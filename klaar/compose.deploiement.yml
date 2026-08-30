@@ -17,6 +17,16 @@
 # **Aucun secret n'est écrit ici.** Ils viennent du fichier d'environnement
 # `.env.deploiement`, absent du dépôt, dont `.env.example` donne la liste. Un
 # fichier de composition qui porte ses secrets finit poussé par mégarde.
+#
+# **Les images sont tirées, pas construites ici.** Elles sont bâties par
+# `.github/workflows/docker-publish.yml` et publiées sur GHCR : ce workspace
+# fait dépasser trente gigaoctets à `target/`, ce qu'une machine de production
+# ne peut pas absorber à chaque déploiement. `KLAAR_VERSION` désigne la
+# version tirée — `deploy.sh` y met l'empreinte courte du commit déployé,
+# plutôt que `latest` qui ne dit pas ce qui tourne. Pour travailler sur des
+# images bâties à la main :
+#
+#   KLAAR_IMAGE_API=klaar-api KLAAR_IMAGE_SITE=klaar-site KLAAR_VERSION=local
 
 services:
   base:
@@ -52,7 +62,7 @@ services:
   # exemplaire, et deux exemplaires qui migrent en même temps ne migrent pas
   # deux fois : l'un échoue.
   migrations:
-    image: klaar-api:local
+    image: ${KLAAR_IMAGE_API:-ghcr.io/gilmry/klaar/api}:${KLAAR_VERSION:-latest}
     command: ["klaar-migrate"]
     environment:
       DATABASE_URL: postgres://klaar:${KLAAR_PG_PASSWORD:?}@base:5432/klaar
@@ -62,7 +72,7 @@ services:
     restart: "no"
 
   service:
-    image: klaar-api:local
+    image: ${KLAAR_IMAGE_API:-ghcr.io/gilmry/klaar/api}:${KLAAR_VERSION:-latest}
     environment:
       DATABASE_URL: postgres://klaar:${KLAAR_PG_PASSWORD:?}@base:5432/klaar
       KLAAR_JWT_SECRET: ${KLAAR_JWT_SECRET:?secret de signature requis}
@@ -112,7 +122,7 @@ services:
   # différence entre « l'API tourne » et « les gens peuvent s'en servir », et je
   # l'avais manquée en n'empaquetant que le binaire.
   site:
-    image: klaar-site:local
+    image: ${KLAAR_IMAGE_SITE:-ghcr.io/gilmry/klaar/site}:${KLAAR_VERSION:-latest}
     ports:
       # **Boucle locale par défaut, et c'est délibéré** : la place normale de ce
       # service est derrière un proxy inverse qui termine TLS. `KLAAR_BIND`
@@ -135,7 +145,7 @@ services:
   # Un ordonnanceur de l'hôte — cron, timer systemd — convient aussi bien et se
   # surveille mieux ; le choix est laissé à qui déploie.
   balayage:
-    image: klaar-api:local
+    image: ${KLAAR_IMAGE_API:-ghcr.io/gilmry/klaar/api}:${KLAAR_VERSION:-latest}
     entrypoint: ["/bin/sh", "-c"]
     command: ["while true; do klaar-expirer || true; sleep 10; done"]
     environment:

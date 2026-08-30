@@ -97,6 +97,33 @@ COPY web/package.json web/package-lock.json ./
 # dépendances ne produirait pas deux fois le même site.
 RUN npm ci --no-audit --no-fund
 COPY web ./
+
+# **Les mentions légales sont figées ici.** Astro remplace les
+# `import.meta.env.PUBLIC_*` par leur valeur au moment de la construction :
+# elles ne peuvent pas être posées au démarrage du conteneur, et changer
+# l'éditeur demande de reconstruire l'image. C'est la contrepartie d'un site
+# statique, et la CI expose un déclenchement manuel pour ce seul cas.
+#
+# Aucune valeur par défaut, en particulier pour le numéro d'entreprise : un
+# numéro dont la clé de contrôle tombe juste désigne une personne morale
+# réelle, et un défaut se recopie sans être relu. Vides, la page affiche ce
+# qu'il reste à renseigner, ce qui est exact.
+ARG PUBLIC_KLAAR_DOMAINE
+ARG PUBLIC_KLAAR_LEGAL_EDITEUR
+ARG PUBLIC_KLAAR_LEGAL_STATUT
+ARG PUBLIC_KLAAR_LEGAL_VILLE
+ARG PUBLIC_KLAAR_LEGAL_BCE
+ARG PUBLIC_KLAAR_LEGAL_CONTACT
+ARG PUBLIC_KLAAR_DEPOT
+
+ENV PUBLIC_KLAAR_DOMAINE=$PUBLIC_KLAAR_DOMAINE \
+    PUBLIC_KLAAR_LEGAL_EDITEUR=$PUBLIC_KLAAR_LEGAL_EDITEUR \
+    PUBLIC_KLAAR_LEGAL_STATUT=$PUBLIC_KLAAR_LEGAL_STATUT \
+    PUBLIC_KLAAR_LEGAL_VILLE=$PUBLIC_KLAAR_LEGAL_VILLE \
+    PUBLIC_KLAAR_LEGAL_BCE=$PUBLIC_KLAAR_LEGAL_BCE \
+    PUBLIC_KLAAR_LEGAL_CONTACT=$PUBLIC_KLAAR_LEGAL_CONTACT \
+    PUBLIC_KLAAR_DEPOT=$PUBLIC_KLAAR_DEPOT
+
 RUN npm run build
 
 # --- étape 4 : service du site ---------------------------------------------

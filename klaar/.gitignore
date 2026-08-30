@@ -26,3 +26,12 @@ web/vitrine/
 
 # Secrets locaux (clé privée VAPID, DATABASE_URL) — jamais committés.
 .env
+
+# Story 0.7 — état local du déploiement continu (`deploy.sh`). Ces fichiers
+# décrivent *cette* machine : la révision qu'elle fait tourner, son verrou de
+# concurrence, son journal. Les versionner ferait qu'une machine écrase l'état
+# d'une autre au prochain `git pull`.
+/.env.deploiement
+/.deployed_rev
+/.deploy.lock
+/deploy.log

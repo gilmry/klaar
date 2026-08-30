@@ -1,0 +1,125 @@
+name: Images de déploiement (GHCR)
+
+# **La construction se fait ici, pas sur la machine de production.** Le
+# workspace Rust fait dépasser trente gigaoctets à `target/` ; un VPS qui
+# héberge déjà d'autres services ne peut pas absorber un `cargo build --release`
+# à chaque déploiement, et le tenterait au pire moment — celui où l'on
+# redéploie parce que quelque chose ne va pas. La production ne fait que tirer
+# ces images (voir `klaar/deploy.sh`).
+#
+# **Sur `main` seulement, et c'est ce qui décide où ça tourne.** Le dépôt de
+# travail est sur `master`, le dépôt publié sur `main` : ce déclencheur fait
+# donc porter la construction au dépôt public, celui d'où la production tire.
+# Le travail en cours ne consomme rien et ne publie aucune image.
+
+on:
+  push:
+    branches: [main]
+  # Reconstruire à la demande, sans commit : utile quand seule une variable
+  # d'identité a changé, celles-ci étant figées dans l'image au build.
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  api:
+    name: Image de l'API
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/api
+          # `latest` suit la branche ; `sha-xxxxxxx` désigne un commit précis et
+          # ne bouge jamais. Sans le second, revenir en arrière demanderait de
+          # reconstruire, c'est-à-dire au pire moment de refaire ce qui vient
+          # d'échouer.
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./klaar
+          file: ./klaar/Containerfile
+          # Le même fichier porte les quatre étapes : `service` livre les
+          # binaires, `site` la PWA derrière nginx. Sans cible explicite, la
+          # construction s'arrêterait à la dernière étape du fichier.
+          target: service
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  site:
+    name: Image du site
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/site
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          # Le contexte est `klaar/` et non `klaar/web/` : les étapes du site
+          # copient `web/nginx.conf` et `web/package.json`, donc des chemins
+          # relatifs à la racine du projet.
+          context: ./klaar
+          file: ./klaar/Containerfile
+          target: site
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # **L'identité de l'éditeur passe par des variables de dépôt, jamais
+          # par ce fichier.** Astro fige ces valeurs dans le site au build,
+          # elles doivent donc arriver ici — mais les écrire en clair les
+          # publierait dans le dépôt, et un numéro d'entreprise dont la clé de
+          # contrôle tombe juste désigne une personne morale réelle.
+          # `tools/sync-public.sh` refuse d'ailleurs de publier un arbre qui en
+          # contient.
+          #
+          # À poser dans Settings > Secrets and variables > Actions > Variables.
+          # Non posées, elles arrivent vides et la page des mentions légales
+          # affiche ce qu'il reste à renseigner, ce qui est exact.
+          build-args: |
+            PUBLIC_KLAAR_DOMAINE=${{ vars.KLAAR_DOMAINE }}
+            PUBLIC_KLAAR_LEGAL_EDITEUR=${{ vars.KLAAR_LEGAL_EDITEUR }}
+            PUBLIC_KLAAR_LEGAL_STATUT=${{ vars.KLAAR_LEGAL_STATUT }}
+            PUBLIC_KLAAR_LEGAL_VILLE=${{ vars.KLAAR_LEGAL_VILLE }}
+            PUBLIC_KLAAR_LEGAL_BCE=${{ vars.KLAAR_LEGAL_BCE }}
+            PUBLIC_KLAAR_LEGAL_CONTACT=${{ vars.KLAAR_LEGAL_CONTACT }}
+            PUBLIC_KLAAR_DEPOT=${{ github.repository }}

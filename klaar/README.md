@@ -1561,8 +1561,61 @@ réel, et la **facturation** (FR-026, FR-044), qui doit naître avec le paiement
 émettre des numéros de facture pour de l'argent qui n'a jamais bougé créerait
 des pièces comptables sans contrepartie.
 
+## Déploiement continu : la CI construit, la production tire
+
+**La production ne compile pas.** Le workspace fait dépasser trente gigaoctets
+à `target/` ; une machine qui héberge déjà d'autres services ne peut pas
+absorber un `cargo build --release` à chaque déploiement, et le tenterait au
+pire moment — celui où l'on redéploie parce que quelque chose ne va pas.
+`.github/workflows/docker-publish.yml` construit les deux images depuis le
+`Containerfile` existant (cibles `service` et `site`) et les publie sur GHCR.
+
+**Le déclencheur est `main`, et c'est ce qui décide où la construction tourne.**
+Le dépôt de travail est sur `master`, le dépôt publié sur `main` : les images
+sont donc bâties par le dépôt public, celui d'où la production tire. Le travail
+en cours ne consomme aucune minute de CI et ne publie aucune image. Publier
+avec `tools/sync-public.sh` puis pousser est ce qui déclenche un déploiement.
+
+**La version déployée est l'empreinte du commit, pas `latest`.** `deploy.sh`
+tire `sha-a1b2c3d`, ce qui donne trois choses que `latest` ne donne pas : on
+sait ce qui tourne, on ne risque pas de déployer une image plus récente que le
+commit qu'on vient de vérifier, et si l'image de ce commit n'est pas encore
+publiée — la CI ayant quelques minutes de retard sur le push — le `pull` échoue
+franchement au lieu de déployer autre chose. Le tick suivant réessaie.
+
+**Sur la machine cible**, une fois :
+
+```sh
+git clone https://github.com/gilmry/klaar.git && cd klaar
+./deploy.sh                    # docker, cron, .env.deploiement
+$EDITEUR .env.deploiement      # secrets et nom d'hôte
+./deploy.sh --run              # ou attendre le prochain tick
+```
+
+Le cron rappelle `deploy.sh --run` toutes les cinq minutes : si `origin/main` a
+bougé, il avance en *fast-forward*, tire les images de ce commit, relance la
+composition et note la révision déployée. Sinon il ne fait rien. Un verrou
+`flock` empêche deux ticks qui se chevauchent de lancer deux `up` concurrents.
+L'avance rapide seule est délibérée : un dépôt de production n'a pas de travail
+local à préserver, et s'il a divergé, c'est l'anomalie qu'il faut voir.
+
+**Les mentions légales sont figées dans l'image du site.** Astro remplace les
+`PUBLIC_*` à la construction : elles ne peuvent pas être posées au démarrage du
+conteneur. Elles se renseignent dans les variables du dépôt GitHub (Settings >
+Secrets and variables > Actions > Variables), et non dans le fichier de
+workflow — un numéro d'entreprise dont la clé de contrôle tombe juste désigne
+une personne morale réelle, et `tools/sync-public.sh` refuse de publier un
+arbre qui en contient. Variables attendues : `KLAAR_DOMAINE`,
+`KLAAR_LEGAL_EDITEUR`, `KLAAR_LEGAL_STATUT`, `KLAAR_LEGAL_VILLE`,
+`KLAAR_LEGAL_BCE`, `KLAAR_LEGAL_CONTACT`. Non posées, elles arrivent vides et
+la page affiche ce qu'il reste à renseigner. Le workflow expose un
+déclenchement manuel pour reconstruire après un changement d'identité, qui ne
+produit aucun commit.
+
 ## Ce qui manque avant que le Sprint 0 soit réellement terminé
 
-Stories 0.7a/0.7b/0.7c (Terraform, salt-ssh, GitOps) et 0.11 (tile-server OSM + Valhalla) : elles nécessitent un compte OVH provisionné, donc restent bloquées tant qu'il n'y a pas de client payant. Ce n'est pas un manque d'effort, c'est un prérequis qui n'existe pas ici.
+Stories 0.7a/0.7b (Terraform, salt-ssh) et 0.11 (tile-server OSM + Valhalla) : elles nécessitent un compte OVH provisionné, donc restent bloquées tant qu'il n'y a pas de client payant. Ce n'est pas un manque d'effort, c'est un prérequis qui n'existe pas ici.
+
+**La 0.7c (GitOps) ne l'est plus** : elle avait été rangée avec les autres sous « il faut un compte OVH », et c'était la même erreur de diagnostic que pour l'image manquante. Un déploiement tiré depuis git ne demande pas un hébergeur particulier, seulement un hôte et un cron — voir la section précédente. Ce qui reste vraiment lié à OVH, c'est le provisionnement de cet hôte, pas la boucle de déploiement.
 
 La Story 0.12 (push) l'était aussi, pour des comptes développeur payants ; **ADR-010 l'a débloquée** en remplaçant le PoC Tauri par Web Push VAPID, qui se vérifie intégralement en local. Les Stories 0.8 et 0.10 restent partielles (cf. ci-dessus).
