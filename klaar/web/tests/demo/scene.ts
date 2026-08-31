@@ -200,7 +200,14 @@ export async function ouvrirActeur(
 ): Promise<Acteur> {
   const contexte = await browser.newContext({
     recordVideo: { dir: "demo-resultats", size: { width: 1280, height: 720 } },
-    permissions: ["geolocation"],
+    // **`notifications` en plus de `geolocation`.** Sans elle, Chrome piloté
+    // refuse d'office et l'accueil filmé annonçait « Les notifications sont
+    // bloquées pour ce site » — un état qu'un visiteur qui arrive pour la
+    // première fois n'a pas. Accordée, l'écran montre l'invitation à les
+    // activer, c'est-à-dire ce que ce visiteur voit vraiment. Rien n'est
+    // souscrit pour autant : l'abonnement demande un clic, et aucun parcours
+    // ne le fait.
+    permissions: ["geolocation", "notifications"],
     geolocation: position,
     locale: "fr-BE",
     timezoneId: "Europe/Brussels",

@@ -13,15 +13,14 @@ import { test, expect, type Page, type CDPSession } from "@playwright/test";
 /**
  * Délai d'attente d'une notification livrée.
  *
- * **Trente secondes et non dix.** Livrer un push réveille le service worker,
- * et sur un exécutant de CI partagé ce réveil peut prendre plusieurs secondes
- * de plus que sur un poste. Le cas `@negative` a échoué une fois sur la
- * vitrine publiée — pendant que la même suite passait quatre minutes plus tôt
- * sur le même commit — pour dix millisecondes de trop. Un délai plus long ne
- * relâche rien : la notification doit toujours apparaître, on lui laisse
- * seulement le temps que la machine met réellement.
+ * **Dix secondes, et pas plus.** Un premier diagnostic avait mis l'échec du cas
+ * `@negative` en CI sur le compte d'un réveil de service worker trop lent, et
+ * porté ce délai à trente secondes. C'était faux à deux titres : trente
+ * secondes égalent le délai de la *fonction de test* elle-même, donc l'attente
+ * ne pouvait plus aboutir ; et surtout la notification n'apparaît **jamais**
+ * dans cet environnement, pas tardivement. Voir la note du cas concerné.
  */
-const ATTENTE_NOTIFICATION_MS = 30_000;
+const ATTENTE_NOTIFICATION_MS = 10_000;
 
 const CLE_VAPID_FACTICE =
   "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8";
@@ -136,6 +135,19 @@ test.describe("@happy", () => {
 });
 
 test.describe("@negative", () => {
+  // **Ce cas échoue en intégration continue, et la cause n'est pas trouvée.**
+  // Aucune notification n'apparaît — pas « tardivement », jamais — alors que
+  // les cinq autres cas de ce fichier passent dans la même exécution, sur le
+  // même navigateur et le même affichage virtuel, et que celui-ci passe en
+  // local. La seule différence est la charge : une chaîne qui n'est pas du
+  // JSON, là où les autres en envoient. L'hypothèse d'un délai trop court a
+  // été essayée et démentie.
+  //
+  // Il n'est **pas** neutralisé : ce qu'il vérifie compte — un service worker
+  // qui reçoit un push sans rien afficher fait perdre au site son autorisation
+  // de notifier. Un test rouge qui dit vrai vaut mieux qu'un test vert qui ne
+  // vérifie rien, et le rapport publié à côté des parcours filmés le montre
+  // plutôt que de le cacher.
   test("affiche un message générique quand la charge est illisible", async ({ page }) => {
     // Un service worker qui reçoit un push sans rien afficher fait perdre au
     // site son autorisation de notifier : mieux vaut un message vague que rien.
