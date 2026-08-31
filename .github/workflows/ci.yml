@@ -57,6 +57,25 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
+      # **Le disque de l'exécutant, avant tout le reste.** L'édition de liens
+      # de `cargo test --workspace` a échoué sur
+      # « ld terminated with signal 7 [Bus error] » — la signature d'un disque
+      # plein, reproduite à l'identique en local dans les mêmes conditions.
+      # Ce job compile la caisse entière **plus un binaire de test par
+      # fichier d'intégration**, et le moindre changement de `Cargo.lock`
+      # invalide le cache de compilation : on repart alors de zéro sur les
+      # quatorze gigaoctets libres d'un exécutant standard.
+      #
+      # Les trois répertoires retirés sont des chaînes d'outils que ce projet
+      # n'emploie pas — .NET, Android, Haskell — et représentent une vingtaine
+      # de gigaoctets. `df` encadre l'opération : le jour où ce n'est plus le
+      # disque, la sortie le dira au lieu de laisser chercher.
+      - name: Fait de la place (l'édition de liens échouait faute de disque)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -68,6 +87,9 @@ jobs:
       - name: Applique les migrations
         run: cargo run -p klaar-api --bin klaar-migrate
       - run: cargo test --workspace
+      - name: Disque restant après les tests
+        if: always()
+        run: df -h /
 
   msrv:
     name: MSRV (rust-version de Cargo.toml)
