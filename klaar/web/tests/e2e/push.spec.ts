@@ -13,12 +13,11 @@ import { test, expect, type Page, type CDPSession } from "@playwright/test";
 /**
  * Délai d'attente d'une notification livrée.
  *
- * **Dix secondes, et pas plus.** Un premier diagnostic avait mis l'échec du cas
- * `@negative` en CI sur le compte d'un réveil de service worker trop lent, et
- * porté ce délai à trente secondes. C'était faux à deux titres : trente
- * secondes égalent le délai de la *fonction de test* elle-même, donc l'attente
- * ne pouvait plus aboutir ; et surtout la notification n'apparaît **jamais**
- * dans cet environnement, pas tardivement. Voir la note du cas concerné.
+ * **Dix secondes, et pas plus.** L'échec intermittent du cas `@negative` avait
+ * été mis sur le compte d'un réveil de service worker trop lent, et ce délai
+ * porté à trente secondes. Sans effet — et nuisible : trente secondes égalent
+ * le délai de la *fonction de test* elle-même, donc l'attente ne pouvait plus
+ * aboutir avant lui. Revenu à dix. Voir la note du cas concerné.
  */
 const ATTENTE_NOTIFICATION_MS = 10_000;
 
@@ -135,19 +134,25 @@ test.describe("@happy", () => {
 });
 
 test.describe("@negative", () => {
-  // **Ce cas échoue en intégration continue, et la cause n'est pas trouvée.**
-  // Aucune notification n'apparaît — pas « tardivement », jamais — alors que
-  // les cinq autres cas de ce fichier passent dans la même exécution, sur le
-  // même navigateur et le même affichage virtuel, et que celui-ci passe en
-  // local. La seule différence est la charge : une chaîne qui n'est pas du
-  // JSON, là où les autres en envoient. L'hypothèse d'un délai trop court a
-  // été essayée et démentie.
+  // **Ce cas est intermittent en intégration continue, et la cause n'est pas
+  // trouvée.** Sur trois publications de la vitrine, il a échoué deux fois et
+  // réussi la troisième, sans qu'aucun changement ne le concerne : la
+  // notification n'apparaît pas du tout, ou apparaît normalement. Les cinq
+  // autres cas de ce fichier passent chaque fois, sur le même navigateur et le
+  // même affichage virtuel, et celui-ci passe systématiquement en local. La
+  // seule différence tient à la charge livrée : une chaîne qui n'est pas du
+  // JSON, là où les autres en envoient.
+  //
+  // Deux hypothèses ont été essayées et démenties : un délai d'attente trop
+  // court, puis un échec systématique. La seconde a tenu deux exécutions avant
+  // que la troisième ne la contredise — c'est écrit ici pour que personne ne
+  // reparte de cette conclusion-là.
   //
   // Il n'est **pas** neutralisé : ce qu'il vérifie compte — un service worker
   // qui reçoit un push sans rien afficher fait perdre au site son autorisation
-  // de notifier. Un test rouge qui dit vrai vaut mieux qu'un test vert qui ne
-  // vérifie rien, et le rapport publié à côté des parcours filmés le montre
-  // plutôt que de le cacher.
+  // de notifier. Un test qui rougit une fois sur trois en disant vrai vaut
+  // mieux qu'un test vert qui ne vérifie rien, et le rapport publié à côté des
+  // parcours filmés le montre plutôt que de le cacher.
   test("affiche un message générique quand la charge est illisible", async ({ page }) => {
     // Un service worker qui reçoit un push sans rien afficher fait perdre au
     // site son autorisation de notifier : mieux vaut un message vague que rien.
