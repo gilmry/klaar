@@ -59,6 +59,13 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         channel: process.env.KLAAR_PLAYWRIGHT_CHANNEL || undefined,
+        // **Avec affichage quand il y en a un.** Chromium sans affichage n'a
+        // pas de service de notification : l'accueil filmé annonçait « Les
+        // notifications sont bloquées pour ce site », phrase fausse publiée
+        // sur la vitrine. `scripts/parcours-filmes.sh` fournit un serveur X
+        // virtuel quand la machine n'en a pas ; sans lui, on retombe sur le
+        // mode sans affichage plutôt que de ne rien enregistrer du tout.
+        headless: !process.env.DISPLAY,
       },
     },
   ],

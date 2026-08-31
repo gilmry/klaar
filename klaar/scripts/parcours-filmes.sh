@@ -14,6 +14,19 @@
 # n'ait à être désactivé.
 set -euo pipefail
 
+# **Un affichage, si la machine en a un.** Chromium sans affichage n'a pas de
+# service de notification : `Notification.permission` rend « denied » même une
+# fois la permission accordée, et l'accueil filmé annonçait alors « Les
+# notifications sont bloquées pour ce site » — une phrase fausse, publiée sur
+# la vitrine comme si elle décrivait le service.
+#
+# Le repli est **volontairement silencieux** : sans `xvfb-run`, les parcours
+# s'enregistrent comme avant. Un défaut d'affichage ne doit pas priver la
+# vitrine de ses vidéos ; il la prive seulement d'un détail juste.
+if [ -z "${DISPLAY:-}" ] && [ -z "${KLAAR_SANS_XVFB:-}" ] && command -v xvfb-run >/dev/null 2>&1; then
+  exec xvfb-run -a env KLAAR_SANS_XVFB=1 "$0" "$@"
+fi
+
 RACINE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$RACINE"
 

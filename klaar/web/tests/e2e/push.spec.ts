@@ -10,6 +10,19 @@
  */
 import { test, expect, type Page, type CDPSession } from "@playwright/test";
 
+/**
+ * Délai d'attente d'une notification livrée.
+ *
+ * **Trente secondes et non dix.** Livrer un push réveille le service worker,
+ * et sur un exécutant de CI partagé ce réveil peut prendre plusieurs secondes
+ * de plus que sur un poste. Le cas `@negative` a échoué une fois sur la
+ * vitrine publiée — pendant que la même suite passait quatre minutes plus tôt
+ * sur le même commit — pour dix millisecondes de trop. Un délai plus long ne
+ * relâche rien : la notification doit toujours apparaître, on lui laisse
+ * seulement le temps que la machine met réellement.
+ */
+const ATTENTE_NOTIFICATION_MS = 30_000;
+
 const CLE_VAPID_FACTICE =
   "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8";
 
@@ -92,7 +105,7 @@ test.describe("@happy", () => {
     });
 
     await expect
-      .poll(() => notificationsAffichees(page), { timeout: 10_000 })
+      .poll(() => notificationsAffichees(page), { timeout: ATTENTE_NOTIFICATION_MS })
       .toContainEqual({
         titre: "Nouvelle Demande",
         corps: "Plomberie, Saint-Gilles",
@@ -116,7 +129,7 @@ test.describe("@happy", () => {
 
     await expect
       .poll(() => notificationsAffichees(page).then((n) => n.filter((x) => x.tag === "mission-1")), {
-        timeout: 10_000,
+        timeout: ATTENTE_NOTIFICATION_MS,
       })
       .toEqual([{ titre: "Mission", corps: "Le dépanneur arrive", tag: "mission-1" }]);
   });
@@ -138,7 +151,7 @@ test.describe("@negative", () => {
 
     await expect
       .poll(() => notificationsAffichees(page).then((n) => n.map((x) => x.titre)), {
-        timeout: 10_000,
+        timeout: ATTENTE_NOTIFICATION_MS,
       })
       .toContain("Klaar");
   });
