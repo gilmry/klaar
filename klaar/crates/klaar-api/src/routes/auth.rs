@@ -13,9 +13,16 @@ use crate::EtatApplication;
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct InscriptionDto {
+    /// **Les contraintes sont déclarées, pas seulement appliquées.** Le contrat
+    /// annonçait « une chaîne » là où le domaine exige une adresse et douze
+    /// caractères : un client généré depuis l'OpenAPI ne validait donc rien, et
+    /// le fuzz de contrat envoyait des chaînes vides que l'API refusait
+    /// légitimement — un faux échec qui masquait les vrais.
+    #[schema(format = "email", min_length = 3, max_length = 254)]
     pub email: String,
     /// Jamais journalisé, jamais renvoyé. Le domaine le convertit en
     /// `MotDePasse`, un type qui ne sait pas s'afficher.
+    #[schema(min_length = 12, max_length = 128)]
     pub mot_de_passe: String,
     /// `fr`, `nl` ou `en`. Toute autre valeur, ou l'absence de valeur, donne
     /// `fr` sans que l'inscription échoue.

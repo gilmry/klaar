@@ -50,6 +50,59 @@ const TEXTES = {
     en: "Language",
   },
 
+  // --- Navigation principale ---
+  //
+  // Les libellés disent une destination, pas une rubrique : « Demander un
+  // dépannage » se comprend sans savoir ce que le site appelle une Demande.
+  "nav.menu": {
+    fr: "Navigation principale",
+    nl: "Hoofdnavigatie",
+    en: "Main navigation",
+  },
+  "nav.accueil": {
+    fr: "Accueil",
+    nl: "Start",
+    en: "Home",
+  },
+  "nav.demande": {
+    fr: "Demander un dépannage",
+    nl: "Hulp aanvragen",
+    en: "Request a call-out",
+  },
+  "nav.catalogue": {
+    fr: "Ce que nous faisons",
+    nl: "Wat wij doen",
+    en: "What we do",
+  },
+  "nav.inscription": {
+    fr: "Créer un compte",
+    nl: "Account aanmaken",
+    en: "Create an account",
+  },
+  "nav.compte": {
+    fr: "Mon compte",
+    nl: "Mijn account",
+    en: "My account",
+  },
+  // Deux libellés pour la même page : un visiteur y va pour savoir ce que
+  // c'est, un prestataire connecté pour travailler. Le front ne peut pas
+  // distinguer mieux — voir `navigation.ts`.
+  "nav.prestataire_visiteur": {
+    fr: "Je suis prestataire",
+    nl: "Ik ben dienstverlener",
+    en: "I am a provider",
+  },
+  "nav.prestataire": {
+    fr: "Espace prestataire",
+    nl: "Dienstverlenersruimte",
+    en: "Provider area",
+  },
+  "nav.ops": {
+    fr: "Exploitation",
+    nl: "Exploitatie",
+    en: "Operations",
+  },
+
   // --- Actions communes ---
   "commun.attendez": {
     fr: "Un instant…",

@@ -14,7 +14,9 @@ use crate::EtatApplication;
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationDto {
-    /// Jeton reçu par courriel, tel quel.
+    /// Jeton reçu par courriel, tel quel. Jamais vide : un jeton absent est un
+    /// lien tronqué, pas une vérification à tenter.
+    #[schema(min_length = 1)]
     pub jeton: String,
 }
 

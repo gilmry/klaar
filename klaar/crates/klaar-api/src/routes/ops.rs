@@ -142,6 +142,7 @@ fn statut(e: &ErreurOps) -> actix_web::http::StatusCode {
     tag = "exploitation",
     request_body = ConnexionOpsDto,
     responses(
+        (status = 400, description = "Corps illisible ou champ inconnu", body = ErreurValidationDto),
         (status = 200, description = "Identifiants acceptés", body = SessionOpsDto),
         (status = 401, description = "Adresse, mot de passe ou code refusé", body = ErreurValidationDto),
         (status = 403, description = "Compte désactivé ou seconde authentification à configurer", body = ErreurValidationDto),
@@ -193,6 +194,7 @@ pub async fn connexion_ops(
     tag = "exploitation",
     request_body = CreationOpsDto,
     responses(
+        (status = 400, description = "Corps illisible ou champ inconnu", body = ErreurValidationDto),
         (status = 201, description = "Compte créé, secret à scanner", body = CompteOpsCreeDto),
         (status = 401, description = "Identifiants refusés", body = ErreurValidationDto),
         (status = 403, description = "Droit manquant", body = ErreurValidationDto),
@@ -309,8 +311,14 @@ pub struct PeriodeExport {
     get,
     path = "/api/v1/ops/exports/gdpr",
     tag = "exploitation",
+    // **Le paramètre était exigé par le code et absent du contrat.** Un client
+    // engendré depuis l'OpenAPI n'avait aucun moyen de savoir qu'il fallait
+    // l'envoyer, et le fuzz de contrat recevait un 400 non documenté pour une
+    // requête que le schéma déclarait pourtant complète.
+    params(("utilisateur" = Uuid, Query, description = "Identifiant du compte à exporter")),
     responses(
         (status = 200, description = "Les données du compte", body = ExportRgpdDto),
+        (status = 400, description = "Paramètre absent ou illisible", body = ErreurValidationDto),
         (status = 401, description = "Identifiants refusés", body = ErreurValidationDto),
         (status = 403, description = "Droit manquant", body = ErreurValidationDto),
         (status = 404, description = "Compte inconnu", body = ErreurValidationDto),
@@ -381,8 +389,14 @@ pub struct CibleExport {
     get,
     path = "/api/v1/ops/exports/vat",
     tag = "exploitation",
+    // Mêmes paramètres exigés et non documentés que pour l'export RGPD.
+    params(
+        ("debut" = String, Query, description = "Début inclus, en RFC 3339"),
+        ("fin" = String, Query, description = "Fin exclue, en RFC 3339"),
+    ),
     responses(
         (status = 200, description = "CSV des lignes de TVA", content_type = "text/csv"),
+        (status = 400, description = "Paramètre absent ou illisible", body = ErreurValidationDto),
         (status = 401, description = "Identifiants refusés", body = ErreurValidationDto),
         (status = 403, description = "Droit manquant", body = ErreurValidationDto),
         (status = 422, description = "Période incohérente", body = ErreurValidationDto),
@@ -692,6 +706,12 @@ pub struct DecisionDto {
     /// Part remboursée, en points de base. Exigée pour `PARTIAL_REFUND`, et
     /// refusée pour les autres : un taux sur une décision qui n'en prend pas
     /// laisserait croire qu'il a été appliqué.
+    ///
+    /// La borne est déclarée au contrat : dix mille points de base font cent
+    /// pour cent, et au-delà de soixante-cinq mille la lecture du corps échouait
+    /// avant même d'arriver à la règle métier — un refus juste, mais rendu pour
+    /// la mauvaise raison et sous le mauvais code.
+    #[schema(minimum = 0, maximum = 10000)]
     pub part_bp: Option<u16>,
 }
 
@@ -792,7 +812,7 @@ pub async fn file_litiges(
     get,
     path = "/api/v1/ops/disputes/{id}",
     tag = "exploitation",
-    params(("id" = String, Path, description = "Identifiant du litige")),
+    params(("id" = Uuid, Path, description = "Identifiant du litige")),
     responses(
         (status = 200, description = "Le dossier", body = DossierLitigeDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
@@ -841,7 +861,7 @@ pub async fn lire_litige(
     post,
     path = "/api/v1/ops/disputes/{id}/resolve",
     tag = "exploitation",
-    params(("id" = String, Path, description = "Identifiant du litige")),
+    params(("id" = Uuid, Path, description = "Identifiant du litige")),
     request_body = DecisionDto,
     responses(
         (status = 200, description = "Décision enregistrée", body = IssueDto),
@@ -1060,7 +1080,7 @@ pub async fn file_kyc(
     post,
     path = "/api/v1/ops/kyc/{provider_id}/review",
     tag = "exploitation",
-    params(("provider_id" = String, Path, description = "Identifiant de l'entreprise")),
+    params(("provider_id" = Uuid, Path, description = "Identifiant de l'entreprise")),
     request_body = DecisionKycDto,
     responses(
         (status = 200, description = "Décision enregistrée, ou refus en attente de confirmation", body = IssueRevueDto),
@@ -1248,6 +1268,7 @@ pub async fn lister_secteurs(
     tag = "exploitation",
     request_body = CreationSecteurDto,
     responses(
+        (status = 400, description = "Corps illisible ou champ inconnu", body = ErreurValidationDto),
         (status = 201, description = "Secteur créé en brouillon"),
         (status = 401, description = "Jeton absent ou expiré", body = ErreurValidationDto),
         (status = 403, description = "Droit manquant", body = ErreurValidationDto),

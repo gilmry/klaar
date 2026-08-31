@@ -84,7 +84,7 @@ fn statut(e: &ErreurTransition) -> actix_web::http::StatusCode {
     patch,
     path = "/api/v1/missions/{id}/status",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = TransitionDto,
     responses(
         (status = 200, description = "Mission avancée", body = MissionAvanceeDto),

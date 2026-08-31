@@ -1,12 +1,18 @@
 ---
 import "../styles/global.css";
 import SelecteurLangue from "../components/SelecteurLangue.svelte";
+import NavigationPrincipale from "../components/NavigationPrincipale.svelte";
 
 interface Props {
   titre: string;
   description?: string;
 }
 const { titre, description = "Dépannage et services à la demande à Bruxelles." } = Astro.props;
+
+// Le chemin courant descend jusqu'à la navigation pour qu'elle marque la page
+// où l'on est. Il est calculé à la génération : les pages sont statiques, et
+// chacune connaît le sien.
+const chemin = Astro.url.pathname;
 ---
 
 <!doctype html>
@@ -23,16 +29,35 @@ const { titre, description = "Dépannage et services à la demande à Bruxelles.
   </head>
   <body>
     <header class="klaar-entete">
-      <img src="/icons/icon-192.png" alt="" width="32" height="32" />
-      <strong>Klaar</strong>
+      <a class="klaar-marque" href="/">
+        <img src="/icons/icon-192.png" alt="" width="32" height="32" />
+        <strong>Klaar</strong>
+      </a>
       <span class="klaar-tempere">Bruxelles · Brussel</span>
       <SelecteurLangue client:load />
     </header>
+    <NavigationPrincipale client:load chemin={chemin} />
     <main>
       <slot />
     </main>
     <footer class="klaar-pied">
       <a href="/mentions-legales">Mentions légales</a>
+      {/*
+        La console d'exploitation est atteignable, sans être une rubrique du
+        site. La cacher entièrement — l'état d'avant ce commit, où aucun lien
+        du site ne menait à /ops — oblige l'équipe à retenir une URL, ce qui
+        finit en URL partagée par écrit. Ce lien n'est pas une mesure de
+        sécurité et n'en tient pas lieu : /ops est une coquille qui n'affiche
+        rien avant un POST /api/v1/ops/login réussi (mot de passe ET code
+        TOTP), et chacune des seize routes /api/v1/ops/ revérifie le jeton
+        d'exploitation côté serveur. rel="nofollow" garde seulement la console
+        hors des index publics. Le raisonnement complet est dans
+        src/lib/navigation.ts, sur LIEN_OPS.
+
+        Commentaire d'expression et non commentaire HTML : celui-ci n'est pas
+        émis dans la page servie, et la coquille est chargée sur chaque écran.
+      */}
+      <a class="klaar-pied-discret" href="/ops" rel="nofollow">Exploitation</a>
     </footer>
     <script>
       import { registerServiceWorker } from "../lib/registerSW";

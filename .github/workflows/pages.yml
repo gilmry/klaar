@@ -75,6 +75,12 @@ jobs:
         # Playwright installe séparément.
         run: npx playwright install --with-deps chromium ffmpeg
 
+      # Chromium sans affichage n'a pas de service de notification : les cas de
+      # `push.spec.ts` se sauteraient, et le rapport publié à côté des vidéos
+      # annoncerait une vérification plus large qu'elle ne l'aurait été.
+      - name: Serveur X virtuel (tests de notifications)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Suite de vérification (rapport publié à côté des parcours)
         working-directory: klaar/web
         # `continue-on-error` : un échec de la vérification doit se **voir** dans

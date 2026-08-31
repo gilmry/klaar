@@ -89,7 +89,7 @@ fn statut(e: &ErreurEmissionDevis) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/quote",
     tag = "devis",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = PropositionDto,
     responses(
         (status = 201, description = "Devis envoyé", body = DevisEmisDto),
@@ -304,7 +304,7 @@ async fn enregistrer(
     post,
     path = "/api/v1/missions/{id}/accept-quote",
     tag = "devis",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "Devis accepté", body = ReponseDevisDto),
         (status = 401, description = "Jeton absent ou invalide", body = ErreurAuthDto),
@@ -340,7 +340,7 @@ pub async fn accepter_devis(
     post,
     path = "/api/v1/missions/{id}/refuse-quote",
     tag = "devis",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = RefusDto,
     responses(
         (status = 200, description = "Devis refusé", body = ReponseDevisDto),

@@ -35,7 +35,12 @@ actix-ws = "0.4"
 # Le flux entrant d'une socket est un `Stream` : `StreamExt::next` vient de là.
 futures-util = "0.3"
 serde.workspace = true
-utoipa = { version = "5", features = ["actix_extras"] }
+# `uuid` : les paramètres de chemin qui portent un identifiant sont alors
+# annoncés `format: uuid` dans le contrat, au lieu d'une chaîne quelconque. Un
+# client engendré depuis l'OpenAPI sait ainsi ce qu'il doit envoyer, et le fuzz
+# de contrat cesse d'appeler l'API avec des identifiants que le code refuse
+# à juste titre.
+utoipa = { version = "5", features = ["actix_extras", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["actix-web"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }

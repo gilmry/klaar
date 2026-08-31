@@ -29,10 +29,18 @@ import BoutonNotifications from "../components/BoutonNotifications.svelte";
 
   <h2>État du chantier</h2>
   <p>
-    Cette PWA est la coquille livrée par la Story 0.2. Elle est installable,
-    fonctionne hors ligne et conserve les écritures faites sans réseau, mais
-    le premier parcours métier vient d'y être branché : l'inscription (Story 1.1).
-    Les suivants arrivent story par story.
+    Les neuf epics du MVP sont écrits et branchés de bout en bout : inscription
+    et session, catalogue, dépôt et diffusion d'une Demande, acceptation par un
+    prestataire, devis, suivi de l'intervention, validation, notation, litige,
+    médiation, revue KYC et console d'exploitation. Ce qui est à l'écran appelle
+    le service, pas des données de démonstration.
+  </p>
+  <p>
+    Ce qui manque est écrit plutôt que caché : trois adapters restent des
+    coquilles (antivirus, géocodage externe, stockage objet), aucun
+    provisionnement payant n'est activé (Stripe, itsme, OVH), et le service
+    n'a pas encore tourné avec de vrais utilisateurs. Le détail, epic par epic
+    et avec ses réserves, est dans <code>klaar/README.md</code>.
   </p>
   <p class="klaar-tempere">
     Avant tout traitement de position réel, une analyse d'impact RGPD est

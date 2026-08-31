@@ -87,7 +87,7 @@ fn statut(e: &ErreurConversation) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/messages",
     tag = "conversation",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = MessageDto,
     responses(
         (status = 201, description = "Message envoyé", body = MessageEnvoyeDto),
@@ -181,7 +181,7 @@ pub async fn envoyer_message(
     get,
     path = "/api/v1/missions/{id}/messages",
     tag = "conversation",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "Le fil, du plus ancien au plus récent", body = FilDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

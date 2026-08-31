@@ -7,11 +7,14 @@ PostgreSQL/PostGIS.
 *Klaar* : « prêt, terminé » en néerlandais, employé tel quel dans le français bruxellois.
 C'est l'état qu'on veut à la fin d'une intervention.
 
-> **Statut : socle en place, métier à écrire.** Le backend sert un seul endpoint
-> (`/api/v1/health`) et les 7 bounded contexts sont des crates vides. La PWA est une
-> coquille installable et fonctionnelle hors ligne, sans parcours métier. Ce dépôt vaut
-> aujourd'hui pour sa **conception** et son **socle de délivrabilité**, pas pour ses
-> fonctionnalités.
+> **Statut : le MVP est écrit et branché, sans avoir servi de vrais utilisateurs.**
+> Le backend sert 59 routes sous `/api/v1`, les 7 bounded contexts portent leur logique
+> métier, et la PWA (onze pages) appelle le service — pas des données de démonstration.
+> Ce qui manque est écrit plutôt que caché : trois adapters restent des coquilles
+> (antivirus, géocodage externe, stockage objet), aucun provisionnement payant n'est
+> activé (Stripe, itsme, OVH), la DPIA géolocalisation reste à faire, et le service n'a
+> pas tourné en production. Le détail story par story, réserves comprises, est dans
+> [`klaar/README.md`](klaar/README.md).
 
 ## Ce que c'est vraiment
 
@@ -25,19 +28,28 @@ déclinées en Gherkin sur quatre classes (`@happy @negative @edge @security`), 
 architecture hexagonale qui isole les traitements réglementés, et des ADR qui tracent
 chaque décision structurante, y compris celles qui ont été renversées.
 
+Le code a suivi la chaîne jusqu'au bout : chaque story livrée est écrite dans
+[`klaar/README.md`](klaar/README.md) avec ce qu'elle fait, ce qu'elle refuse de faire,
+et les défauts trouvés en la vérifiant plutôt qu'en la relisant.
+
 ## Structure
 
 ```
 klaar/
 ├── web/                PWA Astro + Svelte (ADR-010) — manifeste, service worker,
-│                       queue d'écritures hors-ligne IndexedDB
+│                       queue d'écritures hors-ligne IndexedDB, 11 pages
 ├── crates/             workspace Cargo (19 crates)
 │   ├── klaar-shared-kernel/     value objects (Email, Geo, Money, VatRate, Locale…)
 │   ├── klaar-{identity,catalog,matching,intervention,payment,messaging,trust}/
-│   │                            les 7 bounded contexts cœur (Domain) — stubs
+│   │                            les 7 bounded contexts cœur (Domain)
 │   ├── klaar-application/       ports + use cases
-│   ├── klaar-*-adapter/         adapters Infrastructure — stubs
-│   └── klaar-api/               API HTTP actix-web + OpenAPI utoipa
+│   ├── klaar-sqlx-repos/        persistance PostgreSQL/PostGIS
+│   ├── klaar-{stripe,itsme,push,audit,email}-adapter/
+│   │                            adapters Infrastructure écrits (Stripe et itsme
+│   │                            portent les garanties, pas l'appel réseau)
+│   ├── klaar-{av,geo,storage}-adapter/
+│   │                            les trois stubs restants (ClamAV, Valhalla, S3)
+│   └── klaar-api/               API HTTP actix-web + OpenAPI utoipa (59 routes)
 ├── migrations/         refinery, embarquées dans le binaire
 ├── observability/      Prometheus + Grafana provisionnés
 └── packages/klaar-client/       client TypeScript généré depuis l'OpenAPI

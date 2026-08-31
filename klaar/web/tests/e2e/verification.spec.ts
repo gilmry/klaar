@@ -50,8 +50,10 @@ test("@negative un jeton expiré dit quoi faire ensuite", async ({ page }) => {
 
   const alerte = page.locator('[data-etat-verification="echec"]');
   await expect(alerte).toContainText(/inscription/i);
-  // Constater l'échec ne suffit pas : la page doit offrir la sortie.
-  await expect(page.locator('a[href="/inscription"]')).toBeVisible();
+  // Constater l'échec ne suffit pas : la page doit offrir la sortie. Cherchée
+  // dans le contenu et non dans la navigation de la coquille, qui propose déjà
+  // l'inscription à tout visiteur.
+  await expect(page.locator('main a[href="/inscription"]')).toBeVisible();
 });
 
 test("@negative un jeton inconnu est refusé", async ({ page }) => {

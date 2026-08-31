@@ -7,11 +7,11 @@
   "description": "PWA Klaar (Astro + Svelte, ADR-010). Surfaces User, Provider et Admin.",
   "scripts": {
     "dev": "astro dev --host 0.0.0.0",
-    "build": "astro check && astro build",
+    "build": "astro check && astro build && node scripts/precache.mjs",
     "preview": "astro preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e.mjs",
     "test:e2e:install": "playwright install --with-deps chromium",
     "demo": "playwright test --config=playwright.demo.config.ts",
     "vitrine": "node scripts/assembler-vitrine.mjs"

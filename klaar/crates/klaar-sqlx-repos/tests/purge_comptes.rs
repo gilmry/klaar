@@ -157,7 +157,7 @@ async fn security_la_cascade_emporte_le_jeton_de_verification() {
     let pool = pool().await;
     let depot = PgUtilisateurRepository::new(pool.clone());
     let id = compte(&pool, "security", "PENDING_EMAIL_VERIFY", 96).await;
-    let empreinte = format!("{:0<64}", &Uuid::new_v4().simple().to_string());
+    let empreinte = format!("{:0<64}", Uuid::new_v4().simple());
     sqlx::query(
         "INSERT INTO jeton_verification_email (empreinte, utilisateur_id, expire_le)
          VALUES ($1, $2, now() + interval '1 hour')",

@@ -47,7 +47,7 @@ fn statut(e: &ErreurElargissement) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/requests/{id}/expand-radius",
     tag = "demandes",
-    params(("id" = String, Path, description = "Identifiant de la Demande")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Demande")),
     responses(
         (status = 200, description = "Demande relancée sur un rayon plus large", body = ElargissementDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

@@ -8,6 +8,7 @@ import {
   codeDepuisErreur,
   jetonAcces,
   messageErreur,
+  observerSession,
   oublierJeton,
   rafraichir,
   restaurerSession,
@@ -271,6 +272,66 @@ describe("@security rotation du refresh", () => {
       expect(appels).toBe(2);
     } finally {
       globalThis.fetch = origine;
+    }
+  });
+});
+
+describe("@happy observation de session", () => {
+  it("prévient d'une ouverture puis d'une fermeture, une fois chacune", async () => {
+    // La navigation de la coquille est montée avant la connexion et ne
+    // recharge pas la page : sans ce signal, elle continuerait d'afficher
+    // « Me connecter » à quelqu'un qui vient de se connecter.
+    const vus: boolean[] = [];
+    const desabonner = observerSession((etat) => vus.push(etat));
+    try {
+      vi.stubGlobal("fetch", reponseOk());
+      await seConnecter({ email: "a@b.be", mot_de_passe: "motdepassecorrect" });
+      expect(vus).toEqual([true]);
+
+      // Un renouvellement n'est pas une ouverture : rien de plus n'est annoncé.
+      // Une réponse neuve : un corps déjà lu ne se relit pas.
+      vi.stubGlobal("fetch", reponseOk("jwt.renouvele"));
+      await rafraichir();
+      expect(vus).toEqual([true]);
+
+      oublierJeton();
+      expect(vus).toEqual([true, false]);
+
+      // Oublier un jeton déjà oublié n'annonce rien : il n'y a pas eu de
+      // changement à répercuter.
+      oublierJeton();
+      expect(vus).toEqual([true, false]);
+    } finally {
+      desabonner();
+    }
+  });
+
+  it("n'annonce plus rien après désabonnement", async () => {
+    const vus: boolean[] = [];
+    observerSession((etat) => vus.push(etat))();
+    vi.stubGlobal("fetch", reponseOk());
+    await seConnecter({ email: "a@b.be", mot_de_passe: "motdepassecorrect" });
+    expect(vus).toEqual([]);
+  });
+});
+
+describe("@negative observation de session", () => {
+  it("prévient les autres observateurs même si l'un d'eux échoue", async () => {
+    // Un menu qui plante ne doit pas faire échouer la connexion elle-même.
+    const vus: boolean[] = [];
+    const desabonnerFautif = observerSession(() => {
+      throw new Error("observateur fautif");
+    });
+    const desabonner = observerSession((etat) => vus.push(etat));
+    try {
+      vi.stubGlobal("fetch", reponseOk());
+      await expect(
+        seConnecter({ email: "a@b.be", mot_de_passe: "motdepassecorrect" }),
+      ).resolves.toBeTruthy();
+      expect(vus).toEqual([true]);
+    } finally {
+      desabonnerFautif();
+      desabonner();
     }
   });
 });

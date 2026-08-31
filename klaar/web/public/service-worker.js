@@ -17,23 +17,62 @@
  * passent par la queue IndexedDB de `src/lib/offlineQueue.ts`, pas par ici.
  */
 
-const CACHE = "klaar-shell-v1";
+/**
+ * Empreinte de la construction, et liste des fichiers qu'elle a produits.
+ *
+ * Les deux valeurs sont **réécrites par `scripts/precache.mjs`** après
+ * `astro build` ; celles d'ici sont ce que voit un service worker servi tel
+ * quel depuis `public/`, c'est-à-dire en développement.
+ *
+ * **Pourquoi pré-charger les fichiers de la construction et pas seulement les
+ * pages.** Au tout premier passage, la page et ses scripts sont demandés
+ * **avant** que le service worker ne contrôle l'onglet : ils ne traversent donc
+ * pas son gestionnaire `fetch` et ne sont pas mis en cache. Couper le réseau
+ * juste après donnait une page servie depuis le cache dont **aucun îlot Svelte
+ * ne s'hydratait**, faute de son fichier JavaScript — l'indicateur de connexion
+ * restait bloqué sur « Vérification… » au lieu d'annoncer « Hors ligne ». Une
+ * PWA qu'on installe pour les coupures réseau ne peut pas dépendre d'avoir
+ * rechargé une fois avant la coupure.
+ *
+ * L'empreinte change dès qu'un fichier change : le fichier du service worker
+ * change donc aussi, le navigateur le réinstalle, et `activate` supprime le
+ * cache de la construction précédente au lieu de l'empiler.
+ */
+const VERSION = "dev";
+const PRECACHE = [];
+
+const CACHE = `klaar-shell-${VERSION}`;
 const OFFLINE_URL = "/hors-ligne";
-const APP_SHELL = ["/", OFFLINE_URL, "/manifest.webmanifest", "/icons/icon-192.png"];
+const APP_SHELL = [
+  "/",
+  OFFLINE_URL,
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  ...PRECACHE,
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) =>
-      // addAll est tout-ou-rien : une seule 404 ferait échouer l'installation
-      // entière et laisserait la PWA sans coquille. On tolère les manquants.
-      Promise.all(
-        APP_SHELL.map((url) =>
-          cache.add(url).catch((err) => console.warn("pré-cache ignoré", url, err)),
+    caches
+      .open(CACHE)
+      .then((cache) =>
+        // addAll est tout-ou-rien : une seule 404 ferait échouer l'installation
+        // entière et laisserait la PWA sans coquille. On tolère les manquants.
+        Promise.all(
+          APP_SHELL.map((url) =>
+            cache.add(url).catch((err) => console.warn("pré-cache ignoré", url, err)),
+          ),
         ),
-      ),
-    ),
+      )
+      // **`skipWaiting` après le pré-cache, et non avant.** Appelé d'emblée, il
+      // laissait le service worker prendre la main sur l'onglet alors que son
+      // cache n'était rempli qu'à moitié : couper le réseau à cet instant
+      // donnait une navigation qui n'était même pas interceptée. Un worker qui
+      // prend le contrôle avant d'être prêt est un worker qui ne sait pas
+      // encore servir hors ligne, c'est-à-dire la seule chose qu'on lui
+      // demande.
+      .then(() => self.skipWaiting()),
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -57,14 +96,18 @@ self.addEventListener("fetch", (event) => {
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(request, copy));
+          // `waitUntil` et non un `then` orphelin : sans lui, le service worker
+          // peut être arrêté — ou la page passer hors ligne — avant que
+          // l'écriture n'aboutisse, et la ressource manque au cache alors que
+          // le code semble l'y avoir mise.
+          event.waitUntil(caches.open(CACHE).then((cache) => cache.put(request, copy)));
           return response;
         })
         .catch(async () => {
           const cache = await caches.open(CACHE);
           return (
-            (await cache.match(request)) ??
-            (await cache.match(OFFLINE_URL)) ??
+            (await cache.match(request, { ignoreVary: true })) ??
+            (await cache.match(OFFLINE_URL, { ignoreVary: true })) ??
             new Response("Hors ligne", { status: 503, headers: { "Content-Type": "text/plain" } })
           );
         }),
@@ -73,13 +116,22 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(request).then(
+    // **`ignoreVary`.** Une réponse assortie d'un en-tête `Vary` n'est rendue
+    // par le cache que si les en-têtes cités correspondent à ceux de la requête
+    // enregistrée. Le serveur de prévisualisation répond `Vary: Origin`, et les
+    // fichiers pré-chargés à l'installation — demandés sans `Origin`, puisque
+    // c'est une requête interne au service worker — n'étaient alors jamais
+    // rendus aux imports dynamiques d'Astro : la page s'ouvrait hors ligne mais
+    // aucun îlot ne s'hydratait. Ici la clé de cache est l'URL, et elle porte
+    // déjà une empreinte de contenu ; faire varier la réponse sur un en-tête
+    // n'a aucun sens et ne fait que rater des entrées bel et bien présentes.
+    caches.match(request, { ignoreVary: true }).then(
       (cached) =>
         cached ??
         fetch(request).then((response) => {
           if (response.ok && response.type === "basic") {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
+            event.waitUntil(caches.open(CACHE).then((cache) => cache.put(request, copy)));
           }
           return response;
         }),

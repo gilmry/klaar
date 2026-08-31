@@ -4,16 +4,20 @@ Monorepo de Klaar : un workspace Cargo (backend Rust, architecture hexagonale) e
 
 **Statut projet** : ce dépôt est développé en vitrine de la Méthode Foyer, indépendamment du prospect d'origine (devis décliné le 27/07/2026). Aucun provisioning payant (OVH, Stripe, itsme) n'est activé — et depuis **ADR-010**, plus aucun n'est requis côté client : la bascule PWA a retiré Tauri et, avec lui, les comptes développeur Apple/Google.
 
+**Où en est le code, en une phrase** : les Epics 0 à 9 marqués *Must* au PRD sont écrits et branchés de bout en bout, de l'agrégat de domaine jusqu'à l'écran, à trois exceptions qui tiennent toutes à un tiers absent (Stripe, itsme/BCE, stockage objet) — le détail, avec ses réserves, est dans [§ Où en est le périmètre MVP](#où-en-est-le-périmètre-mvp). Ce qui suit décrit chaque story livrée, y compris ce qu'elle ne fait pas.
+
 ## Structure
 
 Suit `docs/bmad-livrables/03-Architecture.md` §Workspace Cargo, limitée au périmètre MVP (les crates d'extension J11/J12'/J13/J14 — `klaar-skills`, `klaar-surge`, `klaar-subscription`, `klaar-public-api`, `klaar-region`, `klaar-biometric-adapter`, `klaar-ml-adapter`, `klaar-insurance-adapter`, `klaar-authority-adapter`, `klaar-region-adapter` — ne sont pas scaffoldées, elles sont post-MVP et gated) :
 
-- `crates/klaar-shared-kernel` — value objects communs (`Email`, `Geo`, `Money`, `VatRate`, `DistanceMeters`, `Locale`, `HashSha256`), seul crate avec une vraie logique métier à ce stade
-- `crates/klaar-{identity,catalog,matching,intervention,payment,messaging,trust}` — les 7 bounded contexts cœur (Domain), stubs en attente d'implémentation epic par epic
-- `crates/klaar-application` — ports + use cases (vide à ce stade)
-- `crates/klaar-{sqlx-repos,stripe-adapter,itsme-adapter,geo-adapter,push-adapter,storage-adapter,av-adapter,audit-adapter,email-adapter}` — adapters Infrastructure MVP (stubs)
-- `web/` — **PWA Astro + Svelte** (Story 0.2, ADR-010) : coquille installable, service worker, queue d'écritures hors-ligne IndexedDB. Remplace le `tauri-app/` prévu par ADR-008
-- `crates/klaar-api` — API HTTP (actix-web + utoipa, Story 0.5) : binaire `klaar-api` (serveur), `/api/v1/health`, doc OpenAPI sur `/api/v1/openapi.json`, Swagger UI sur `/api/v1/docs/`, métriques Prometheus sur `/metrics`, logs JSON structurés (Story 0.8)
+- `crates/klaar-shared-kernel` — value objects communs (`Email`, `Geo`, `Money`, `VatRate`, `DistanceMeters`, `Locale`, `HashSha256`)
+- `crates/klaar-{identity,catalog,matching,intervention,payment,messaging,trust}` — les 7 bounded contexts cœur (Domain), **écrits** : comptes et sessions, catalogue et prix indicatifs, matching géolocalisé explicable, machine à états de la Mission, séquestre et commission, messagerie anti-contournement, notation et litiges
+- `crates/klaar-application` — ports + use cases, un module par cas d'usage
+- `crates/klaar-sqlx-repos` — implémentations PostgreSQL/PostGIS des ports de persistance
+- `crates/klaar-{stripe-adapter,itsme-adapter,push-adapter,audit-adapter,email-adapter}` — adapters Infrastructure écrits. Stripe et itsme portent les garanties (signature de webhook, `state`/`nonce`/PKCE) mais **pas l'appel réseau**, faute de compte chez le tiers
+- `crates/klaar-{av-adapter,geo-adapter,storage-adapter}` — **les trois seuls stubs restants** : antivirus (ClamAV), géocodage externe (Valhalla) et stockage objet (S3/KMS). Ce sont des fichiers de doc-comment sans code, et ils bloquent les Stories 4.5 et 6.2 (pièces jointes)
+- `web/` — **PWA Astro + Svelte** (Story 0.2, ADR-010) : onze pages, dix-sept modules `lib/`, service worker et queue d'écritures hors-ligne IndexedDB. Remplace le `tauri-app/` prévu par ADR-008
+- `crates/klaar-api` — API HTTP (actix-web + utoipa, Story 0.5) : binaire `klaar-api` (serveur), **59 routes** sous `/api/v1`, doc OpenAPI sur `/api/v1/openapi.json`, Swagger UI sur `/api/v1/docs/`, métriques Prometheus sur `/metrics`, logs JSON structurés (Story 0.8)
 
 ## Utilisation
 
@@ -34,9 +38,15 @@ make codegen     # régénère packages/klaar-client/src/schema.d.ts depuis l'Op
 
 ```sh
 make frontend        # installe et construit la PWA (web/)
-make frontend-test   # tests unitaires de la queue hors-ligne (vitest + fake-indexeddb)
-cd web && npx playwright test          # tests e2e dans un vrai navigateur
+make frontend-test   # tests unitaires (vitest + fake-indexeddb)
+cd web && npm run test:e2e             # tests e2e dans un vrai navigateur
 ```
+
+> `npm run test:e2e` plutôt que `npx playwright test` : les cas de notifications
+> demandent un affichage — Chromium sans affichage n'a pas de service de
+> notification et rend `Notification.permission === "denied"` même une fois la
+> permission accordée. Le script fournit un serveur X virtuel (`xvfb-run`) quand
+> il n'y en a pas, et saute ces cas **en le disant** s'il n'en trouve pas.
 
 > Là où le CDN de Playwright est inaccessible (il répond 403 depuis certaines
 > régions), installer un Chrome système et lancer les e2e avec
@@ -71,7 +81,7 @@ docker compose up -d prometheus grafana   # + `cargo run -p klaar-api --bin klaa
 - **0.9** — hooks Git locaux (`scripts/hooks/`) : pre-commit (fmt + clippy -D warnings + gitleaks si installé), pre-push (tests). **Limite assumée** : ne détecte pas "code sans test" par couverture différentielle (hors scope de ce scaffold) — seul le cargo fmt/clippy/tests est mécaniquement bloquant pour l'instant
 - **0.4** — pipeline CI (`.github/workflows/ci.yml`, DRY avec les hooks locaux) : quality gate (fmt, clippy, tests), security gate (cargo-audit, cargo-deny, gitleaks), SBOM CycloneDX en artefact de build. `deny.toml` a fait remonter deux vrais problèmes corrigés au passage : dépendances internes en `path` sans version (« wildcard dependencies ») et absence de licence SPDX déclarée (`license = "MIT"` depuis ADR-009, qui renverse ADR-005)
 - **0.5** — harnais contrat API : `klaar-api` sert désormais un vrai endpoint (`/api/v1/health`), sa doc utoipa (`/api/v1/openapi.json`) et Swagger UI (`/api/v1/docs/`), fuzzé par `schemathesis` en CI. **Limites connues** :
-  - le check `unsupported_method` de schemathesis est exclu — actix-web renvoie 404 (pas 405) pour une méthode non déclarée sur un chemin donné, limitation de son routage par macro `#[get(...)]`. À corriger (fallback par chemin) quand le contrat aura plusieurs endpoints par route
+  - le check `unsupported_method` de schemathesis était exclu — actix-web renvoie 404 (pas 405) pour une méthode non déclarée sur un chemin donné, limitation de son routage par macro `#[get(...)]`. **Corrigé depuis** : `klaar_api::configurer` pose un service de repli qui compare le chemin demandé aux gabarits du contrat — lus dans l'OpenAPI, pas recopiés — et rend 405 avec un en-tête `Allow` quand le chemin existe sous un autre verbe, 404 sinon. `tests/repli_routes.rs` le vérifie, et le check n'est plus exclu en CI
   - `cargo audit` ignore **RUSTSEC-2026-0258** (h2 < 0.4.16, DoS par frames DATA vides) : vulnérabilité transitive via `actix-http` (toute la branche h2 0.3.x d'actix-web v4 en hérite, pas de version corrigée disponible en amont à ce jour). `klaar-api` n'est pas exposé publiquement à ce stade. **À revoir à chaque mise à jour de dépendance** — `cargo tree -i h2` pour vérifier si un correctif amont existe (même ignore répété dans `deny.toml`, cargo-deny a son propre check advisories indépendant de cargo-audit)
 - **0.6** — codegen TS client partagé (`packages/klaar-client`, `@klaar/client`) : `openapi-typescript` génère `src/schema.d.ts` depuis `/api/v1/openapi.json` (`make codegen` ou `bash scripts/codegen.sh`, vérifié en CI). Fichiers générés non commités (`openapi.json`, `schema.d.ts` dans `.gitignore`) — régénérés à la demande depuis la seule source de vérité (le contrat servi par `klaar-api`), pas de package publié pour l'instant (le premier consommateur est `web/`, Story 0.2)
 - **0.12** — **Web Push VAPID** (`klaar-push-adapter`, ADR-010) : chiffrement `aes128gcm` (RFC 8188/8291) et authentification VAPID (RFC 8292) assemblés au-dessus des primitives RustCrypto, plus les endpoints `GET /api/v1/push/cle-publique`, `POST` et `DELETE /api/v1/push/abonnements`, la table `push_subscription` et le service worker qui affiche les notifications. Remplace le PoC push Tauri, que des comptes développeur payants bloquaient.
@@ -1611,6 +1621,178 @@ arbre qui en contient. Variables attendues : `KLAAR_DOMAINE`,
 la page affiche ce qu'il reste à renseigner. Le workflow expose un
 déclenchement manuel pour reconstruire après un changement d'identité, qui ne
 produit aucun commit.
+
+## Ce que la suite de tests cachait
+
+Quatre échecs qu'on aurait pu classer « environnement » et qui décrivaient
+chacun un vrai défaut. Ils sont listés ici parce que le raisonnement compte plus
+que le correctif.
+
+**La PWA ne s'ouvrait pas hors ligne au premier passage.** Au tout premier
+chargement, la page et ses scripts sont demandés **avant** que le service worker
+ne contrôle l'onglet : ils ne traversent pas son gestionnaire `fetch` et
+n'entraient donc pas au cache. Couper le réseau juste après donnait une page
+servie depuis le cache dont **aucun îlot Svelte ne s'hydratait** — l'indicateur
+de connexion restait sur « Vérification… » au lieu d'annoncer « Hors ligne ».
+Le test correspondant passait quand on avait rechargé avant de couper, et
+échouait sinon : il ressemblait à un test instable, il décrivait une PWA qui
+exigeait un rechargement préalable pour tenir la promesse pour laquelle on
+l'installe. `scripts/precache.mjs` inscrit désormais dans le service worker
+construit la liste des fichiers de la construction et leur empreinte ; `install`
+les pré-charge, et `skipWaiting` n'est appelé **qu'après** — un worker qui prend
+le contrôle avant d'avoir rempli son cache est un worker qui ne sait pas encore
+servir hors ligne.
+
+**Trois causes distinctes se cachaient derrière le même symptôme**, et il a fallu
+les traiter une à une :
+
+- `cache.put` était appelé hors de `event.waitUntil` : le worker pouvait être
+  arrêté avant que l'écriture n'aboutisse, et la ressource manquait au cache
+  alors que le code semblait l'y avoir mise ;
+- `caches.match` refusait des entrées pourtant présentes. Le serveur de
+  prévisualisation répond `Vary: Origin`, et une réponse assortie d'un `Vary`
+  n'est rendue que si les en-têtes cités correspondent à ceux de la requête
+  enregistrée — les fichiers pré-chargés à l'installation, demandés sans
+  `Origin`, n'étaient jamais rendus aux imports dynamiques d'Astro. La clé de
+  cache est ici l'URL, qui porte déjà une empreinte de contenu : `ignoreVary`
+  est donc la bonne lecture, pas un contournement ;
+- l'attente `attendreServiceWorkerActif` rendait la main trop tôt. Sa condition
+  était écrite dans une fonction `async`, dont `page.waitForFunction` voit la
+  promesse — toujours vraie — et non la valeur. Le défaut dormait tant que
+  l'installation ne pré-chargeait que quatre fichiers, parce qu'elle était finie
+  avant qu'on regarde.
+
+**Les six tests de notifications échouaient sur une capacité absente du
+navigateur de test.** Chromium sans affichage n'a pas de service de
+notification : `Notification.permission` rend « denied » alors que
+`navigator.permissions.query` rend « granted » et que Playwright a bien accordé
+la permission. L'invitation de la PWA se repliait donc sur « bloqué pour ce
+site » et le bouton n'était jamais rendu. `push.spec.ts` tourne désormais dans
+un projet Playwright à part, **avec affichage** ; `npm run test:e2e` en fournit
+un (`xvfb-run`) et, s'il n'y en a pas, les cas se sautent en le disant plutôt que
+d'échouer en laissant croire à une régression.
+
+**Un test d'intégration devenait faux à mesure que la base grossissait.** Les
+tests tiraient un numéro d'entreprise au hasard dans les vingt millions que
+permet le format. La base de développement n'étant jamais purgée, les
+prestataires s'y accumulent : à onze mille lignes, une exécution complète sur
+deux échouait sur `provider_numero_bce_key`, sans rapport avec ce que le test
+vérifie. Le tirage consulte désormais la base avant de rendre un numéro. Ce
+n'était pas de la malchance, c'était une dette qui se paie de plus en plus cher.
+
+## Contrat OpenAPI : le fuzz disait déjà ce qu'on n'écoutait pas
+
+Le job `contract-tests` de la CI **échouait déjà avant ce travail** : vingt-trois
+échecs `schemathesis`, dont le check `unsupported_method` était le seul exclu.
+L'exclusion masquait une seule cause ; les vingt-deux autres n'étaient masquées
+par rien, simplement pas regardées.
+
+Ce qui est corrigé, et qui relevait chaque fois d'un contrat qui mentait :
+
+- **405 au lieu de 404** sur un chemin connu appelé avec un verbe non déclaré
+  (voir Story 0.5 ci-dessus) ;
+- **les erreurs de lecture ne respectaient pas le contrat.** Un corps illisible
+  recevait la réponse par défaut d'actix-web : `400` en `text/plain`, portant le
+  message anglais du désérialiseur. Trois manquements à la fois — le type de
+  contenu contredit un contrat qui n'annonce que du JSON, la forme
+  `{"code": "…"}` que toutes les autres erreurs respectent n'est pas tenue, et
+  le texte est celui d'une bibliothèque interne sur une API dont les refus sont
+  traduits ;
+- **les contraintes existaient dans le code et pas dans le contrat.** Le schéma
+  annonçait « une chaîne » là où le domaine exige une adresse électronique et
+  douze caractères de mot de passe : un client engendré depuis l'OpenAPI ne
+  validait rien. Elles sont déclarées ;
+- **deux paramètres de requête obligatoires n'étaient pas documentés du tout**
+  (`utilisateur` sur l'export RGPD, `debut`/`fin` sur l'export TVA) : un client
+  engendré depuis le contrat n'avait aucun moyen de savoir qu'il fallait les
+  envoyer ;
+- **les identifiants de chemin sont annoncés `format: uuid`**, au lieu d'une
+  chaîne quelconque ;
+- **des `400` atteignables n'étaient pas documentés** : `deny_unknown_fields`
+  fait refuser un champ inconnu, ce qui est voulu, et le contrat n'en disait
+  rien ;
+- **Web Push et Stripe sont configurés dans le job**, avec des valeurs de test :
+  sans eux, deux routes rendaient un 503 « non configuré » — juste, mais compté
+  comme une erreur serveur, ce qui masquait leur état réel.
+
+**Le job reste rouge, et c'est écrit plutôt que contourné.** Une dizaine
+d'échecs subsistent, chacun demandant un arbitrage de produit plutôt qu'une
+correction mécanique :
+
+| Route | Ce que le fuzz reproche | Ce qu'il faut trancher |
+| --- | --- | --- |
+| `POST /auth/refresh` | rend `400 REFRESH_MISSING` sans cookie | un identifiant absent mérite un `401` ; le changer modifie un code que le front connaît |
+| `POST /push/abonnements` (×2) | rend `{"erreur": "…"}` | les trois routes push sont les seules à ne pas suivre la forme `{"code": "…"}` des cinquante-six autres |
+| `POST /webhooks/stripe` | rend `400 INVALID_SIGNATURE` | `400` suit la convention de Stripe, le fuzz attend `401`/`403` |
+| `POST /auth/login`, `/auth/signup`, `GET /catalog/sectors` | rendent `429` | la limitation de débit fait exactement son travail ; le fuzz n'en a pas la notion. `KLAAR_QUOTA_ECRITURE_SENSIBLE` la relève, mais laisse alors le fuzz marteler un hachage argon2 de 64 Mio jusqu'à faire tomber des connexions — essayé, retiré |
+| `POST /auth/signup`, `POST /ops/disputes/{id}/resolve` | données acceptées ou refusées à contre-emploi du schéma | il faudrait typer `decision` en énumération et resserrer le format d'adresse, ce qui change le contrat public |
+
+Aucun de ces points n'est un défaut caché : ils sont tous visibles dans la sortie
+du job. Ce qui l'était, c'est que **personne ne lisait la sortie du job**.
+
+## Navigation : ce que l'application montre, et ce qu'elle cachait
+
+Une vérification systématique du câblage entre les 59 routes de `klaar-api` et
+les appels réseau de `web/src/lib/*.ts` a montré que le branchement était réel :
+quatorze des dix-sept modules `lib/` font de vrais appels réseau, et tous les
+composants Svelte les utilisent. Les trois autres n'ont pas à en faire :
+`i18n.ts` (table de textes), `registerSW.ts` (service worker) et `navigation.ts`
+(liens du menu). Le défaut n'était pas là. Il était **entre les pages** :
+`AppLayout.astro` n'avait ni menu ni navigation persistante, et les onze pages
+n'étaient reliées que par quelques liens posés dans l'accueil. Depuis
+`/catalogue`, il n'existait aucun chemin vers `/demande` autre que le bouton
+« précédent ». Et `/ops`, la console d'exploitation, **n'était atteignable par
+aucun lien du site** : il fallait connaître son URL.
+
+Une navigation persistante est désormais montée par la coquille
+(`src/components/NavigationPrincipale.svelte`, liens calculés par
+`src/lib/navigation.ts`). Elle distingue le visiteur de l'utilisateur connecté,
+et deux tests la tiennent : l'un vérifie qu'aucun lien ne pointe vers une page
+absente, l'autre qu'aucune page de `src/pages/` ne reste sans lien entrant, hors
+deux pages de destination documentées (`hors-ligne`, servie par le service
+worker, et `verifier-email`, ouverte depuis un courriel).
+
+**Ce que le front ne peut pas savoir, et qui se voit dans le menu.** Le jeton
+d'accès ne porte que `sub`, `iat` et `exp` — un test de `klaar-api` vérifie
+qu'aucune autre revendication ne voyage. Il n'y a donc **aucun rôle lisible côté
+client** : la navigation ne distingue que « connecté » de « pas connecté ». En
+particulier, elle ne sait pas si un compte est prestataire, et propose donc
+l'espace prestataire à tout le monde ; c'est `GET
+/api/v1/providers/me/availability` qui répond 403 le cas échéant. Le corriger
+demanderait soit une revendication de rôle dans le jeton, soit un appel réseau
+par affichage de coquille. Ni l'un ni l'autre n'a été fait ici, et la
+conséquence est écrite plutôt que masquée.
+
+**`/ops` : un lien discret dans le pied de page, et rien de plus.** Le cacher
+entièrement obligeait l'équipe d'exploitation à retenir une URL, ce qui finit en
+URL partagée par écrit ; le mettre dans le menu en ferait une rubrique du site
+pour un visiteur. Ce lien **n'est pas une mesure de sécurité et n'en tient pas
+lieu** : la page est une coquille statique qui n'affiche rien avant un `POST
+/api/v1/ops/login` réussi (mot de passe **et** code TOTP), et chacune des seize
+routes `/api/v1/ops/*` revérifie le jeton d'exploitation côté serveur, avec la
+permission requise consignée au journal — refus compris. La vérification a été
+faite route par route en écrivant cette section.
+
+### Endpoints sans appelant, et appelants sans page
+
+Le même croisement a listé ce qui existe côté serveur sans être atteignable
+depuis un écran. Ce ne sont pas des liens morts — aucun appel du front ne vise
+une route absente — mais des fonctionnalités invisibles :
+
+| Route | État |
+| --- | --- |
+| `POST /api/v1/missions/{id}/reschedule` et `/reschedule/answer` | Story 4.8 livrée côté service, **aucun écran** |
+| `GET /api/v1/missions/{id}/ratings` | notes lisibles par l'API, l'écran n'affiche que l'écriture |
+| `GET /api/v1/missions/{id}/dispute` | le litige s'ouvre depuis l'écran, il ne s'y relit pas |
+| `PATCH /api/v1/me/locale` | le sélecteur de langue n'écrit que dans `localStorage` ; la langue de compte, celle des courriels, ne suit pas |
+| `GET /api/v1/ops/audit`, `/ops/exports/gdpr`, `/ops/exports/vat`, `POST /api/v1/ops/accounts` | la console d'exploitation ne les expose pas ; journal, exports réglementaires et création de compte ops passent par `curl` |
+| `DELETE /api/v1/providers/me/registration` | la fonction existe dans `web/src/lib/ops.ts` (`retirerInscription`), **aucun composant ne l'appelle** |
+| `GET /api/v1/health` | `api.health()` est exporté par `web/src/lib/api.ts` et n'a aucun appelant ; la sonde d'écran passe par le manifeste, délibérément |
+| `POST /api/v1/webhooks/stripe` | appelé par Stripe, pas par un navigateur — normal |
+
+Aucune de ces lignes n'est corrigée ici : ce sont des écrans à écrire, pas des
+liens à poser, et les mélanger aurait fait passer un travail de navigation pour
+un travail de produit.
 
 ## Ce qui manque avant que le Sprint 0 soit réellement terminé
 

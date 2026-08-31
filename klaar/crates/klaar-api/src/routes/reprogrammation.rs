@@ -58,7 +58,7 @@ fn statut(e: &ErreurReprogrammation) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/reschedule",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission annulée")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission annulée")),
     responses(
         (status = 201, description = "Proposition enregistrée", body = ReprogrammationDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
@@ -112,7 +112,7 @@ pub async fn proposer_reprogrammation(
     post,
     path = "/api/v1/missions/{id}/reschedule/answer",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission annulée")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission annulée")),
     request_body = ReponseReprogrammationDto,
     responses(
         (status = 200, description = "Réponse enregistrée", body = RepriseDto),

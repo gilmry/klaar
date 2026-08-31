@@ -129,8 +129,8 @@ async fn peut_suivre(
     path = "/api/v1/missions/{id}/events",
     tag = "temps-réel",
     params(
-        ("id" = String, Path, description = "Identifiant de la Mission"),
-        ("billet" = String, Query, description = "Billet à usage unique"),
+        ("id" = Uuid, Path, description = "Identifiant de la Mission"),
+        ("billet" = String, Query, description = "Billet à usage unique", min_length = 1),
     ),
     responses(
         (status = 101, description = "Socket ouverte"),

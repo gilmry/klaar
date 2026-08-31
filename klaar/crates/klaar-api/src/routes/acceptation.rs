@@ -57,7 +57,7 @@ fn statut(e: &ErreurAcceptation) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/requests/{id}/accept",
     tag = "demandes",
-    params(("id" = String, Path, description = "Identifiant de la Demande")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Demande")),
     responses(
         (status = 201, description = "Mission attribuée", body = MissionDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

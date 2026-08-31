@@ -5,9 +5,10 @@
 //! seulement en lançant un vrai serveur finit par n'être testé que dans les
 //! cas nominaux.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use actix_web::{web, App};
+use actix_web::dev::ResourceDef;
+use actix_web::{web, App, HttpRequest, HttpResponse};
 use utoipa::OpenApi;
 
 use klaar_application::ports::horloge::HorlogeSysteme;
@@ -297,7 +298,10 @@ pub struct ApiDoc;
 /// Enregistre toutes les routes. Séparé de la construction de `App` pour être
 /// réutilisable par `actix_web::test::init_service`.
 pub fn configurer(cfg: &mut web::ServiceConfig) {
-    cfg.service(routes::health::health)
+    cfg.app_data(json_config())
+        .app_data(query_config())
+        .app_data(path_config())
+        .service(routes::health::health)
         .service(routes::auth::signup)
         .service(routes::verification::verifier)
         .service(routes::session::login)
@@ -355,7 +359,139 @@ pub fn configurer(cfg: &mut web::ServiceConfig) {
         .service(routes::suivi::suivre_mission)
         .service(routes::push::cle_publique)
         .service(routes::push::enregistrer_abonnement)
-        .service(routes::push::supprimer_abonnement);
+        .service(routes::push::supprimer_abonnement)
+        .default_service(web::to(repli));
+}
+
+/// Réponse d'erreur du lecteur de corps JSON.
+///
+/// **Ce qu'il y avait avant.** Un corps illisible recevait la réponse par
+/// défaut d'actix-web : `400` en `text/plain`, portant le message du
+/// désérialiseur — « Json deserialize error: expected value at line 1 column
+/// 1 ». Trois problèmes dans une seule réponse : le type de contenu contredit
+/// le contrat, qui n'annonce que du JSON ; la forme `{"code": "…"}` que toutes
+/// les autres erreurs respectent n'est pas tenue, donc le client a deux
+/// analyseurs à écrire ; et le texte est celui d'une bibliothèque interne, en
+/// anglais, sur une API dont les refus sont traduits.
+///
+/// **Le statut est conservé tel quel.** Un contenu de type inattendu mériterait
+/// un `415`, mais le changer ici modifierait le contrat de routes déjà
+/// documentées et testées. Ce qui est corrigé, c'est ce qui était faux : le
+/// corps et son type.
+fn json_config() -> web::JsonConfig {
+    web::JsonConfig::default().error_handler(|erreur, _requete| {
+        use actix_web::error::JsonPayloadError;
+        use actix_web::ResponseError;
+        let code = match &erreur {
+            JsonPayloadError::ContentType => "CONTENT_TYPE_UNSUPPORTED",
+            JsonPayloadError::Overflow { .. } | JsonPayloadError::OverflowKnownLength { .. } => {
+                "BODY_TOO_LARGE"
+            }
+            _ => "BODY_MALFORMED",
+        };
+        let statut = erreur.status_code();
+        actix_web::error::InternalError::from_response(
+            erreur,
+            HttpResponse::build(statut).json(routes::auth::ErreurValidationDto {
+                code: code.to_string(),
+            }),
+        )
+        .into()
+    })
+}
+
+/// Même correction pour les paramètres de requête et de chemin.
+///
+/// Un paramètre manquant rendait « Query deserialize error: missing field
+/// `debut` » en `text/plain` : le message du désérialiseur, en anglais, avec le
+/// nom du champ Rust. Ici comme pour le corps, ce qui sort est la forme
+/// d'erreur du contrat.
+fn query_config() -> web::QueryConfig {
+    web::QueryConfig::default()
+        .error_handler(|erreur, _requete| erreur_de_lecture(erreur, "QUERY_MALFORMED"))
+}
+
+fn path_config() -> web::PathConfig {
+    web::PathConfig::default()
+        .error_handler(|erreur, _requete| erreur_de_lecture(erreur, "PATH_MALFORMED"))
+}
+
+fn erreur_de_lecture<E>(erreur: E, code: &str) -> actix_web::Error
+where
+    E: std::fmt::Debug + std::fmt::Display + 'static,
+{
+    actix_web::error::InternalError::from_response(
+        erreur,
+        HttpResponse::BadRequest().json(routes::auth::ErreurValidationDto {
+            code: code.to_string(),
+        }),
+    )
+    .into()
+}
+
+/// Les chemins du contrat, avec les méthodes que chacun accepte.
+///
+/// **Lus dans l'OpenAPI, pas recopiés.** Une seconde liste écrite à la main
+/// aurait divergé au premier endpoint ajouté, et le repli aurait alors annoncé
+/// `Allow` faux — pire qu'un 404, parce qu'on l'aurait cru.
+fn contrat() -> &'static [(ResourceDef, String)] {
+    static TABLE: OnceLock<Vec<(ResourceDef, String)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        ApiDoc::openapi()
+            .paths
+            .paths
+            .iter()
+            .map(|(chemin, item)| {
+                let methodes = [
+                    ("GET", item.get.is_some()),
+                    ("HEAD", item.head.is_some()),
+                    ("POST", item.post.is_some()),
+                    ("PUT", item.put.is_some()),
+                    ("PATCH", item.patch.is_some()),
+                    ("DELETE", item.delete.is_some()),
+                    ("OPTIONS", item.options.is_some()),
+                    ("TRACE", item.trace.is_some()),
+                ]
+                .into_iter()
+                .filter(|(_, presente)| *presente)
+                .map(|(nom, _)| nom)
+                .collect::<Vec<_>>()
+                .join(", ");
+                (ResourceDef::new(chemin.as_str()), methodes)
+            })
+            .collect()
+    })
+}
+
+/// Repli : 405 quand le chemin existe mais pas la méthode, 404 sinon.
+///
+/// **Pourquoi il faut l'écrire.** Le routage d'actix-web par macro
+/// `#[get("…")]` crée une ressource par gestionnaire, chacune gardée par sa
+/// méthode. Une méthode non déclarée ne satisfait aucune garde, aucune
+/// ressource ne correspond, et le routeur rend **404**. HTTP demande **405**
+/// assorti d'un en-tête `Allow` : la nuance n'est pas cosmétique, elle dit à
+/// qui appelle « ce n'est pas l'adresse qui est fausse, c'est le verbe », ce
+/// qui est la moitié du diagnostic.
+///
+/// Le fuzz de contrat (`schemathesis`, ADR-004) vérifie exactement cela. Son
+/// check `unsupported_method` était exclu en CI, avec pour motif qu'il faudrait
+/// s'en occuper « quand le contrat aura plusieurs endpoints par chemin » — ce
+/// qui est le cas depuis longtemps : `GET`/`POST /missions/{id}/dispute`,
+/// `GET`/`PATCH /providers/me/availability`, `GET`/`POST
+/// /missions/{id}/tracking`, `GET`/`POST /ops/catalog/sectors`. L'exclusion est
+/// levée avec ce repli.
+async fn repli(requete: HttpRequest) -> HttpResponse {
+    let chemin = requete.path();
+    if let Some((_, autorisees)) = contrat().iter().find(|(def, _)| def.is_match(chemin)) {
+        return HttpResponse::MethodNotAllowed()
+            .insert_header((actix_web::http::header::ALLOW, autorisees.clone()))
+            .json(routes::auth::ErreurValidationDto {
+                code: "METHOD_NOT_ALLOWED".to_string(),
+            });
+    }
+    HttpResponse::NotFound().json(routes::auth::ErreurValidationDto {
+        code: "NOT_FOUND".to_string(),
+    })
 }
 
 /// État câblé sur une base réelle, avec des paramètres argon2 faibles.

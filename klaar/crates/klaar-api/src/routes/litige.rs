@@ -74,7 +74,7 @@ fn statut(e: &ErreurLitige) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/dispute",
     tag = "litige",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = LitigeDto,
     responses(
         (status = 201, description = "Litige ouvert", body = LitigeOuvertDto),
@@ -146,7 +146,7 @@ pub async fn ouvrir_litige(
     get,
     path = "/api/v1/missions/{id}/dispute",
     tag = "litige",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "Le litige", body = LitigeLuDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

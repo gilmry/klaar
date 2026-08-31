@@ -82,7 +82,9 @@ test("@negative un visiteur non connecté est renvoyé vers la connexion", async
   await anonyme(page);
   await page.goto("/mon-compte");
   await expect(page.locator('[data-etat-compte="anonyme"]')).toBeVisible();
-  await expect(page.locator('a[href="/connexion"]')).toBeVisible();
+  // Dans le contenu de la page, pas dans la navigation de la coquille : c'est
+  // l'écran lui-même qui doit offrir la sortie à qui arrive sans session.
+  await expect(page.locator('main a[href="/connexion"]')).toBeVisible();
   await expect(page.locator('[data-action="ouvrir-effacement"]')).toHaveCount(0);
 });
 

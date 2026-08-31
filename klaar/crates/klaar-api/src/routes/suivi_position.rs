@@ -100,7 +100,7 @@ fn echec(e: ErreurSuivi, quoi: &str) -> HttpResponse {
     post,
     path = "/api/v1/missions/{id}/tracking/consent",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = ConsentementSuiviDto,
     responses(
         (status = 200, description = "Consentement enregistré", body = EtatConsentementDto),
@@ -152,7 +152,7 @@ pub async fn consentir_suivi(
     post,
     path = "/api/v1/missions/{id}/tracking",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = PositionDto,
     responses(
         (status = 201, description = "Position enregistrée, dégradée à 50 m", body = ReleveDto),
@@ -210,7 +210,7 @@ pub async fn relever_suivi(
     get,
     path = "/api/v1/missions/{id}/tracking",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "État du trajet", body = VueSuiviDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

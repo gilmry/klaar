@@ -160,12 +160,51 @@ export function jetonAcces(): string | null {
   return jetonCourant;
 }
 
+/**
+ * Qui veut être prévenu quand la session s'ouvre ou se ferme.
+ *
+ * **Pourquoi une notification plutôt qu'une lecture ponctuelle.** La navigation
+ * de la coquille est montée une fois par page et doit changer au moment où l'on
+ * se connecte, sans rechargement : le formulaire de connexion ne redirige nulle
+ * part, la page reste la même. Sans ce signal, le menu continuerait d'afficher
+ * « Me connecter » à quelqu'un qui vient de se connecter — un mensonge visible
+ * à l'écran.
+ *
+ * Le jeton lui-même ne circule pas : les observateurs ne reçoivent qu'un
+ * booléen. Un menu n'a aucune raison de tenir un secret.
+ */
+type ObservateurSession = (connecte: boolean) => void;
+const observateurs = new Set<ObservateurSession>();
+
+/**
+ * S'abonne aux changements d'état de session. Rend la fonction de
+ * désabonnement, que l'appelant doit appeler à sa destruction — un composant
+ * démonté qui reste abonné garde une référence vivante sur sa fermeture.
+ */
+export function observerSession(observateur: ObservateurSession): () => void {
+  observateurs.add(observateur);
+  return () => observateurs.delete(observateur);
+}
+
+function annoncerSession(connecte: boolean): void {
+  for (const observateur of observateurs) {
+    try {
+      observateur(connecte);
+    } catch {
+      // Un observateur qui échoue ne doit pas empêcher les autres d'être
+      // prévenus, ni faire échouer la connexion elle-même.
+    }
+  }
+}
+
 export function oublierJeton(): void {
+  const avait = jetonCourant !== null;
   jetonCourant = null;
   if (minuterie !== null) {
     clearTimeout(minuterie);
     minuterie = null;
   }
+  if (avait) annoncerSession(false);
 }
 
 /**
@@ -185,8 +224,13 @@ function programmerRenouvellement(expireDans: number): void {
 }
 
 function retenir(session: SessionOuverte): SessionOuverte {
+  const avait = jetonCourant !== null;
   jetonCourant = session.jeton_acces;
   programmerRenouvellement(session.expire_dans);
+  // Un renouvellement n'est pas une ouverture de session : ne prévenir qu'au
+  // passage de « pas connecté » à « connecté » évite de faire clignoter tout ce
+  // qui écoute, toutes les heures, sans que rien n'ait changé pour personne.
+  if (!avait) annoncerSession(true);
   return session;
 }
 

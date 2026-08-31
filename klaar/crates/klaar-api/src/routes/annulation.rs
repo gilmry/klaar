@@ -59,7 +59,7 @@ fn statut(e: &ErreurAnnulation) -> actix_web::http::StatusCode {
     path = "/api/v1/requests/{id}",
     tag = "demandes",
     params(
-        ("id" = String, Path, description = "Identifiant de la Demande"),
+        ("id" = Uuid, Path, description = "Identifiant de la Demande"),
         ParametresAnnulation,
     ),
     responses(

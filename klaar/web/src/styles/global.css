@@ -37,6 +37,9 @@ a { color: inherit; }
 }
 .klaar-entete img { width: 32px; height: 32px; border-radius: 8px; }
 .klaar-entete strong { font-size: 1.05rem; letter-spacing: .01em; }
+/* Le logo ramène à l'accueil. C'est ce que tout le monde essaie en premier
+   quand on est perdu dans un site, et ça ne coûte qu'une ancre. */
+.klaar-marque { display: inline-flex; align-items: center; gap: .5rem; text-decoration: none; }
 .klaar-tempere { color: var(--klaar-tempere); }
 
 .klaar-etat {
@@ -60,4 +63,21 @@ a { color: inherit; }
   border-top: 1px solid var(--klaar-bord);
   font-size: .875rem;
   color: var(--klaar-tempere);
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.25rem;
+}
+/* Le lien d'exploitation est atteignable mais n'appelle pas le clic : il ne
+   s'adresse pas aux visiteurs. Discret ne veut pas dire invisible — un
+   contraste insuffisant le rendrait illisible pour ceux à qui il s'adresse. */
+.klaar-pied-discret { opacity: .75; }
+
+/* La navigation principale. Elle est en dehors de `main` pour qu'un « aller au
+   contenu » et les lecteurs d'écran distinguent le menu du contenu de page. */
+.klaar-nav {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: .25rem 1.25rem;
+  border-bottom: 1px solid var(--klaar-bord);
+  font-size: .95rem;
 }

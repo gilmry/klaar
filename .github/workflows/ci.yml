@@ -44,6 +44,14 @@ jobs:
       # elle, la trace s'écrit non signée : les tests qui vérifient la chaîne
       # passeraient sans rien prouver.
       KLAAR_TRACE_HMAC_KEY: cle-de-ci-pour-la-trace-jamais-en-production-48o
+      # Web Push et Stripe, configurés **exprès** pour ce job. Sans eux,
+      # `GET /api/v1/push/cle-publique` et `POST /api/v1/webhooks/stripe`
+      # rendent un 503 « non configuré » — une réponse juste, mais que le fuzz
+      # de contrat compte comme une erreur serveur et qui masquait donc l'état
+      # réel des deux routes. Valeurs de test, sans effet hors de ce job.
+      KLAAR_VAPID_PRIVATE_KEY: bAdZudffXubX14YgJQxCQEP-6shwedfcTPM5EaUJD3U
+      KLAAR_VAPID_SUBJECT: mailto:ci@klaar.invalid
+      KLAAR_STRIPE_WEBHOOK_SECRET: whsec_de_ci_jamais_en_production
       # `target/` dépasse trente gigaoctets avec la compilation incrémentale,
       # pour un gain nul sur un runner qui repart de zéro à chaque job.
       CARGO_INCREMENTAL: 0
@@ -162,13 +170,14 @@ jobs:
       - name: Démarre klaar-api en arrière-plan
         run: cargo run -p klaar-api --bin klaar-api &
       - name: Fuzz le contrat API (schemathesis, ADR-004)
-        # unsupported_method exclu : actix-web renvoie 404 (pas 405) sur une
-        # méthode non déclarée pour un chemin donné — limitation connue de
-        # son routage macro, à traiter quand le contrat aura plusieurs
-        # endpoints par chemin (cf. klaar/README.md).
+        # `unsupported_method` n'est plus exclu : l'API rend désormais un 405
+        # assorti d'un `Allow` sur un chemin connu appelé avec un verbe non
+        # déclaré, au lieu du 404 que produit le routage par macro
+        # d'actix-web. Le repli est dans `klaar_api::configurer`, et
+        # `tests/repli_routes.rs` le vérifie.
         # --wait-for-schema : laisse le temps au binaire de démarrer (déjà
         # compilé à l'étape précédente, donc quelques secondes suffisent).
-        run: st run http://127.0.0.1:8080/api/v1/openapi.json --wait-for-schema=30 --checks all --exclude-checks unsupported_method
+        run: st run http://127.0.0.1:8080/api/v1/openapi.json --wait-for-schema=30 --checks all
 
   codegen:
     name: Codegen TS client (@klaar/client)
@@ -273,7 +282,17 @@ jobs:
       - name: Tests unitaires (queue hors-ligne, 4 classes)
         run: npm run test
       - run: npx playwright install --with-deps chromium
-      - name: Tests e2e (installabilité, service worker, hors-ligne)
+      # **Un affichage est nécessaire, pour une partie des cas seulement.**
+      # Chromium sans affichage n'a pas de service de notification :
+      # `Notification.permission` rend « denied » alors même que la permission
+      # a été accordée, et les six cas de `push.spec.ts` échouaient sur cette
+      # capacité absente plutôt que sur le code. `npm run test:e2e` fournit un
+      # serveur X virtuel quand il n'y en a pas (`scripts/e2e.mjs`) ; sans
+      # `xvfb`, il saute ces cas **en le disant**, ce qui donnerait un job vert
+      # ayant vérifié moins qu'il n'y paraît. On l'installe donc explicitement.
+      - name: Serveur X virtuel (tests de notifications)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Tests e2e (installabilité, service worker, hors-ligne, navigation, notifications)
         run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()

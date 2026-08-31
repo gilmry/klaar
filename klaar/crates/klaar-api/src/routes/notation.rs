@@ -76,7 +76,7 @@ fn statut(e: &ErreurNotation) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/rating",
     tag = "notation",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = NoteDto,
     responses(
         (status = 201, description = "Note enregistrée", body = NoteEcriteDto),
@@ -144,7 +144,7 @@ pub async fn noter_intervention(
     get,
     path = "/api/v1/missions/{id}/ratings",
     tag = "notation",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "Notes visibles, éventuellement aucune", body = NotesDeMissionDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

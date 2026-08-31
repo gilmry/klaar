@@ -48,16 +48,44 @@ async fn compte_actif(pool: &PoolPg, marqueur: &str) -> (Uuid, String) {
     (id, email)
 }
 
-fn numero() -> NumeroBce {
-    let corps = (Uuid::new_v4().as_u128() as u64) % 20_000_000;
-    NumeroBce::parse(&format!("{corps:08}{:02}", 97 - (corps % 97))).expect("numéro construit")
+/// Un numéro d'entreprise encore libre en base.
+///
+/// **Pourquoi interroger la base plutôt que tirer et espérer.** Le format n'offre
+/// que vingt millions de corps possibles, et la base de développement n'est
+/// jamais purgée : les prestataires des exécutions précédentes s'y accumulent.
+/// Passé quelques milliers de lignes, un tirage finissait par retomber sur un
+/// numéro déjà pris et le test échouait sur `provider_numero_bce_key` — un échec
+/// sans rapport avec ce qu'il vérifie, et **d'autant plus fréquent que la base
+/// grossit**. Observé une fois sur deux exécutions complètes à onze mille
+/// prestataires en base ; ce n'était donc pas de la malchance, mais une dette
+/// qui se paie de plus en plus cher.
+///
+/// Il reste une fenêtre entre la vérification et l'insertion, deux binaires de
+/// test tournant en parallèle. Elle est de l'ordre du vingt-millionième, contre
+/// un millième pour le tirage aveugle : c'est le rapport qui compte, pas la
+/// perfection.
+async fn numero(pool: &PoolPg) -> NumeroBce {
+    for _ in 0..64 {
+        let corps = (Uuid::new_v4().as_u128() as u64) % 20_000_000;
+        let candidat = format!("{corps:08}{:02}", 97 - (corps % 97));
+        let pris: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM provider WHERE numero_bce = $1)")
+                .bind(&candidat)
+                .fetch_one(pool)
+                .await
+                .expect("recherche d'un numéro libre");
+        if !pris {
+            return NumeroBce::parse(&candidat).expect("numéro construit");
+        }
+    }
+    panic!("aucun numéro d'entreprise libre en soixante-quatre tirages : purger la base de test");
 }
 
 async fn prestataire(pool: &PoolPg, marqueur: &str) -> (Provider, String) {
     let (utilisateur_id, email) = compte_actif(pool, marqueur).await;
     let mut p = Provider::inscrire(
         utilisateur_id,
-        numero(),
+        numero(pool).await,
         &format!("Prestataire {marqueur}"),
         Geo::new(LAT, LON).unwrap(),
         vec![CodeCatalogue::parse("plomberie").unwrap()],

@@ -8,16 +8,31 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 
-/** Attend que le service worker soit réellement actif, pas seulement inscrit. */
+/**
+ * Attend que le service worker soit réellement actif, pas seulement inscrit.
+ *
+ * **`expect.poll` et non `page.waitForFunction`.** La version précédente rendait
+ * la main trop tôt : la condition était écrite dans une fonction `async`, dont
+ * `waitForFunction` voit la promesse — toujours vraie — plutôt que la valeur.
+ * Le défaut ne se voyait pas tant que l'installation ne pré-chargeait que
+ * quatre fichiers, parce qu'elle était finie avant qu'on regarde. Depuis que la
+ * coquille entière est pré-chargée, l'attente rendait la main avec un cache à
+ * moitié rempli et pas encore de contrôleur, et les cas hors-ligne échouaient
+ * sur l'outil de test, pas sur le code testé.
+ */
 async function attendreServiceWorkerActif(page: Page): Promise<void> {
-  await page.waitForFunction(
-    async () => {
-      const reg = await navigator.serviceWorker.getRegistration("/");
-      return Boolean(reg?.active && navigator.serviceWorker.controller);
-    },
-    undefined,
-    { timeout: 20_000 },
-  );
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const reg = await navigator.serviceWorker.getRegistration("/");
+          return Boolean(
+            reg?.active?.state === "activated" && navigator.serviceWorker.controller,
+          );
+        }),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
 }
 
 test.describe("@happy", () => {
@@ -79,6 +94,38 @@ test.describe("@negative", () => {
 });
 
 test.describe("@edge", () => {
+  test("s'ouvre hors ligne au premier passage, sans rechargement préalable", async ({
+    page,
+    context,
+  }) => {
+    // **Le cas que le pré-cache corrige.** Au tout premier passage, la page et
+    // ses scripts sont demandés avant que le service worker ne contrôle
+    // l'onglet : ils ne traversent pas son gestionnaire `fetch`. Sans
+    // pré-cache, couper le réseau ici donnait une page servie depuis le cache
+    // dont aucun îlot ne s'hydratait — l'indicateur restait sur
+    // « Vérification… » au lieu d'annoncer « Hors ligne ». Une PWA installée
+    // pour les coupures ne peut pas exiger d'avoir rechargé une fois avant.
+    //
+    // Pas de `reload()` ici, à la différence du cas suivant : c'est tout
+    // l'objet du test.
+    await page.goto("/");
+    await attendreServiceWorkerActif(page);
+
+    await context.setOffline(true);
+
+    // Une page jamais ouverte : elle ne peut venir que du pré-cache. La
+    // navigation y est un îlot Svelte — la voir affichée prouve que son
+    // JavaScript était bien là, pas seulement le HTML.
+    await page.goto("/catalogue");
+    await expect(page.locator("[data-navigation]")).toBeVisible();
+
+    // Et l'accueil, où vit l'indicateur de connexion : il n'annonce
+    // « Hors ligne » que si son îlot s'est hydraté.
+    await page.goto("/");
+    await expect(page.locator(".klaar-etat")).toContainText("Hors ligne");
+    await context.setOffline(false);
+  });
+
   test("rouvre une page déjà visitée sans réseau et signale l'état", async ({ page, context }) => {
     await page.goto("/");
     await attendreServiceWorkerActif(page);

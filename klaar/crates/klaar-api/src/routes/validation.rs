@@ -52,7 +52,7 @@ fn statut(e: &ErreurValidation) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/validate",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 201, description = "Validation enregistrée", body = LiberationDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

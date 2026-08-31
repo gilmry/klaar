@@ -144,7 +144,7 @@ fn refus(e: ErreurConsultation) -> HttpResponse {
     get,
     path = "/api/v1/requests/{id}",
     tag = "demandes",
-    params(("id" = String, Path, description = "Identifiant de la Demande")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Demande")),
     responses(
         (status = 200, description = "État de la Demande", body = SuiviDemandeDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),
@@ -242,7 +242,7 @@ pub async fn demandes_recues(
     get,
     path = "/api/v1/missions/{id}",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     responses(
         (status = 200, description = "État de la Mission", body = SuiviMissionDto),
         (status = 400, description = "Identifiant illisible", body = ErreurValidationDto),

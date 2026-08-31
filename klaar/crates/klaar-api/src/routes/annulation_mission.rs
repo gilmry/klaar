@@ -67,7 +67,7 @@ fn statut(e: &ErreurAnnulationMission) -> actix_web::http::StatusCode {
     post,
     path = "/api/v1/missions/{id}/cancel",
     tag = "missions",
-    params(("id" = String, Path, description = "Identifiant de la Mission")),
+    params(("id" = Uuid, Path, description = "Identifiant de la Mission")),
     request_body = AnnulationMissionDto,
     responses(
         (status = 200, description = "Intervention annulée", body = MissionAnnuleeDto),

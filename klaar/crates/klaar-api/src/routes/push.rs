@@ -132,6 +132,7 @@ pub async fn enregistrer_abonnement(
     request_body = DesabonnementDto,
     responses(
         (status = 204, description = "Abonnement retiré, ou déjà absent"),
+        (status = 400, description = "Corps illisible ou champ inconnu", body = crate::routes::auth::ErreurValidationDto),
         (status = 503, description = "Dépôt indisponible", body = ErreurDto),
     )
 )]

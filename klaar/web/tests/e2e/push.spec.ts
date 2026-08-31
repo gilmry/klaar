@@ -13,15 +13,25 @@ import { test, expect, type Page, type CDPSession } from "@playwright/test";
 const CLE_VAPID_FACTICE =
   "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8";
 
+/**
+ * `expect.poll` et non `page.waitForFunction` : celui-ci voit la promesse
+ * rendue par une fonction `async` — toujours vraie — plutôt que sa valeur, et
+ * rendait donc la main avant que le service worker ne soit réellement actif.
+ * Voir la note identique dans `pwa.spec.ts`.
+ */
 async function attendreServiceWorkerActif(page: Page): Promise<void> {
-  await page.waitForFunction(
-    async () => {
-      const reg = await navigator.serviceWorker.getRegistration("/");
-      return Boolean(reg?.active && navigator.serviceWorker.controller);
-    },
-    undefined,
-    { timeout: 20_000 },
-  );
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const reg = await navigator.serviceWorker.getRegistration("/");
+          return Boolean(
+            reg?.active?.state === "activated" && navigator.serviceWorker.controller,
+          );
+        }),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
 }
 
 /** Ouvre une session CDP et récupère l'identifiant d'enregistrement du SW. */
@@ -47,6 +57,18 @@ async function notificationsAffichees(page: Page) {
     return notifs.map((n) => ({ titre: n.title, corps: n.body, tag: n.tag }));
   });
 }
+
+// **Sans affichage, aucune notification n'est délivrable.** Chromium headless
+// n'a pas le service de notification de la plateforme :
+// `Notification.permission` rend « denied » alors que la permission a bien été
+// accordée. Ces cas tournent donc dans le projet `chromium-notifications`, avec
+// affichage ; `npm run test:e2e` en fournit un (`xvfb-run`). Quand il n'y en a
+// pas du tout, on le dit et on saute, plutôt que d'échouer en laissant croire à
+// une régression du code.
+test.skip(
+  process.env.KLAAR_SANS_AFFICHAGE === "1",
+  "aucun affichage disponible : Chromium ne peut pas délivrer de notification (installer xvfb)",
+);
 
 test.beforeEach(async ({ context }) => {
   await context.grantPermissions(["notifications"], { origin: "http://127.0.0.1:4321" });

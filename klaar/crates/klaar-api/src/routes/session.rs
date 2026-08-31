@@ -27,7 +27,11 @@ pub const CHEMIN_COOKIE: &str = "/api/v1/auth";
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ConnexionDto {
+    /// Contraintes déclarées pour la même raison que sur l'inscription : le
+    /// contrat doit dire ce que le code exige.
+    #[schema(format = "email", min_length = 3, max_length = 254)]
     pub email: String,
+    #[schema(min_length = 12, max_length = 128)]
     pub mot_de_passe: String,
 }
 

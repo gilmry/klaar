@@ -41,9 +41,33 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      // Les notifications sont dans leur propre projet, ci-dessous.
+      testIgnore: /push\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         channel: process.env.KLAAR_PLAYWRIGHT_CHANNEL || undefined,
+      },
+    },
+    {
+      // **Chromium sans affichage ne délivre aucune notification.** Le service
+      // de notification de la plateforme n'existe pas en mode headless :
+      // `Notification.permission` rend « denied » alors même que
+      // `navigator.permissions.query({name:"notifications"})` rend « granted »,
+      // et que Playwright a bien accordé la permission. L'invitation de la PWA
+      // se replie donc sur « bloqué pour ce site », le bouton n'est jamais
+      // rendu, et les six cas de `push.spec.ts` échouaient — non pas sur un
+      // défaut du code, mais sur une capacité absente du navigateur de test.
+      //
+      // Ce projet-ci tourne donc **avec affichage**. `npm run test:e2e` fournit
+      // un serveur X virtuel (`xvfb-run`) quand il n'y en a pas, voir
+      // `scripts/e2e.mjs` ; sans lui, ces cas se sautent en le disant plutôt
+      // que d'échouer en laissant croire à une régression.
+      name: "chromium-notifications",
+      testMatch: /push\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        channel: process.env.KLAAR_PLAYWRIGHT_CHANNEL || undefined,
+        headless: false,
       },
     },
   ],
