@@ -105,9 +105,23 @@ jobs:
         # klaar-api n'est pas encore exposé publiquement (Sprint 0). À retirer
         # dès qu'actix-web publie un correctif — revoir à chaque bump de
         # dépendance (voir klaar/README.md).
+        #
+        # RUSTSEC-2023-0071 (rsa 0.9.10, attaque Marvin) ignorée pour une
+        # raison plus forte : **ce code n'est jamais construit**. `rsa` n'est
+        # atteignable que par `sqlx-mysql`, pilote qu'une application
+        # PostgreSQL n'active pas. `cargo audit` lit `Cargo.lock`, qui
+        # enregistre les dépendances optionnelles qu'elles soient activées ou
+        # non — retirer la fonctionnalité `macros` de sqlx ne l'en sort pas,
+        # essayé et vérifié. Ce qui se vérifie, en revanche :
+        #
+        #   cargo tree -i rsa --workspace --target all   # « nothing to print »
+        #   ls target/debug/deps | grep -E 'librsa-|libsqlx_mysql-'  # vide
+        #
+        # À revoir si une version corrigée paraît, ou si un pilote MySQL est
+        # un jour activé — auquel cas l'avis redeviendrait réel.
         run: |
           cargo install cargo-audit --locked
-          cargo audit --ignore RUSTSEC-2026-0258
+          cargo audit --ignore RUSTSEC-2026-0258 --ignore RUSTSEC-2023-0071
       - name: cargo deny (licences, bans, sources)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:

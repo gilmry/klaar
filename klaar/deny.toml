@@ -30,6 +30,13 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "CC0-1.0",
+    # `webpki-roots` distribue le magasin de certificats racines de Mozilla
+    # sous cette licence de **données**, pas de code : elle autorise l'usage,
+    # la redistribution et la modification, sans réciprocité. Elle arrive par
+    # `actix-tls` et `sqlx-core`, c'est-à-dire par le TLS des deux côtés du
+    # service. La refuser reviendrait à refuser d'embarquer la liste des
+    # autorités de certification.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
