@@ -98,9 +98,11 @@ fn adresse_plausible(adresse: &str) -> bool {
     // donc la borne basse tout en ne désignant rien : ce qui manque n'est pas
     // de la longueur, c'est un hôte. La borne du contrat dit le minimum
     // atteignable (`http://x`), elle ne peut pas dire cela.
-    ["https://", "http://"]
-        .iter()
-        .any(|schema| adresse.strip_prefix(schema).is_some_and(|reste| !reste.is_empty()))
+    ["https://", "http://"].iter().any(|schema| {
+        adresse
+            .strip_prefix(schema)
+            .is_some_and(|reste| !reste.is_empty())
+    })
 }
 
 /// Clé publique VAPID à passer à `PushManager.subscribe`.

@@ -188,7 +188,11 @@ async fn security_une_adresse_hors_bornes_est_refusee() {
     // seulement en ligne de base de données.
     let app = test::init_service(app_de_test(etat(true).await)).await;
 
-    for adresse in ["", "https://", &format!("https://x.example/{}", "a".repeat(4096))] {
+    for adresse in [
+        "",
+        "https://",
+        &format!("https://x.example/{}", "a".repeat(4096)),
+    ] {
         let reponse = test::call_service(
             &app,
             test::TestRequest::post()
