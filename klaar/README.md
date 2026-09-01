@@ -28,9 +28,26 @@ make migrate     # applique les migrations refinery (idempotent)
 make db-down
 ```
 
+> **`make test` travaille sur une base neuve, jetée à la fin.** La base de
+> développement n'était jamais purgée, et trois défauts distincts en sont sortis
+> le même jour — tous invisibles en intégration continue, où la base est neuve à
+> chaque fois. La première exécution construit un gabarit migré, les suivantes
+> le clonent en deux secondes ; le nom du gabarit porte l'empreinte du
+> répertoire `migrations/`, donc changer une migration en construit un neuf sans
+> qu'on ait à y penser. `KLAAR_BASE_PARTAGEE=1 make test` rend l'ancien
+> comportement à qui veut inspecter ce que les tests ont laissé. Détail et
+> raisons dans `scripts/base-jetable.sh`.
+
 ```sh
 make hooks       # installe pre-commit (fmt+clippy+gitleaks si dispo) et pre-push (tests)
+git config klaar.cargo scripts/cargo-conteneur.sh   # si la racine est étroite
 ```
+
+> Les hooks compilent la caisse entière plus un binaire de test par fichier
+> d'intégration. Sur une machine dont la racine ne tient pas un `target/` de
+> plus, `klaar.cargo` fait passer le tout par un conteneur — réglage par clone,
+> pour que la machine dise ce dont elle a besoin sans que le dépôt ait à le
+> supposer. Le pre-push travaille sur une base jetable, comme `make test`.
 
 ```sh
 make codegen     # régénère packages/klaar-client/src/schema.d.ts depuis l'OpenAPI de klaar-api
@@ -1680,6 +1697,17 @@ prestataires s'y accumulent : à onze mille lignes, une exécution complète sur
 deux échouait sur `provider_numero_bce_key`, sans rapport avec ce que le test
 vérifie. Le tirage consulte désormais la base avant de rendre un numéro. Ce
 n'était pas de la malchance, c'était une dette qui se paie de plus en plus cher.
+
+**Et ce n'était que le premier des trois.** La même base a ensuite fait
+apparaître le bouchon de la file de validation — quatre cent trente et une
+Missions intraitables occupant un lot borné à deux cents — puis une course
+entre cas de purge, chacun effaçant les comptes des autres. Les deux premiers
+étaient de vrais défauts de production que la base ne faisait que révéler ; le
+troisième était une course entre tests. Trois diagnostics d'une demi-journée
+chacun, pour une même cause de fond : **les tests écrivaient dans une base qui
+garde tout**. `make test` travaille désormais sur une base clonée d'un gabarit
+migré et jetée à la fin, ce qui coûte deux secondes par exécution et rend au
+poste de développement la propriété que l'intégration continue avait déjà.
 
 ## Contrat OpenAPI : le fuzz disait déjà ce qu'on n'écoutait pas
 

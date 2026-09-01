@@ -3,7 +3,21 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)/klaar"
 
-echo "[pre-push] cargo test --workspace"
-cargo test --workspace
+# **Comment on lance cargo ici.** Ces vérifications compilent la caisse entière
+# plus un binaire de test par fichier d'intégration : sur une machine dont la
+# racine ne tient pas un `target/` de plus, les jouer sur l'hôte suffit à la
+# remplir — c'est arrivé, et « No space left on device » n'arrête pas que la
+# compilation. `git config klaar.cargo scripts/cargo-conteneur.sh` fait passer
+# le tout par un conteneur, cible et registre sur un volume docker. Réglage par
+# clone, pour que la machine dise ce dont elle a besoin sans que le dépôt ait à
+# le supposer.
+CARGO="${KLAAR_CARGO:-$(git config --get klaar.cargo || echo cargo)}"
+
+# **Sur une base neuve**, comme `make test`. La jouer sur la base de
+# développement ferait échouer le push sur des données laissées par une
+# exécution précédente — c'est arrivé au premier usage de ce hook, et l'échec
+# n'avait rien à voir avec ce qu'on poussait.
+echo "[pre-push] cargo test --workspace (base jetable)"
+KLAAR_CARGO="$CARGO" scripts/base-jetable.sh $CARGO test --workspace
 
 echo "[pre-push] OK"

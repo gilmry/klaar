@@ -6,15 +6,28 @@ bootstrap: build test frontend
 build:
 	cargo build --workspace
 
+# **Une base neuve à chaque exécution.** Les tests d'intégration écrivent dans
+# PostgreSQL, et la base de développement n'était jamais purgée : trois défauts
+# distincts en sont sortis le même jour, tous invisibles en CI où la base est
+# neuve. `scripts/base-jetable.sh` dit lesquels et ce qu'ils ont coûté.
+#
+# La première exécution construit un gabarit migré ; les suivantes le clonent,
+# ce qui prend deux secondes. `KLAAR_BASE_PARTAGEE=1 make test` rend l'ancien
+# comportement à qui en a besoin — pour inspecter les données laissées derrière,
+# par exemple.
 test:
-	cargo test --workspace
+	@if [ -n "$$KLAAR_BASE_PARTAGEE" ]; then \
+		cargo test --workspace; \
+	else \
+		scripts/base-jetable.sh cargo test --workspace; \
+	fi
 
 # La compilation incrémentale fait grossir `target/` d'un facteur six (4 Go
 # contre 25 Go observés sur ce dépôt) : elle conserve un état par version de
 # chaque unité de compilation, et rien ne le purge. Utile en itération courte,
 # coûteuse sur une machine partagée — d'où cette cible pour les longues séances.
 test-sobre:
-	CARGO_INCREMENTAL=0 cargo test --workspace
+	CARGO_INCREMENTAL=0 scripts/base-jetable.sh cargo test --workspace
 
 # Story 3.8 — rapport d'audit de la trace de matching (AI Act art. 12).
 #

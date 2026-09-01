@@ -4,11 +4,21 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)/klaar"
 
+# **Comment on lance cargo ici.** Ces vérifications compilent la caisse entière
+# plus un binaire de test par fichier d'intégration : sur une machine dont la
+# racine ne tient pas un `target/` de plus, les jouer sur l'hôte suffit à la
+# remplir — c'est arrivé, et « No space left on device » n'arrête pas que la
+# compilation. `git config klaar.cargo scripts/cargo-conteneur.sh` fait passer
+# le tout par un conteneur, cible et registre sur un volume docker. Réglage par
+# clone, pour que la machine dise ce dont elle a besoin sans que le dépôt ait à
+# le supposer.
+CARGO="${KLAAR_CARGO:-$(git config --get klaar.cargo || echo cargo)}"
+
 echo "[pre-commit] cargo fmt --check"
-cargo fmt --all -- --check
+$CARGO fmt --all -- --check
 
 echo "[pre-commit] cargo clippy -D warnings"
-cargo clippy --workspace --all-targets -- -D warnings
+$CARGO clippy --workspace --all-targets -- -D warnings
 
 if command -v gitleaks >/dev/null 2>&1; then
     echo "[pre-commit] gitleaks detect"
