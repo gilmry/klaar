@@ -1716,7 +1716,10 @@ Ce qui est corrigé, et qui relevait chaque fois d'un contrat qui mentait :
   sans eux, deux routes rendaient un 503 « non configuré » — juste, mais compté
   comme une erreur serveur, ce qui masquait leur état réel.
 
-**Le job est vert : 5981 cas, aucun échec.** Les arbitrages restants ont été
+**Le job est vert : environ six mille cas par exécution, aucun échec, sur quatre
+graines différentes.** Les deux derniers défauts ont d'ailleurs été trouvés en
+changeant de graine — un fuzz qui ne passe qu'avec la sienne ne prouve pas
+grand-chose. Les arbitrages restants ont été
 tranchés, et chacun l'a été dans le sens de ce que le code disait vraiment :
 
 | Route | Ce que le fuzz reprochait | Ce qui a été tranché |
@@ -1727,7 +1730,8 @@ tranchés, et chacun l'a été dans le sens de ce que le code disait vraiment :
 | `POST /push/abonnements` | `400` sur un abonnement bien formé mais inutilisable | **422**. Le corps est lisible et ses champs ont la bonne forme ; c'est leur contenu qui ne marchera pas, et aucun schéma JSON ne sait exprimer « cette clé doit décoder en point de courbe non compressé » |
 | `DELETE /push/abonnements` | `204` sur n'importe quelle chaîne | **422** si l'adresse n'est pas une URL. Le contrat l'annonçait sans que le serveur l'exige : `#[schema(...)]` documente, il ne valide rien — c'est le même mensonge que ne rien déclarer, dans l'autre sens |
 | `POST /ops/disputes/{id}/resolve` | acceptait n'importe quelle décision au schéma | les quatre issues sont **déclarées en énumération**. Le champ reste un `String` côté serveur : une valeur inconnue doit rendre 422 « décision invalide » et non 400 « corps illisible » |
-| `POST /auth/signup`, `POST /push/abonnements` | contraintes absentes du contrat | adresse électronique, longueur de mot de passe, forme des clés d'abonnement : **déclarées**. Le schéma annonçait « une chaîne » là où le code exige bien davantage |
+| `POST /auth/signup`, `POST /push/abonnements`, `POST /auth/verify-email` | contraintes absentes du contrat | adresse électronique, longueur de mot de passe, forme des clés d'abonnement, forme exacte du jeton de vérification — quarante-trois caractères de `[A-Za-z0-9_-]`, ce que produit toujours l'encodage de trente-deux octets tirés au sort : **déclarées**. Le schéma annonçait « une chaîne » là où le code exige bien davantage |
+| `POST` et `DELETE /push/abonnements` | acceptaient une adresse hors bornes | le contrat annonçait `maxLength`, le serveur acceptait quatre mille caractères. **Déclarer une contrainte sans la vérifier est le même mensonge que ne rien déclarer**, dans l'autre sens : les bornes vivent maintenant en un seul endroit, appliqué par les deux routes |
 
 Deux conventions que le contrat OpenAPI ne sait pas exprimer sont déclarées
 dans `klaar/schemathesis.toml`, avec leur raison : le **422** pour une donnée

@@ -178,3 +178,45 @@ async fn security_rejette_un_champ_inconnu_dans_la_charge() {
     // lecteur JSON, qui refuse avant que la moindre règle métier ne s'applique.
     assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
 }
+
+#[actix_web::test]
+async fn security_une_adresse_hors_bornes_est_refusee() {
+    // **Le contrat annonce des bornes, le serveur doit les tenir.** Il ne les
+    // tenait pas : une adresse de quatre mille caractères était acceptée, et la
+    // suppression rendait 204 sur n'importe quelle chaîne. Une adresse de cette
+    // taille n'a jamais été produite par un service de push ; elle finit
+    // seulement en ligne de base de données.
+    let app = test::init_service(app_de_test(etat(true).await)).await;
+
+    for adresse in ["", "https://", &format!("https://x.example/{}", "a".repeat(4096))] {
+        let reponse = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/v1/push/abonnements")
+                .set_json(corps_abonnement(adresse, "AAAA"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            reponse.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "adresse acceptée à tort à l'enregistrement : {} caractères",
+            adresse.len()
+        );
+
+        let suppression = test::call_service(
+            &app,
+            test::TestRequest::delete()
+                .uri("/api/v1/push/abonnements")
+                .set_json(serde_json::json!({ "endpoint": adresse }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            suppression.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "adresse acceptée à tort à la suppression : {} caractères",
+            adresse.len()
+        );
+    }
+}

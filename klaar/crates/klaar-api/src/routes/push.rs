@@ -76,6 +76,33 @@ pub struct ErreurDto {
     pub code: String,
 }
 
+/// Bornes de l'adresse d'abonnement, telles que le contrat les annonce.
+///
+/// **Déclarer une contrainte sans la vérifier est le même mensonge que ne pas
+/// la déclarer, dans l'autre sens.** `#[schema(...)]` documente, il ne valide
+/// rien : la borne haute avait été écrite au contrat et le serveur acceptait
+/// toujours une adresse de quatre mille caractères. Le fuzz l'a trouvée, et il
+/// avait raison — une adresse de cette taille n'a jamais été produite par un
+/// service de push, elle finit seulement en ligne de base de données.
+///
+/// Les bornes sont ici, en un seul endroit, pour que le contrat et le contrôle
+/// ne puissent plus diverger sans qu'on le voie.
+const ADRESSE_MIN: usize = 8;
+const ADRESSE_MAX: usize = 2048;
+
+fn adresse_plausible(adresse: &str) -> bool {
+    if !(ADRESSE_MIN..=ADRESSE_MAX).contains(&adresse.len()) {
+        return false;
+    }
+    // **Un préfixe ne suffit pas.** `https://` fait huit caractères et passe
+    // donc la borne basse tout en ne désignant rien : ce qui manque n'est pas
+    // de la longueur, c'est un hôte. La borne du contrat dit le minimum
+    // atteignable (`http://x`), elle ne peut pas dire cela.
+    ["https://", "http://"]
+        .iter()
+        .any(|schema| adresse.strip_prefix(schema).is_some_and(|reste| !reste.is_empty()))
+}
+
 /// Clé publique VAPID à passer à `PushManager.subscribe`.
 #[utoipa::path(
     get,
@@ -125,6 +152,14 @@ pub async fn enregistrer_abonnement(
         p256dh: corps.keys.p256dh.clone(),
         auth: corps.keys.auth.clone(),
     };
+
+    // La même borne qu'à la suppression, et pour la même raison : ce que le
+    // contrat annonce, le serveur l'exige.
+    if !adresse_plausible(&corps.endpoint) {
+        return HttpResponse::UnprocessableEntity().json(ErreurDto {
+            code: "ENDPOINT_INVALID".to_string(),
+        });
+    }
 
     // Valider ici plutôt qu'au premier envoi : un abonnement mal formé accepté
     // aujourd'hui devient une notification perdue dans six semaines, sans
@@ -176,12 +211,10 @@ pub async fn supprimer_abonnement(
     etat: web::Data<EtatApplication>,
     corps: web::Json<DesabonnementDto>,
 ) -> HttpResponse {
-    // **Le contrat annonce une URL, le serveur l'exige.** Déclarer une
-    // contrainte sans la vérifier est le même mensonge que ne pas la déclarer,
-    // dans l'autre sens : `#[schema(...)]` documente, il ne valide rien. Cette
-    // route rendait 204 sur n'importe quelle chaîne — l'idempotence porte sur
+    // **Le contrat annonce une URL bornée, le serveur l'exige.** Cette route
+    // rendait 204 sur n'importe quelle chaîne — l'idempotence porte sur
     // l'existence de l'abonnement, pas sur la forme de son adresse.
-    if !corps.endpoint.starts_with("https://") && !corps.endpoint.starts_with("http://") {
+    if !adresse_plausible(&corps.endpoint) {
         return HttpResponse::UnprocessableEntity().json(ErreurDto {
             code: "ENDPOINT_INVALID".to_string(),
         });

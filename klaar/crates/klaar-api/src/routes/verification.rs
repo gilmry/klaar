@@ -14,9 +14,16 @@ use crate::EtatApplication;
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationDto {
-    /// Jeton reçu par courriel, tel quel. Jamais vide : un jeton absent est un
-    /// lien tronqué, pas une vérification à tenter.
-    #[schema(min_length = 1)]
+    /// Jeton reçu par courriel, tel quel.
+    ///
+    /// **Sa forme exacte est au contrat.** Trente-deux octets tirés au sort,
+    /// encodés en base64url sans remplissage : quarante-trois caractères de
+    /// `[A-Za-z0-9_-]`, toujours. Le contrat annonçait « au moins un
+    /// caractère », ce qui laissait passer une tabulation verticale — le fuzz
+    /// en a envoyé une, et l'API l'a refusée à juste titre pour une raison que
+    /// le schéma ne disait pas. Aucun jeton réel n'est écarté par cette
+    /// contrainte : ils font tous cette longueur.
+    #[schema(min_length = 43, max_length = 43, pattern = "^[A-Za-z0-9_-]{43}$")]
     pub jeton: String,
 }
 
