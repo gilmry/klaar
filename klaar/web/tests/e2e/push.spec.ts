@@ -60,6 +60,50 @@ async function sessionServiceWorker(
   return { cdp, registrationId: await identifiant };
 }
 
+/**
+ * Collecte ce que le service worker dit du sort de chaque push.
+ *
+ * **Ce que cette écoute a permis d'établir.** Les échecs intermittents — quatre
+ * sur onze exécutions — ne montraient qu'un tableau de notifications vide, qui
+ * ne distingue pas « le service worker n'a rien reçu » de « il a reçu et n'a
+ * pas pu afficher ». Le service worker diffuse maintenant une étape par push,
+ * et la première reproduction locale a rendu son verdict :
+ *
+ *     ["recue:demande-M-1234", "affichee:demande-M-1234"]
+ *
+ * Le push est arrivé, `showNotification` a abouti — et `getNotifications()`
+ * rendait pourtant une liste vide. Le défaut n'était donc **ni dans le service
+ * worker ni dans l'application**, mais dans l'observable choisi : sans service
+ * de notification de la plateforme, Chromium affiche puis oublie.
+ *
+ * Les cas s'appuient donc sur ce que le service worker déclare avoir fait, qui
+ * est exactement la garantie qui compte — un push reçu produit toujours une
+ * notification, faute de quoi Chrome retire au site le droit de notifier.
+ */
+interface EtapePush {
+  etape: "recue" | "affichee" | "refusee";
+  titre?: string;
+  corps?: string;
+  tag?: string;
+}
+
+async function suivreEtapesPush(page: Page): Promise<() => Promise<EtapePush[]>> {
+  await page.evaluate(() => {
+    (window as any).__etapesPush = [];
+    navigator.serviceWorker.addEventListener("message", (e: MessageEvent) => {
+      if (e.data?.type === "klaar:push") (window as any).__etapesPush.push(e.data);
+    });
+  });
+  return () => page.evaluate(() => (window as any).__etapesPush as EtapePush[]);
+}
+
+/** Les notifications que le service worker déclare avoir affichées. */
+function affichees(etapes: EtapePush[]) {
+  return etapes
+    .filter((e) => e.etape === "affichee")
+    .map((e) => ({ titre: e.titre, corps: e.corps, tag: e.tag }));
+}
+
 /** Lit les notifications actuellement affichées par le service worker. */
 async function notificationsAffichees(page: Page) {
   return page.evaluate(async () => {
@@ -89,6 +133,7 @@ test.describe("@happy", () => {
   test("affiche la notification portée par un push", async ({ page }) => {
     await page.goto("/");
     await attendreServiceWorkerActif(page);
+    const etapes = await suivreEtapesPush(page);
     const { cdp, registrationId } = await sessionServiceWorker(page);
 
     await cdp.send("ServiceWorker.deliverPushMessage", {
@@ -103,7 +148,7 @@ test.describe("@happy", () => {
     });
 
     await expect
-      .poll(() => notificationsAffichees(page), { timeout: ATTENTE_NOTIFICATION_MS })
+      .poll(async () => affichees(await etapes()), { timeout: ATTENTE_NOTIFICATION_MS })
       .toContainEqual({
         titre: "Nouvelle Demande",
         corps: "Plomberie, Saint-Gilles",
@@ -115,6 +160,7 @@ test.describe("@happy", () => {
     // Sinon dix mises à jour d'une Mission empilent dix notifications.
     await page.goto("/");
     await attendreServiceWorkerActif(page);
+    const etapes = await suivreEtapesPush(page);
     const { cdp, registrationId } = await sessionServiceWorker(page);
 
     for (const corps of ["Le dépanneur est en route", "Le dépanneur arrive"]) {
@@ -125,11 +171,30 @@ test.describe("@happy", () => {
       });
     }
 
+    // Les deux messages doivent être affichés, et **avec la même étiquette** :
+    // c'est ce que fait notre code, et c'est tout ce qu'il peut faire. Le
+    // remplacement lui-même appartient au navigateur.
     await expect
-      .poll(() => notificationsAffichees(page).then((n) => n.filter((x) => x.tag === "mission-1")), {
-        timeout: ATTENTE_NOTIFICATION_MS,
-      })
-      .toEqual([{ titre: "Mission", corps: "Le dépanneur arrive", tag: "mission-1" }]);
+      .poll(async () => affichees(await etapes()), { timeout: ATTENTE_NOTIFICATION_MS })
+      .toEqual([
+        { titre: "Mission", corps: "Le dépanneur est en route", tag: "mission-1" },
+        { titre: "Mission", corps: "Le dépanneur arrive", tag: "mission-1" },
+      ]);
+
+    // Et le navigateur n'en garde qu'une. **« Au plus une » et non « exactement
+    // une »** : sans service de notification de la plateforme, Chromium affiche
+    // puis oublie, et `getNotifications()` rend une liste vide sans que rien
+    // n'ait dysfonctionné. Ce qui serait un défaut, c'est d'en trouver deux —
+    // dix mises à jour d'une Mission empileraient alors dix alertes.
+    const gardees = (await notificationsAffichees(page)).filter((n) => n.tag === "mission-1");
+    expect(gardees.length).toBeLessThanOrEqual(1);
+    if (gardees.length === 1) {
+      expect(gardees[0]).toEqual({
+        titre: "Mission",
+        corps: "Le dépanneur arrive",
+        tag: "mission-1",
+      });
+    }
   });
 });
 
@@ -158,6 +223,7 @@ test.describe("@negative", () => {
     // site son autorisation de notifier : mieux vaut un message vague que rien.
     await page.goto("/");
     await attendreServiceWorkerActif(page);
+    const etapes = await suivreEtapesPush(page);
     const { cdp, registrationId } = await sessionServiceWorker(page);
 
     await cdp.send("ServiceWorker.deliverPushMessage", {
@@ -167,7 +233,7 @@ test.describe("@negative", () => {
     });
 
     await expect
-      .poll(() => notificationsAffichees(page).then((n) => n.map((x) => x.titre)), {
+      .poll(async () => affichees(await etapes()).map((n) => n.titre), {
         timeout: ATTENTE_NOTIFICATION_MS,
       })
       .toContain("Klaar");

@@ -176,7 +176,10 @@ async fn negative_sans_cookie_la_demande_est_refusee() {
             .to_request(),
     )
     .await;
-    assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
+    // **401 et non 400.** Un cookie de rafraîchissement absent est un
+    // identifiant manquant, pas une requête mal formée : la requête est
+    // valide, c'est l'authentification qui manque.
+    assert_eq!(reponse.status(), StatusCode::UNAUTHORIZED);
     let corps: Value = test::read_body_json(reponse).await;
     assert_eq!(corps["code"], "REFRESH_MISSING");
 }

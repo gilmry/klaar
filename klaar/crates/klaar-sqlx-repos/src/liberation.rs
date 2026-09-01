@@ -161,14 +161,38 @@ impl LiberationRepository for PgLiberationRepository {
         // `COMPLETED` en pratique, mais s'appuyer là-dessus ferait échouer la
         // requête le jour où ce ne serait plus vrai, au lieu de prendre la
         // première.
+        // **Seules les Missions qui ont un devis accepté.** Sans accord, il n'y
+        // a aucun montant à libérer : le balayage ne peut rien en faire, et il
+        // les relisait pourtant à chaque passage. Elles occupaient donc une
+        // place dans un lot borné qu'elles ne libéraient jamais — quatre cent
+        // trente et une lignes de ce type suffisaient, sur la base de
+        // développement, à ce que le lot de deux cents ne contienne plus rien
+        // d'autre. Le balayage cessait alors de valider **quoi que ce soit de
+        // plus récent**, indéfiniment. En production, cela veut dire des
+        // séquestres jamais libérés. Elles restent comptées, par
+        // `compter_sans_accord` : c'est un signal d'exploitation, pas un cas
+        // normal, et le retirer de la file ne doit pas le retirer de la vue.
+        //
+        // **Les plus anciennes d'abord**, ce que le port promet depuis
+        // toujours et que cette requête ne faisait pas : `DISTINCT ON` impose
+        // de trier par `m.id` d'abord, donc le lot était choisi par ordre
+        // d'identifiant — au hasard, autrement dit. Le tri par date se fait
+        // maintenant à l'extérieur, où la limite s'applique aussi.
         let lignes = sqlx::query(
-            "SELECT DISTINCT ON (m.id)
-                    m.id AS mission_id, m.provider_id, d.demandeur_id, t.horodate_le
-             FROM mission m
-             JOIN demande d ON d.id = m.demande_id
-             JOIN mission_transition t ON t.mission_id = m.id AND t.statut = 'COMPLETED'
-             WHERE m.statut = 'COMPLETED' AND t.horodate_le <= $1
-             ORDER BY m.id, t.horodate_le
+            "SELECT * FROM (
+                 SELECT DISTINCT ON (m.id)
+                        m.id AS mission_id, m.provider_id, d.demandeur_id, t.horodate_le
+                 FROM mission m
+                 JOIN demande d ON d.id = m.demande_id
+                 JOIN mission_transition t ON t.mission_id = m.id AND t.statut = 'COMPLETED'
+                 WHERE m.statut = 'COMPLETED' AND t.horodate_le <= $1
+                   AND EXISTS (
+                       SELECT 1 FROM devis dv
+                       WHERE dv.mission_id = m.id AND dv.statut = 'ACCEPTED'
+                   )
+                 ORDER BY m.id, t.horodate_le
+             ) echues
+             ORDER BY echues.horodate_le
              LIMIT $2",
         )
         .bind(avant)
@@ -186,5 +210,27 @@ impl LiberationRepository for PgLiberationRepository {
                 terminee_le: l.get("horodate_le"),
             })
             .collect())
+    }
+
+    async fn compter_sans_accord(&self, avant: DateTime<Utc>) -> Result<i64, RepositoryError> {
+        // Le pendant de l'exclusion ci-dessus : ces Missions ne sont plus
+        // parcourues une à une, elles sont comptées. Un décompte est ce dont
+        // l'exploitation a besoin — savoir qu'il y en a, et combien —, et il
+        // ne coûte pas un lot de traitement.
+        let compte: i64 = sqlx::query_scalar(
+            "SELECT count(DISTINCT m.id)
+             FROM mission m
+             JOIN mission_transition t ON t.mission_id = m.id AND t.statut = 'COMPLETED'
+             WHERE m.statut = 'COMPLETED' AND t.horodate_le <= $1
+               AND NOT EXISTS (
+                   SELECT 1 FROM devis dv
+                   WHERE dv.mission_id = m.id AND dv.statut = 'ACCEPTED'
+               )",
+        )
+        .bind(avant)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(erreur)?;
+        Ok(compte)
     }
 }

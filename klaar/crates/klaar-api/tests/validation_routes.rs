@@ -356,6 +356,80 @@ async fn edge_au_dela_de_cinq_cents_euros_la_liberation_attend_un_second_regard(
 }
 
 #[actix_web::test]
+async fn security_une_mission_sans_accord_ne_bouche_pas_la_file() {
+    // **Le défaut que ce cas ferme.** Le balayage lit un lot borné à deux
+    // cents Missions échues. Une Mission terminée sans devis accepté n'a aucun
+    // montant à libérer : elle ne pouvait donc jamais être validée, et elle
+    // revenait pourtant dans le lot à chaque passage. Passé deux cents lignes
+    // de ce type — il y en avait quatre cent trente et une sur la base de
+    // développement — le lot n'en contenait plus d'autres, et le balayage
+    // cessait de valider **quoi que ce soit de plus récent**, indéfiniment.
+    // En production : des séquestres jamais libérés.
+    //
+    // Le cas est marqué `@security` parce que ce qui est en jeu est de
+    // l'argent qui ne bouge pas, pas un affichage.
+    use klaar_application::ports::liberation_repository::LiberationRepository;
+    use klaar_sqlx_repos::PgLiberationRepository;
+
+    let pool = pool().await;
+    let (p, _) = prestataire(&pool, "file-bouchee").await;
+    let (sans_accord, _) = mission(&pool, p.id, "COMPLETED").await;
+    terminee_il_y_a(&pool, sans_accord, p.id, 73).await;
+
+    let liberations = PgLiberationRepository::new(pool.clone());
+    let avant = chrono::Utc::now() - chrono::Duration::hours(72);
+
+    // Sans limite étroite : quelle que soit la taille du lot, cette Mission
+    // n'a rien à y faire.
+    let file = liberations
+        .a_valider_automatiquement(avant, 10_000)
+        .await
+        .expect("file lue");
+    assert!(
+        !file.iter().any(|v| v.mission_id == sans_accord),
+        "une Mission sans devis accepté n'a pas sa place dans la file de validation"
+    );
+
+    // Retirée de la file, mais pas de la vue : c'est un signal d'exploitation.
+    let comptees = liberations
+        .compter_sans_accord(avant)
+        .await
+        .expect("comptage");
+    assert!(
+        comptees >= 1,
+        "elle doit rester comptée, sans quoi personne ne saura qu'elle existe"
+    );
+}
+
+#[actix_web::test]
+async fn edge_la_file_de_validation_rend_les_plus_anciennes_d_abord() {
+    // Le port le promet depuis toujours ; la requête triait en réalité par
+    // identifiant, c'est-à-dire au hasard. Sur un lot borné, cela décide qui
+    // est payé et qui attend.
+    use klaar_application::ports::liberation_repository::LiberationRepository;
+    use klaar_sqlx_repos::PgLiberationRepository;
+
+    let pool = pool().await;
+    let (p, _) = prestataire(&pool, "ordre-file").await;
+    let (ancienne, _) = mission(&pool, p.id, "COMPLETED").await;
+    devis_accepte(&pool, ancienne, p.id, 12_000).await;
+    terminee_il_y_a(&pool, ancienne, p.id, 500).await;
+
+    let liberations = PgLiberationRepository::new(pool.clone());
+    let avant = chrono::Utc::now() - chrono::Duration::hours(72);
+    let file = liberations
+        .a_valider_automatiquement(avant, 10_000)
+        .await
+        .expect("file lue");
+
+    let dates: Vec<_> = file.iter().map(|v| v.terminee_le).collect();
+    assert!(
+        dates.windows(2).all(|f| f[0] <= f[1]),
+        "la file doit être ordonnée de la plus ancienne à la plus récente"
+    );
+}
+
+#[actix_web::test]
 async fn edge_le_balayage_valide_apres_soixante_douze_heures() {
     use klaar_application::ports::horloge::HorlogeSysteme;
     use klaar_application::usecases::valider_mission::valider_les_echues;

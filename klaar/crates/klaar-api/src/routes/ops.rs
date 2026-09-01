@@ -698,10 +698,28 @@ pub struct FileMediationDto {
 }
 
 /// La décision d'un médiateur.
+/// Les quatre issues qu'une médiation peut prononcer.
+///
+/// **Déclarée au contrat, lue comme une chaîne.** Le champ reste un `String`
+/// côté serveur : une valeur inconnue doit rendre un 422 « décision invalide »
+/// et non un 400 « corps illisible », parce que la requête est bien formée et
+/// que c'est la décision qui n'existe pas. Mais le contrat, lui, doit dire
+/// lesquelles existent — sans quoi un client engendré depuis l'OpenAPI accepte
+/// n'importe quelle chaîne, et le fuzz en essaie.
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum IssueAdmise {
+    UserFavor,
+    ProviderFavor,
+    PartialRefund,
+    NoFault,
+}
+
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DecisionDto {
     /// `USER_FAVOR`, `PROVIDER_FAVOR`, `PARTIAL_REFUND` ou `NO_FAULT`.
+    #[schema(value_type = IssueAdmise)]
     pub decision: String,
     /// Part remboursée, en points de base. Exigée pour `PARTIAL_REFUND`, et
     /// refusée pour les autres : un taux sur une décision qui n'en prend pas

@@ -249,6 +249,7 @@ pub struct EtatApplication {
         routes::ops::DossierLitigeDto,
         routes::ops::FileMediationDto,
         routes::ops::DecisionDto,
+        routes::ops::IssueAdmise,
         routes::ops::IssueDto,
         routes::ops::DossierKycDto,
         routes::ops::RefusEnAttenteDto,

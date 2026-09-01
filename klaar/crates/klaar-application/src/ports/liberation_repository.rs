@@ -50,14 +50,27 @@ pub trait LiberationRepository {
     /// Libération d'une Mission, s'il y en a une.
     async fn par_mission(&self, mission_id: Uuid) -> Result<Option<Liberation>, RepositoryError>;
 
-    /// Missions terminées depuis plus longtemps que le délai, et pas encore
-    /// validées.
+    /// Missions terminées depuis plus longtemps que le délai, pas encore
+    /// validées, **et qui ont un devis accepté**.
     ///
     /// Rend les plus anciennes d'abord : c'est celles dont l'attente est la
     /// plus longue, et un balayage borné doit les traiter en premier.
+    ///
+    /// **Sans accord, pas de file.** Une Mission terminée sans devis accepté
+    /// n'a aucun montant à libérer : la faire figurer ici revenait à lui
+    /// réserver une place dans un lot borné qu'elle ne quittait jamais, et
+    /// donc à empêcher le balayage d'atteindre quoi que ce soit de plus
+    /// récent. Elles sont comptées par `compter_sans_accord`, pas parcourues.
     async fn a_valider_automatiquement(
         &self,
         avant: DateTime<Utc>,
         limite: i64,
     ) -> Result<Vec<ValidationEnAttente>, RepositoryError>;
+
+    /// Combien de Missions échues restent sans devis accepté.
+    ///
+    /// Le signal d'exploitation que l'exclusion ci-dessus aurait fait
+    /// disparaître : ces Missions ne sont pas normales, et cesser de les
+    /// parcourir ne doit pas revenir à cesser de les voir.
+    async fn compter_sans_accord(&self, avant: DateTime<Utc>) -> Result<i64, RepositoryError>;
 }

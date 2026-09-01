@@ -206,8 +206,7 @@ pub async fn login(
     tag = "authentification",
     responses(
         (status = 200, description = "Session renouvelée ; nouveau refresh posé", body = SessionOuverteDto),
-        (status = 400, description = "Aucun refresh présenté", body = ErreurValidationDto),
-        (status = 401, description = "Refresh invalide, expiré, révoqué ou rejoué", body = ErreurValidationDto),
+        (status = 401, description = "Refresh absent, invalide, expiré, révoqué ou rejoué", body = ErreurValidationDto),
         (status = 503, description = "Service indisponible", body = ErreurValidationDto),
     )
 )]
@@ -238,7 +237,15 @@ pub async fn refresh(requete: HttpRequest, etat: web::Data<EtatApplication>) -> 
             }),
         Err(e) => {
             let statut = match &e {
-                ErreurRafraichissement::Absent => actix_web::http::StatusCode::BAD_REQUEST,
+                // **401 et non 400.** Un rafraîchissement sans cookie est un
+                // identifiant absent, pas une requête mal formée : la requête
+                // est parfaitement valide, c'est l'authentification qui manque.
+                // Le 400 disait « vous avez mal demandé » là où il fallait dire
+                // « vous n'êtes pas authentifié », ce qui envoie chercher un
+                // défaut d'appel au lieu d'une session à rouvrir. Le code
+                // `REFRESH_MISSING` ne change pas : c'est lui que le front
+                // traduit, et il continue de le traduire.
+                ErreurRafraichissement::Absent => actix_web::http::StatusCode::UNAUTHORIZED,
                 ErreurRafraichissement::Indisponible(_) => {
                     tracing::error!(erreur = %e, "rafraîchissement impossible");
                     actix_web::http::StatusCode::SERVICE_UNAVAILABLE

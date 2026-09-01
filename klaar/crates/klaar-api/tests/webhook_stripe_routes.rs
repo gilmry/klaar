@@ -133,7 +133,11 @@ async fn security_une_signature_fausse_est_refusee() {
     let entete = signer(&corps, Utc::now(), "un_autre_secret");
 
     let reponse = test::call_service(&app, envoyer(corps, entete).to_request()).await;
-    assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
+    // **401 et non 400.** Une signature absente, fausse ou hors fenêtre est un
+    // défaut d'authentification, pas une requête mal formée : le distinguer
+    // permet de séparer, dans les journaux, un appel non signé d'un événement
+    // Stripe malformé.
+    assert_eq!(reponse.status(), StatusCode::UNAUTHORIZED);
     let corps_reponse: Value = test::read_body_json(reponse).await;
     assert_eq!(corps_reponse["code"], "INVALID_SIGNATURE");
 
@@ -167,7 +171,11 @@ async fn security_sans_signature_l_appel_est_refuse() {
             .to_request(),
     )
     .await;
-    assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
+    // **401 et non 400.** Une signature absente, fausse ou hors fenêtre est un
+    // défaut d'authentification, pas une requête mal formée : le distinguer
+    // permet de séparer, dans les journaux, un appel non signé d'un événement
+    // Stripe malformé.
+    assert_eq!(reponse.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[actix_web::test]
@@ -182,7 +190,11 @@ async fn security_un_appel_rejoue_hors_fenetre_est_refuse() {
     let entete = signer(&corps, vieille, SECRET_WEBHOOK_DE_TEST);
 
     let reponse = test::call_service(&app, envoyer(corps, entete).to_request()).await;
-    assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
+    // **401 et non 400.** Une signature absente, fausse ou hors fenêtre est un
+    // défaut d'authentification, pas une requête mal formée : le distinguer
+    // permet de séparer, dans les journaux, un appel non signé d'un événement
+    // Stripe malformé.
+    assert_eq!(reponse.status(), StatusCode::UNAUTHORIZED);
     let corps_reponse: Value = test::read_body_json(reponse).await;
     // Le même code qu'une signature fausse : distinguer les deux dirait à qui
     // essaie qu'il a trouvé le secret mais raté la fenêtre.

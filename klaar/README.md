@@ -1716,20 +1716,28 @@ Ce qui est corrigé, et qui relevait chaque fois d'un contrat qui mentait :
   sans eux, deux routes rendaient un 503 « non configuré » — juste, mais compté
   comme une erreur serveur, ce qui masquait leur état réel.
 
-**Le job reste rouge, et c'est écrit plutôt que contourné.** Une dizaine
-d'échecs subsistent, chacun demandant un arbitrage de produit plutôt qu'une
-correction mécanique :
+**Le job est vert : 5981 cas, aucun échec.** Les arbitrages restants ont été
+tranchés, et chacun l'a été dans le sens de ce que le code disait vraiment :
 
-| Route | Ce que le fuzz reproche | Ce qu'il faut trancher |
+| Route | Ce que le fuzz reprochait | Ce qui a été tranché |
 | --- | --- | --- |
-| `POST /auth/refresh` | rend `400 REFRESH_MISSING` sans cookie | un identifiant absent mérite un `401` ; le changer modifie un code que le front connaît |
-| `POST /push/abonnements` (×2) | rend `{"erreur": "…"}` | les trois routes push sont les seules à ne pas suivre la forme `{"code": "…"}` des cinquante-six autres |
-| `POST /webhooks/stripe` | rend `400 INVALID_SIGNATURE` | `400` suit la convention de Stripe, le fuzz attend `401`/`403` |
-| `POST /auth/login`, `/auth/signup`, `GET /catalog/sectors` | rendent `429` | la limitation de débit fait exactement son travail ; le fuzz n'en a pas la notion. `KLAAR_QUOTA_ECRITURE_SENSIBLE` la relève, mais laisse alors le fuzz marteler un hachage argon2 de 64 Mio jusqu'à faire tomber des connexions — essayé, retiré |
-| `POST /auth/signup`, `POST /ops/disputes/{id}/resolve` | données acceptées ou refusées à contre-emploi du schéma | il faudrait typer `decision` en énumération et resserrer le format d'adresse, ce qui change le contrat public |
+| `POST /auth/refresh` | `400 REFRESH_MISSING` sans cookie | **401**. Un identifiant absent n'est pas une requête mal formée : la requête est valide, c'est l'authentification qui manque. Le code `REFRESH_MISSING` ne bouge pas, c'est lui que le front traduit |
+| `POST /webhooks/stripe` | `400 INVALID_SIGNATURE` | **401 pour la signature, 400 pour la charge**. Les deux rendaient 400, ce qui mélangeait « je ne vous crois pas » et « je ne vous comprends pas ». Sans effet sur Stripe, qui réessaie sur tout ce qui n'est pas un 2xx |
+| Les trois routes `push` | rendaient `{"erreur": "une phrase"}` | **`{"code": "…"}`**, comme les cinquante-six autres. Un client n'a plus deux analyseurs d'erreurs à écrire, et le message n'est plus une phrase française non traduite recopiée d'une erreur interne |
+| `POST /push/abonnements` | `400` sur un abonnement bien formé mais inutilisable | **422**. Le corps est lisible et ses champs ont la bonne forme ; c'est leur contenu qui ne marchera pas, et aucun schéma JSON ne sait exprimer « cette clé doit décoder en point de courbe non compressé » |
+| `DELETE /push/abonnements` | `204` sur n'importe quelle chaîne | **422** si l'adresse n'est pas une URL. Le contrat l'annonçait sans que le serveur l'exige : `#[schema(...)]` documente, il ne valide rien — c'est le même mensonge que ne rien déclarer, dans l'autre sens |
+| `POST /ops/disputes/{id}/resolve` | acceptait n'importe quelle décision au schéma | les quatre issues sont **déclarées en énumération**. Le champ reste un `String` côté serveur : une valeur inconnue doit rendre 422 « décision invalide » et non 400 « corps illisible » |
+| `POST /auth/signup`, `POST /push/abonnements` | contraintes absentes du contrat | adresse électronique, longueur de mot de passe, forme des clés d'abonnement : **déclarées**. Le schéma annonçait « une chaîne » là où le code exige bien davantage |
 
-Aucun de ces points n'est un défaut caché : ils sont tous visibles dans la sortie
-du job. Ce qui l'était, c'est que **personne ne lisait la sortie du job**.
+Deux conventions que le contrat OpenAPI ne sait pas exprimer sont déclarées
+dans `klaar/schemathesis.toml`, avec leur raison : le **422** pour une donnée
+bien formée qui n'a pas de sens ici — exprimable seulement en réécrivant le
+schéma en `oneOf` par combinaison, ce qui le rendrait illisible pour vérifier
+moins bien que le serveur — et le **429**, la limitation de débit faisant
+exactement son travail face à un fuzz qui tire des milliers de requêtes par
+minute. Relever le quota pour ce job a été essayé puis retiré : la limitation
+tombait, mais le fuzz martelait alors un hachage argon2 de 64 Mio jusqu'à
+faire tomber des connexions.
 
 ## Navigation : ce que l'application montre, et ce qu'elle cachait
 

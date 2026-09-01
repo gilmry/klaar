@@ -172,18 +172,60 @@ function lireCharge(event) {
   }
 }
 
+/**
+ * Dit aux onglets ouverts ce qu'un push est devenu.
+ *
+ * **Pourquoi diffuser plutôt que se taire.** Un push qui n'aboutit pas ne
+ * laisse aucune trace : ni le navigateur ni la page ne savent dire s'il a été
+ * reçu, si la notification a été refusée, ou si rien n'est jamais arrivé. Les
+ * cas de `push.spec.ts` échouent par intermittence en intégration continue,
+ * quatre fois sur onze, sur un tableau de notifications vide — et ce vide ne
+ * distingue pas « le service worker n'a rien reçu » de « il a reçu et n'a pas
+ * pu afficher ». Un message par étape rend la différence lisible.
+ *
+ * Ce n'est pas seulement un outil de test : un onglet ouvert apprend qu'une
+ * notification vient d'arriver, ce que le clic sur la notification lui
+ * apprenait seulement s'il y avait un clic.
+ */
+async function diffuserEtatPush(etape, detail) {
+  const clients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of clients) {
+    client.postMessage({ type: "klaar:push", etape, ...detail });
+  }
+}
+
 self.addEventListener("push", (event) => {
   const charge = lireCharge(event);
   event.waitUntil(
-    self.registration.showNotification(charge.titre, {
-      body: charge.corps,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      // `tag` fait qu'une notification remplace la précédente de même
-      // étiquette, au lieu d'empiler dix alertes pour une même Mission.
-      tag: charge.tag,
-      data: { url: charge.url },
-    }),
+    (async () => {
+      await diffuserEtatPush("recue", { tag: charge.tag });
+      try {
+        await self.registration.showNotification(charge.titre, {
+          body: charge.corps,
+          icon: "/icons/icon-192.png",
+          badge: "/icons/icon-192.png",
+          // `tag` fait qu'une notification remplace la précédente de même
+          // étiquette, au lieu d'empiler dix alertes pour une même Mission.
+          tag: charge.tag,
+          data: { url: charge.url },
+        });
+        await diffuserEtatPush("affichee", {
+          titre: charge.titre,
+          corps: charge.corps,
+          tag: charge.tag,
+        });
+      } catch (err) {
+        // Une notification refusée est la seule panne vraiment coûteuse ici :
+        // Chrome retire au site son autorisation de notifier s'il reçoit un
+        // push sans rien afficher. La dire à voix haute plutôt que de la
+        // laisser disparaître dans une promesse rejetée.
+        await diffuserEtatPush("refusee", { erreur: String(err) });
+        throw err;
+      }
+    })(),
   );
 });
 

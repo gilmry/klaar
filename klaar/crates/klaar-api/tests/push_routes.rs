@@ -92,7 +92,9 @@ async fn negative_refuse_un_abonnement_dont_le_secret_est_trop_court() {
             .to_request(),
     )
     .await;
-    assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
+    // **422 et non 400.** Le corps est lisible et bien formé ; c'est son
+    // contenu qui n'est pas un abonnement utilisable.
+    assert_eq!(reponse.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 #[actix_web::test]
@@ -172,5 +174,7 @@ async fn security_rejette_un_champ_inconnu_dans_la_charge() {
             .to_request(),
     )
     .await;
+    // 400 ici, et non 422 : un champ inconnu rend le corps illisible pour le
+    // lecteur JSON, qui refuse avant que la moindre règle métier ne s'applique.
     assert_eq!(reponse.status(), StatusCode::BAD_REQUEST);
 }

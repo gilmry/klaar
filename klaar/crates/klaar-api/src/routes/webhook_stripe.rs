@@ -53,7 +53,8 @@ fn libelle(suite: Suite) -> &'static str {
     ),
     responses(
         (status = 200, description = "Événement accusé — reçu, dupliqué, dépassé ou ignoré", body = AccuseWebhookDto),
-        (status = 400, description = "Signature absente ou invalide, ou charge illisible", body = ErreurValidationDto),
+        (status = 400, description = "Charge illisible", body = ErreurValidationDto),
+        (status = 401, description = "Signature absente, fausse ou hors fenêtre", body = ErreurValidationDto),
         (status = 503, description = "Service ou webhook non configuré", body = ErreurValidationDto),
     )
 )]
@@ -107,7 +108,18 @@ pub async fn recevoir_webhook(
             // authentifiée n'a rien à faire dans les journaux, et l'en-tête
             // porte une signature.
             tracing::warn!(code = e.code(), "webhook Stripe rejeté");
-            HttpResponse::BadRequest().json(ErreurValidationDto {
+            // **401 quand c'est la signature, 400 quand c'est la charge.** Les
+            // deux rendaient un 400, ce qui mélangeait « je ne vous crois pas »
+            // et « je ne vous comprends pas ». Une signature absente ou fausse
+            // est un défaut d'authentification, et le dire ainsi permet de
+            // distinguer, dans les journaux comme dans une alerte, une tentative
+            // d'appel non signé d'un événement Stripe malformé. Sans effet sur
+            // Stripe lui-même, qui réessaie sur tout ce qui n'est pas un 2xx.
+            let statut = match &e {
+                ErreurWebhook::Signature(_) => actix_web::http::StatusCode::UNAUTHORIZED,
+                _ => actix_web::http::StatusCode::BAD_REQUEST,
+            };
+            HttpResponse::build(statut).json(ErreurValidationDto {
                 code: e.code().to_string(),
             })
         }

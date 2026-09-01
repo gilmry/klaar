@@ -140,7 +140,14 @@ where
 pub struct BilanValidation {
     /// Missions passées en `VALIDATED`.
     pub validees: usize,
-    /// Missions terminées sans devis accepté, laissées telles quelles.
+    /// Missions échues restant sans devis accepté.
+    ///
+    /// **Comptées, plus parcourues.** Elles figuraient autrefois dans le lot
+    /// traité à chaque passage, qu'elles ne quittaient jamais faute de montant
+    /// à libérer : passé deux cents, elles remplissaient le lot à elles seules
+    /// et le balayage cessait de valider quoi que ce soit de plus récent. Le
+    /// chiffre reste rendu parce que c'est un signal d'exploitation ; il vient
+    /// désormais d'un décompte, pas d'un parcours.
     pub sans_accord: usize,
 }
 
@@ -149,7 +156,8 @@ pub struct BilanValidation {
 /// **Ce que le balayage ne force pas.** Une Mission terminée sans devis accepté
 /// n'est pas validée : il n'y a pas de montant convenu, donc rien à libérer.
 /// Elle est comptée à part plutôt qu'ignorée en silence — c'est un signal
-/// d'exploitation, pas un cas normal.
+/// d'exploitation, pas un cas normal. Elle ne figure plus dans le lot traité :
+/// voir `BilanValidation::sans_accord`.
 pub async fn valider_les_echues<Q, L, H>(
     devis_repo: &Q,
     liberations: &L,
@@ -168,7 +176,10 @@ where
         .a_valider_automatiquement(avant, PAR_PASSAGE_MAX)
         .await?;
 
-    let mut bilan = BilanValidation::default();
+    let mut bilan = BilanValidation {
+        sans_accord: liberations.compter_sans_accord(avant).await? as usize,
+        ..BilanValidation::default()
+    };
     for ValidationEnAttente {
         mission_id,
         provider_id,
@@ -186,7 +197,12 @@ where
         .await
         {
             Ok(_) => bilan.validees += 1,
-            Err(ErreurValidation::Domaine(_)) => bilan.sans_accord += 1,
+            // Le lot ne contient plus que des Missions à devis accepté : un
+            // refus du domaine y est désormais anormal, et non l'absence
+            // d'accord. Le compter avec les autres masquerait un vrai défaut.
+            Err(ErreurValidation::Domaine(e)) => {
+                tracing::warn!(mission_id = %mission_id, erreur = ?e, "validation automatique refusée par le domaine");
+            }
             // Une Mission validée entre-temps par son demandeur : le balayage
             // arrive après, et c'est très bien.
             Err(ErreurValidation::DejaValidee | ErreurValidation::PasTerminee) => {}

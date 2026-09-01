@@ -24,13 +24,27 @@ pub struct ClePubliqueDto {
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClesAbonnementDto {
+    /// Clé publique P-256 non compressée, soit soixante-cinq octets en
+    /// base64url : quatre-vingt-sept caractères, toujours.
+    #[schema(min_length = 87, max_length = 88)]
     pub p256dh: String,
+    /// Secret d'authentification, seize octets en base64url : vingt-deux
+    /// caractères.
+    #[schema(min_length = 22, max_length = 24)]
     pub auth: String,
 }
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AbonnementDto {
+    /// Adresse fournie par le service de push du navigateur.
+    ///
+    /// **Les contraintes sont déclarées.** Le contrat annonçait « une chaîne »
+    /// là où le code exige une URL et des clés de longueur fixe : un client
+    /// engendré depuis l'OpenAPI ne validait donc rien, et le fuzz envoyait des
+    /// chaînes vides que l'API refusait à juste titre — un faux échec qui
+    /// masquait les vrais.
+    #[schema(format = "uri", min_length = 8, max_length = 2048)]
     pub endpoint: String,
     pub keys: ClesAbonnementDto,
 }
@@ -44,13 +58,22 @@ pub struct AbonnementEnregistreDto {
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DesabonnementDto {
+    #[schema(format = "uri", min_length = 8, max_length = 2048)]
     pub endpoint: String,
 }
 
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ErreurDto {
-    pub erreur: String,
+    /// Code stable, comme partout ailleurs dans ce contrat.
+    ///
+    /// **Ce champ s'appelait `erreur` et portait une phrase.** Les trois routes
+    /// de push étaient les seules, sur cinquante-neuf, à ne pas rendre
+    /// `{"code": "…"}` : un client devait donc écrire deux analyseurs
+    /// d'erreurs, et le message était une phrase française non traduite,
+    /// parfois recopiée d'une erreur interne. Le fuzz de contrat butait dessus
+    /// pour la même raison qu'un client l'aurait fait.
+    pub code: String,
 }
 
 /// Clé publique VAPID à passer à `PushManager.subscribe`.
@@ -74,7 +97,7 @@ pub async fn cle_publique(etat: web::Data<EtatApplication>) -> HttpResponse {
         // l'invitation à activer les notifications plutôt qu'afficher une
         // erreur.
         None => HttpResponse::ServiceUnavailable().json(ErreurDto {
-            erreur: "notifications push non configurées".to_string(),
+            code: "PUSH_NOT_CONFIGURED".to_string(),
         }),
     }
 }
@@ -87,7 +110,8 @@ pub async fn cle_publique(etat: web::Data<EtatApplication>) -> HttpResponse {
     request_body = AbonnementDto,
     responses(
         (status = 201, description = "Abonnement enregistré", body = AbonnementEnregistreDto),
-        (status = 400, description = "Abonnement mal formé", body = ErreurDto),
+        (status = 400, description = "Corps illisible ou champ inconnu", body = ErreurDto),
+        (status = 422, description = "Abonnement lisible mais inutilisable", body = ErreurDto),
         (status = 503, description = "Dépôt indisponible", body = ErreurDto),
     )
 )]
@@ -106,8 +130,18 @@ pub async fn enregistrer_abonnement(
     // aujourd'hui devient une notification perdue dans six semaines, sans
     // rien pour relier les deux.
     if let Err(e) = klaar_push_adapter::valider_abonnement(&abonnement) {
-        return HttpResponse::BadRequest().json(ErreurDto {
-            erreur: e.to_string(),
+        // Le détail est journalisé, pas rendu : le message de validation
+        // décrit la structure attendue, ce qui n'apprend rien d'utile à un
+        // client légitime et guide qui essaie autre chose.
+        // **422 et non 400.** Le corps est lisible et ses champs ont la bonne
+        // forme ; c'est leur contenu qui n'est pas un abonnement utilisable —
+        // une clé qui ne décode pas en point de courbe non compressé, par
+        // exemple. « Je ne vous comprends pas » et « je vous comprends et ça
+        // ne marchera pas » n'appellent pas la même correction côté client, et
+        // aucun schéma JSON ne sait exprimer la seconde.
+        tracing::warn!(erreur = %e, "abonnement push refusé");
+        return HttpResponse::UnprocessableEntity().json(ErreurDto {
+            code: "SUBSCRIPTION_INVALID".to_string(),
         });
     }
 
@@ -118,7 +152,7 @@ pub async fn enregistrer_abonnement(
         Err(e) => {
             tracing::error!(erreur = %e, "enregistrement d'abonnement push impossible");
             HttpResponse::ServiceUnavailable().json(ErreurDto {
-                erreur: "dépôt indisponible".to_string(),
+                code: "SERVICE_UNAVAILABLE".to_string(),
             })
         }
     }
@@ -132,7 +166,8 @@ pub async fn enregistrer_abonnement(
     request_body = DesabonnementDto,
     responses(
         (status = 204, description = "Abonnement retiré, ou déjà absent"),
-        (status = 400, description = "Corps illisible ou champ inconnu", body = crate::routes::auth::ErreurValidationDto),
+        (status = 400, description = "Corps illisible ou champ inconnu", body = ErreurDto),
+        (status = 422, description = "Adresse d'abonnement hors forme", body = ErreurDto),
         (status = 503, description = "Dépôt indisponible", body = ErreurDto),
     )
 )]
@@ -141,6 +176,16 @@ pub async fn supprimer_abonnement(
     etat: web::Data<EtatApplication>,
     corps: web::Json<DesabonnementDto>,
 ) -> HttpResponse {
+    // **Le contrat annonce une URL, le serveur l'exige.** Déclarer une
+    // contrainte sans la vérifier est le même mensonge que ne pas la déclarer,
+    // dans l'autre sens : `#[schema(...)]` documente, il ne valide rien. Cette
+    // route rendait 204 sur n'importe quelle chaîne — l'idempotence porte sur
+    // l'existence de l'abonnement, pas sur la forme de son adresse.
+    if !corps.endpoint.starts_with("https://") && !corps.endpoint.starts_with("http://") {
+        return HttpResponse::UnprocessableEntity().json(ErreurDto {
+            code: "ENDPOINT_INVALID".to_string(),
+        });
+    }
     match etat
         .abonnements
         .supprimer_par_endpoint(&corps.endpoint)
@@ -153,7 +198,7 @@ pub async fn supprimer_abonnement(
         Err(e) => {
             tracing::error!(erreur = %e, "suppression d'abonnement push impossible");
             HttpResponse::ServiceUnavailable().json(ErreurDto {
-                erreur: "dépôt indisponible".to_string(),
+                code: "SERVICE_UNAVAILABLE".to_string(),
             })
         }
     }

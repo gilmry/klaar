@@ -1,0 +1,43 @@
+# Conventions de cette API, déclarées au fuzz de contrat (ADR-004).
+#
+# **Ce fichier ne masque pas d'échecs, il déclare des conventions.** Chaque
+# entrée dit une chose que le contrat OpenAPI ne sait pas exprimer, et qui
+# serait autrement lue comme un défaut. Ce qui relève d'un vrai défaut est
+# corrigé dans le code, pas ici — voir `klaar/README.md`, § Contrat OpenAPI.
+
+[checks.positive_data_acceptance]
+# Le fuzz attend qu'une donnée conforme au schéma soit acceptée, et n'admet par
+# défaut que 2xx, 401, 403, 404, 409 et 5xx. Deux refus légitimes manquent à
+# cette liste, et ils ne sont pas exprimables dans un schéma JSON :
+#
+# **422** — la donnée est bien formée mais n'a pas de sens ici : un taux de
+# remboursement sur une décision qui n'en prend pas, une période dont la fin
+# précède le début. Le schéma ne peut pas dire « ce champ n'est permis que si
+# cet autre vaut telle valeur » sans se réécrire en `oneOf` par combinaison, ce
+# qui rendrait le contrat illisible pour gagner une vérification que le
+# serveur fait déjà, et mieux.
+#
+# **429** — la limitation de débit. Le fuzz tire des milliers de requêtes en une
+# minute ; la limitation fait exactement son travail en les refusant. La
+# relever pour ce job a été essayé et retiré : elle tombait, mais le fuzz
+# martelait alors un hachage argon2 de 64 Mio jusqu'à faire tomber des
+# connexions. La bonne réponse est de reconnaître le 429, pas de désarmer la
+# protection qui le rend.
+expected-statuses = ["2xx", "401", "403", "404", "409", "422", "429", "5xx"]
+
+[checks.negative_data_rejection]
+# Le pendant du réglage ci-dessus. Le fuzz envoie ici des données **invalides**
+# et attend un refus ; il n'admet pas le 429 dans sa liste. Or la limitation de
+# débit s'applique avant la validation, délibérément : compter les requêtes
+# malformées comme les autres est ce qui empêche de se servir de la validation
+# comme d'une sonde gratuite. Le 429 **est** un refus, et c'est bien ce que la
+# vérification cherche à constater.
+expected-statuses = ["400", "401", "403", "404", "405", "406", "409", "422", "428", "429", "5xx"]
+
+[checks.not_a_server_error]
+# Un 503 n'est pas toujours une panne : `POST /api/v1/webhooks/stripe` et
+# `GET /api/v1/push/cle-publique` le rendent quand le déploiement tourne sans
+# le tiers correspondant, ce qui est un état documenté et voulu. La CI les
+# configure justement pour que ces routes soient exercées pour de vrai ; cette
+# ligne couvre le cas où elles ne le seraient pas.
+expected-statuses = ["2xx", "3xx", "4xx", "503"]
