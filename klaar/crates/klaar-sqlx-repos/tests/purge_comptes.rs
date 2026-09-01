@@ -16,7 +16,27 @@
 use chrono::{Duration, Utc};
 use klaar_application::ports::utilisateur_repository::UtilisateurRepository;
 use klaar_sqlx_repos::{creer_pool, PgUtilisateurRepository, PoolPg};
+use tokio::sync::Mutex;
 use uuid::Uuid;
+
+/// Sérialise les cas de ce fichier.
+///
+/// **Ils agissent tous sur la même population.** `purger_non_verifies` efface
+/// *tous* les comptes non vérifiés plus vieux que le seuil, pas seulement celui
+/// que le cas vient de créer : deux cas qui tournent en même temps se
+/// détruisent donc mutuellement leurs données. Le symptôme est arrivé en
+/// intégration continue, sur une violation de clé étrangère — un jeton inséré
+/// pour un compte qu'un cas voisin venait d'effacer entre sa création et son
+/// usage.
+///
+/// Même idiome que `catalogue_routes.rs`, et pour la même raison : un verrou de
+/// processus vaut mieux qu'un test qui échoue une fois sur vingt sans qu'on
+/// sache pourquoi. Verrou **asynchrone**, le garde traversant des `await`.
+static PURGE: Mutex<()> = Mutex::const_new(());
+
+async fn verrou() -> tokio::sync::MutexGuard<'static, ()> {
+    PURGE.lock().await
+}
 
 fn url() -> String {
     std::env::var("DATABASE_URL")
@@ -75,6 +95,7 @@ fn seuil() -> chrono::DateTime<Utc> {
 
 #[tokio::test]
 async fn happy_efface_un_compte_non_verifie_plus_vieux_que_le_seuil() {
+    let _verrou = verrou().await;
     let pool = pool().await;
     let depot = PgUtilisateurRepository::new(pool.clone());
     let vieux = compte(&pool, "happy", "PENDING_EMAIL_VERIFY", 96).await;
@@ -93,6 +114,7 @@ async fn happy_efface_un_compte_non_verifie_plus_vieux_que_le_seuil() {
 
 #[tokio::test]
 async fn negative_epargne_un_compte_actif_quel_que_soit_son_age() {
+    let _verrou = verrou().await;
     // C'est la propriété qui compte le plus : une erreur de condition ici
     // effacerait des comptes en service, avec leurs demandes en cascade.
     let pool = pool().await;
@@ -110,6 +132,7 @@ async fn negative_epargne_un_compte_actif_quel_que_soit_son_age() {
 
 #[tokio::test]
 async fn edge_epargne_un_compte_non_verifie_plus_recent_que_le_seuil() {
+    let _verrou = verrou().await;
     // Quelqu'un qui vient de s'inscrire et n'a pas encore ouvert sa boîte.
     let pool = pool().await;
     let depot = PgUtilisateurRepository::new(pool.clone());
@@ -126,6 +149,7 @@ async fn edge_epargne_un_compte_non_verifie_plus_recent_que_le_seuil() {
 
 #[tokio::test]
 async fn edge_le_plafond_arrete_le_passage_et_laisse_le_reliquat() {
+    let _verrou = verrou().await;
     let pool = pool().await;
     let depot = PgUtilisateurRepository::new(pool.clone());
     let a = compte(&pool, "edge-plafond-a", "PENDING_EMAIL_VERIFY", 96).await;
@@ -151,6 +175,7 @@ async fn edge_le_plafond_arrete_le_passage_et_laisse_le_reliquat() {
 
 #[tokio::test]
 async fn security_la_cascade_emporte_le_jeton_de_verification() {
+    let _verrou = verrou().await;
     // Le jeton est l'empreinte d'un secret envoyé par courriel. Effacer le
     // compte en laissant le jeton conserverait la trace d'une inscription que
     // la purge est censée avoir fait disparaître.
